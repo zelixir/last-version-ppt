@@ -433,7 +433,7 @@ export function renameProjectConversations(projectId: string, nextProjectId: str
 export function copyProjectConversations(projectId: string, nextProjectId: string): void {
   for (const conversation of listProjectConversations(projectId)) {
     upsertProjectConversation({
-      id: `${nextProjectId}-${randomUUID()}`,
+      id: randomUUID(),
       projectId: nextProjectId,
       title: conversation.title,
       messages: conversation.messages,

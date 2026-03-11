@@ -236,6 +236,7 @@ export default function Project() {
     setProject(data)
     setSelectedFileName(current => current && data.files.some(file => file.name === current) ? current : data.files.find(file => file.name !== 'index.js')?.name ?? data.files[0]?.name ?? null)
     await fetch(`/api/projects/${encodeURIComponent(projectKey)}/current`, { method: 'POST' })
+    return data
   }
 
   const fetchModels = async () => {
@@ -404,9 +405,10 @@ export default function Project() {
     const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/upload`, { method: 'POST', body: formData })
     if (!response.ok) throw new Error('上传文件失败')
     const data = await response.json() as { uploaded?: string[] }
-    await fetchProject()
+    const projectData = await fetchProject()
     setActiveTab('resources')
-    setSelectedFileName(data.uploaded?.[0] ?? null)
+    const nextSelectedFile = data.uploaded?.find(fileName => projectData.files.some(file => file.name === fileName))
+    setSelectedFileName(nextSelectedFile ?? null)
   }
 
   const handleChatResizeStart = (event: React.MouseEvent<HTMLDivElement>) => {

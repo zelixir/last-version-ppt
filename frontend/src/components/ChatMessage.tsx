@@ -138,13 +138,17 @@ function ToolCard({ part, labels }: { part: ToolLikePart | LegacyToolPart; label
     : success
       ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
       : 'border-red-500/20 bg-red-500/10 text-red-100'
-  const summary = isLegacyToolPart(part)
-    ? part.summary
-    : running
-      ? (TOOL_INPUT_LABELS[toolName]?.(part.input && typeof part.input === 'object' ? part.input as Record<string, unknown> : {}) || '正在处理中')
-      : part.state === 'output-error'
-        ? part.errorText || '处理失败'
-        : summarizeToolOutput(toolName, part.output)
+  let summary = '正在处理中'
+  if (isLegacyToolPart(part)) {
+    summary = part.summary
+  } else if (running) {
+    const toolInput = part.input && typeof part.input === 'object' ? part.input as Record<string, unknown> : {}
+    summary = TOOL_INPUT_LABELS[toolName]?.(toolInput) || '正在处理中'
+  } else if (part.state === 'output-error') {
+    summary = part.errorText || '处理失败'
+  } else {
+    summary = summarizeToolOutput(toolName, part.output)
+  }
 
   return (
     <div className={`rounded-2xl border px-3 py-2 ${toneClass}`}>

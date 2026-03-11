@@ -182,7 +182,7 @@ function getProjectFileUrl(projectId: string, fileName: string): string {
 }
 
 function extractMessageText(message: ProjectChatUiMessage): string {
-  return message.parts
+  return (message.parts ?? [])
     .filter((part): part is Extract<ProjectChatUiMessage['parts'][number], { type: 'text' }> => part.type === 'text')
     .map(part => part.text)
     .join('')
@@ -190,7 +190,8 @@ function extractMessageText(message: ProjectChatUiMessage): string {
 }
 
 function buildConversationTitle(messages: ProjectChatUiMessage[]): string {
-  const firstUserText = messages.find(message => message.role === 'user' && extractMessageText(message)) ? extractMessageText(messages.find(message => message.role === 'user' && extractMessageText(message))!) : '';
+  const firstUserMessage = messages.find(message => message.role === 'user' && extractMessageText(message));
+  const firstUserText = firstUserMessage ? extractMessageText(firstUserMessage) : '';
   if (!firstUserText) return '新对话';
   return firstUserText.slice(0, 40);
 }
@@ -220,11 +221,13 @@ function buildLegacyConversationMessages(projectId: string) {
 }
 
 function convertUiMessagesToProjectChatHistory(messages: ProjectChatUiMessage[]) {
-  return messages.map(message => ({
-    role: message.role,
-    content: extractMessageText(message),
-    createdAt: new Date().toISOString(),
-  }));
+  return messages
+    .filter((message): message is ProjectChatUiMessage & { role: 'user' | 'assistant' } => message.role === 'user' || message.role === 'assistant')
+    .map(message => ({
+      role: message.role,
+      content: extractMessageText(message),
+      createdAt: new Date().toISOString(),
+    }));
 }
 
 async function handleProjectChatRequest(projectId: string, payload: { id?: string; messages?: ProjectChatUiMessage[]; modelId?: number }) {
