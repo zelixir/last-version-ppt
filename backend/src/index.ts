@@ -14,6 +14,7 @@ import {
   deleteAiModel,
   deleteProjectRecord,
   deleteProvider,
+  deleteSetting,
   getAiModelById,
   getAiModels,
   getProjectById,
@@ -371,7 +372,8 @@ const app = new Elysia()
     deleteProjectRecord(params.id);
     if (getCurrentProjectId() === params.id) {
       const nextProjectId = listProjects()[0]?.id;
-      setSetting('currentProjectId', nextProjectId ?? '');
+      if (nextProjectId) setSetting('currentProjectId', nextProjectId);
+      else deleteSetting('currentProjectId');
     }
     return { success: true };
   })

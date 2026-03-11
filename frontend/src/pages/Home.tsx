@@ -22,13 +22,11 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchText, setSearchText] = useState('')
-
-  const placeholder = useMemo(() => PLACEHOLDERS[placeholderSeed % PLACEHOLDERS.length], [placeholderSeed])
   const filteredProjects = useMemo(() => {
     const keyword = searchText.trim().toLowerCase()
     if (!keyword) return projects
     return projects.filter(project =>
-      [project.name, project.id, project.sourcePrompt]
+      [project.name, project.id, project.sourcePrompt || '']
         .some(value => value.toLowerCase().includes(keyword)),
     )
   }, [projects, searchText])

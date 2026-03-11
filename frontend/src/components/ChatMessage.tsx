@@ -7,38 +7,33 @@ export function appendTextPart(parts: ChatMessagePart[], text: string): ChatMess
   if (!text) return parts
   const lastPart = parts[parts.length - 1]
   if (lastPart?.type === 'text') {
-    lastPart.text += text
-    return parts
+    return [...parts.slice(0, -1), { ...lastPart, text: lastPart.text + text }]
   }
-  parts.push({ type: 'text', text })
-  return parts
+  return [...parts, { type: 'text', text }]
 }
 
 export function mergeMessageToolPart(parts: ChatMessagePart[], nextEvent: AgentRunEvent): ChatMessagePart[] {
   if (nextEvent.type !== 'tool' || !nextEvent.toolName || !nextEvent.summary) return parts
   if (nextEvent.state === 'running') {
-    parts.push({ type: 'tool', toolName: nextEvent.toolName, summary: nextEvent.summary, success: true, state: 'running' })
-    return parts
+    return [...parts, { type: 'tool', toolName: nextEvent.toolName, summary: nextEvent.summary, success: true, state: 'running' }]
   }
 
   for (let index = parts.length - 1; index >= 0; index -= 1) {
     const part = parts[index]
     if (part.type === 'tool' && part.toolName === nextEvent.toolName && part.state === 'running') {
-      part.summary = nextEvent.summary
-      part.success = nextEvent.success !== false
-      part.state = 'done'
-      return parts
+      return parts.map((item, itemIndex) => itemIndex === index
+        ? { ...item, summary: nextEvent.summary!, success: nextEvent.success !== false, state: 'done' }
+        : item)
     }
   }
 
-  parts.push({
+  return [...parts, {
     type: 'tool',
     toolName: nextEvent.toolName,
     summary: nextEvent.summary,
     success: nextEvent.success !== false,
     state: nextEvent.state ?? 'done',
-  })
-  return parts
+  }]
 }
 
 export function normalizeMessageParts(message: ProjectChatMessage & { pending?: boolean }): ChatMessagePart[] {
@@ -48,7 +43,7 @@ export function normalizeMessageParts(message: ProjectChatMessage & { pending?: 
     parts.push({ type: 'tool', ...event, state: 'done' })
   })
   if (message.content) {
-    appendTextPart(parts, message.content)
+    return appendTextPart(parts, message.content)
   }
   return parts
 }

@@ -129,10 +129,7 @@ export default function Project() {
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
-  const [showIndexSource, setShowIndexSource] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return window.localStorage.getItem(SHOW_SCRIPT_STORAGE_KEY) === 'true'
-  })
+  const [showIndexSource, setShowIndexSource] = useState(() => window.localStorage.getItem(SHOW_SCRIPT_STORAGE_KEY) === 'true')
   const [editorValue, setEditorValue] = useState('')
   const [editorLoading, setEditorLoading] = useState(false)
   const [editorDirty, setEditorDirty] = useState(false)
@@ -143,7 +140,6 @@ export default function Project() {
   const [pageError, setPageError] = useState<string | null>(null)
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
   const [chatPanelWidth, setChatPanelWidth] = useState(() => {
-    if (typeof window === 'undefined') return 420
     const savedWidth = Number(window.localStorage.getItem(CHAT_WIDTH_STORAGE_KEY) || '')
     return Number.isFinite(savedWidth) ? Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedWidth)) : 420
   })
@@ -306,8 +302,8 @@ export default function Project() {
     const handlePointerMove = (event: MouseEvent) => {
       const resizeState = chatResizeStateRef.current
       if (!resizeState) return
-      const delta = resizeState.startX - event.clientX
-      setChatPanelWidth(Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, resizeState.startWidth + delta)))
+      const widthDelta = resizeState.startX - event.clientX
+      setChatPanelWidth(Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, resizeState.startWidth + widthDelta)))
     }
 
     const handlePointerUp = () => {

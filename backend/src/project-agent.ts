@@ -138,13 +138,13 @@ function createToolEventEmitter(
   return {
     start(toolName: string, input: Record<string, unknown>) {
       const summary = summarizeToolIntent(toolName, input);
-      mergeToolPart(messageParts, { toolName, summary, state: 'running' });
+      messageParts.splice(0, messageParts.length, ...mergeToolPart(messageParts, { toolName, summary, state: 'running' }));
       onEvent?.({ type: 'tool', toolName, summary, state: 'running' });
     },
     finish(toolName: string, summary: string, success = true) {
       const event = summarizeToolEvent(toolName, summary, success);
       toolEvents.push(event);
-      mergeToolPart(messageParts, { toolName, summary, state: 'done', success });
+      messageParts.splice(0, messageParts.length, ...mergeToolPart(messageParts, { toolName, summary, state: 'done', success }));
       onEvent?.({ type: 'tool', toolName, summary, state: 'done', success });
       return event;
     },
@@ -497,14 +497,14 @@ export async function chatWithProjectAgent(
   for await (const chunk of result.fullStream) {
     if (chunk.type === 'text-delta' && chunk.text) {
       assistantText += chunk.text;
-      appendTextPart(assistantParts, chunk.text);
+      assistantParts.splice(0, assistantParts.length, ...appendTextPart(assistantParts, chunk.text));
       options?.onEvent?.({ type: 'text-delta', text: chunk.text });
     }
   }
 
   const finalAssistantText = (assistantText.trim() || await result.text).trim() || '这次已经处理完成，你可以继续补充要求。';
   if (!assistantParts.some(part => part.type === 'text' && part.text.trim())) {
-    appendTextPart(assistantParts, finalAssistantText);
+    assistantParts.splice(0, assistantParts.length, ...appendTextPart(assistantParts, finalAssistantText));
   }
 
   const newHistory: ProjectChatEntry[] = [
