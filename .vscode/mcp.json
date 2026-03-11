@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "last-version-ppt-sqlite": {
+      "type": "stdio",
+      "command": "bun",
+      "args": ["run", "src/mcp-sqlite.ts"],
+      "cwd": "backend",
+      "env": {
+        "SQLITE_DB_PATH": "last-version-ppt.db"
+      },
+      "description": "SQLite MCP server for the local last-version-ppt database. Provides list_tables, describe_table, query, and execute tools."
+    }
+  }
+}
