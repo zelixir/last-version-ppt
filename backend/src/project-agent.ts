@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'fs';
 import path from 'path';
-import { stepCountIs, streamText, tool } from 'ai';
+import { streamText, tool } from 'ai';
 import { z } from 'zod';
 import { createModelClient } from './dashscope-model.ts';
 import { appendProjectChat, createProjectRecord, getAiModelById, getProjectById, getProviderByName, ProjectChatEntry, ProjectChatMessagePart, ProjectChatToolEvent, renameProjectRecord, setSetting } from './db.ts';
@@ -490,7 +490,6 @@ export async function chatWithProjectAgent(
       supportsMultimodal: model.capabilities.multimodal === true,
       onEvent: options?.onEvent,
     }),
-    stopWhen: stepCountIs(8),
   });
 
   let assistantText = '';
