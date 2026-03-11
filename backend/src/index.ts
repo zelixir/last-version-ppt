@@ -8,7 +8,6 @@ import { frontendAssets } from './frontend-assets.ts';
 import exampleProviderData from '../model-provider.example.json';
 import exampleModelData from '../models.example.json';
 import {
-  appendProjectChat,
   createAiModel,
   createProjectRecord,
   createProvider,

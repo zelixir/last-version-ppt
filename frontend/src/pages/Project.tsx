@@ -45,13 +45,19 @@ function mergeLiveToolEvents(events: LiveToolEvent[], nextEvent: AgentRunEvent):
     return [...events, { toolName: nextEvent.toolName, summary: nextEvent.summary, success: true, state: 'running' }]
   }
 
-  const index = [...events].reverse().findIndex(event => event.toolName === nextEvent.toolName && event.state === 'running')
-  if (index === -1) {
+  let runningIndex = -1
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index].toolName === nextEvent.toolName && events[index].state === 'running') {
+      runningIndex = index
+      break
+    }
+  }
+
+  if (runningIndex === -1) {
     return [...events, { toolName: nextEvent.toolName, summary: nextEvent.summary, success: nextEvent.success !== false, state: 'done' }]
   }
 
-  const actualIndex = events.length - 1 - index
-  return events.map((event, eventIndex) => eventIndex === actualIndex
+  return events.map((event, eventIndex) => eventIndex === runningIndex
     ? { ...event, summary: nextEvent.summary!, success: nextEvent.success !== false, state: 'done' }
     : event)
 }
