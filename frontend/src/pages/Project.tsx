@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useChat } from '@ai-sdk/react'
 import Editor from '@monaco-editor/react'
+import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Trash2 } from 'lucide-react'
-import type { AgentRunEvent, AiModel, ChatMessagePart, PreviewPresentation, PreviewSlide, ProjectChatMessage, ProjectFile, ProjectSummary, ToolEvent } from '../types'
+import type { AiModel, PreviewPresentation, PreviewSlide, ProjectChatMessageMetadata, ProjectConversationDetail, ProjectConversationSummary, ProjectFile, ProjectSummary } from '../types'
 import { PromptInput } from '../components/ai-elements/prompt-input'
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
-import ChatMessage, { appendTextPart, mergeMessageToolPart } from '../components/ChatMessage'
+import ChatMessage from '../components/ChatMessage'
+import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
 import { runProjectPreview } from '../lib/project-preview'
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
@@ -25,15 +28,18 @@ const TOOL_LABELS: Record<string, string> = {
   'get-current-project': '查看项目',
   'run-project': '检查预览',
   'list-file': '查看文件',
+  'read-file': '读取文件',
+  'read-range': '分段读取',
   'create-file': '写入文件',
   'rename-file': '文件改名',
   'delete-file': '删除文件',
   grep: '查找内容',
+  'read-image-file': '查看图片',
+  'read-ppt-page': '查看页面预览',
   'apply-patch': '批量修改',
 }
 
-type LiveToolEvent = ToolEvent & { state?: 'running' | 'done' }
-type ConversationMessage = ProjectChatMessage & { id: string; toolEvents?: LiveToolEvent[]; parts?: ChatMessagePart[]; pending?: boolean }
+type ConversationMessage = UIMessage<ProjectChatMessageMetadata>
 
 const SHOW_SCRIPT_STORAGE_KEY = 'last-version-ppt:show-script'
 const CHAT_WIDTH_STORAGE_KEY = 'last-version-ppt:chat-width'
@@ -46,29 +52,6 @@ const PREVIEW_WHEEL_THROTTLE_MS = 160
 
 function buildMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function mergeLiveToolEvents(events: LiveToolEvent[], nextEvent: AgentRunEvent): LiveToolEvent[] {
-  if (nextEvent.type !== 'tool' || !nextEvent.toolName || !nextEvent.summary) return events
-  if (nextEvent.state === 'running') {
-    return [...events, { toolName: nextEvent.toolName, summary: nextEvent.summary, success: true, state: 'running' }]
-  }
-
-  let runningIndex = -1
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index].toolName === nextEvent.toolName && events[index].state === 'running') {
-      runningIndex = index
-      break
-    }
-  }
-
-  if (runningIndex === -1) {
-    return [...events, { toolName: nextEvent.toolName, summary: nextEvent.summary, success: nextEvent.success !== false, state: 'done' }]
-  }
-
-  return events.map((event, eventIndex) => eventIndex === runningIndex
-    ? { ...event, summary: nextEvent.summary!, success: nextEvent.success !== false, state: 'done' }
-    : event)
 }
 
 function getProjectTabStorageKey(projectKey: string) {
@@ -174,15 +157,27 @@ export default function Project() {
   const [chatInput, setChatInput] = useState('')
   const [promptHistory, setPromptHistory] = useState<string[]>(() => readStoredPromptHistory(projectKey))
   const [promptHistoryIndex, setPromptHistoryIndex] = useState<number | null>(null)
-  const [chatLoading, setChatLoading] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
-  const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([])
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [conversationSummaries, setConversationSummaries] = useState<ProjectConversationSummary[]>([])
+  const [chatSessionId, setChatSessionId] = useState(() => buildMessageId())
+  const [chatSeedMessages, setChatSeedMessages] = useState<ConversationMessage[]>([])
   const [pageError, setPageError] = useState<string | null>(null)
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
   const [chatPanelWidth, setChatPanelWidth] = useState(() => {
     const savedWidth = Number(window.localStorage.getItem(CHAT_WIDTH_STORAGE_KEY) || '')
     return Number.isFinite(savedWidth) ? Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedWidth)) : 420
   })
+  const selectedModelIdRef = useRef<number | null>(selectedModelId)
+  const projectKeyRef = useRef(projectKey)
+
+  useEffect(() => {
+    selectedModelIdRef.current = selectedModelId
+  }, [selectedModelId])
+
+  useEffect(() => {
+    projectKeyRef.current = projectKey
+  }, [projectKey])
 
   const visibleFiles = useMemo(() => {
     if (!project) return []
@@ -190,11 +185,49 @@ export default function Project() {
   }, [project, showIndexSource])
 
   const selectedFile = useMemo(() => visibleFiles.find(file => file.name === selectedFileName) ?? null, [visibleFiles, selectedFileName])
-  const historyMessages = useMemo<ConversationMessage[]>(
-    () => (project?.chatHistory ?? []).map((message, index) => ({ ...message, id: `history-${message.createdAt}-${index}` })),
-    [project?.chatHistory],
-  )
-  const displayedMessages = showHistory ? historyMessages : sessionMessages
+  const chatTransport = useMemo(() => new DefaultChatTransport<ConversationMessage>({
+    api: `/api/projects/${encodeURIComponent(projectKey)}/chat`,
+    prepareSendMessagesRequest: ({ id, messages, api }) => ({
+      api: `/api/projects/${encodeURIComponent(projectKeyRef.current)}/chat`,
+      body: {
+        id,
+        messages,
+        modelId: selectedModelIdRef.current,
+      },
+    }),
+  }), [])
+  const {
+    messages: displayedMessages,
+    sendMessage,
+    setMessages: setChatMessages,
+    status: chatStatus,
+  } = useChat<ConversationMessage>({
+    id: chatSessionId,
+    messages: chatSeedMessages,
+    transport: chatTransport,
+    onError: error => {
+      setPageError(error.message)
+    },
+    onFinish: ({ messages }) => {
+      setChatSeedMessages(messages)
+      const nextProjectId = [...messages].reverse().find(message => message.role === 'assistant')?.metadata?.projectId
+      setChatInput('')
+      fetch(`/api/projects/${encodeURIComponent(projectKeyRef.current)}/chat`)
+        .then(async response => {
+          if (!response.ok) return
+          const data = await response.json() as { conversations?: ProjectConversationSummary[] }
+          setConversationSummaries(data.conversations ?? [])
+        })
+        .catch(() => undefined)
+      if (nextProjectId && nextProjectId !== projectKeyRef.current) {
+        navigate(`/projects/${nextProjectId}`, { replace: true })
+        return
+      }
+      fetchProject().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+      refreshPreview().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+    },
+  })
+  const chatLoading = chatStatus === 'submitted' || chatStatus === 'streaming'
 
   const fetchProject = async () => {
     const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}`)
@@ -247,6 +280,26 @@ export default function Project() {
     }
   }
 
+  const fetchConversationSummaries = async () => {
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/chat`)
+    if (!response.ok) throw new Error('加载历史记录失败')
+    const data = await response.json() as { conversations?: ProjectConversationSummary[] }
+    setConversationSummaries(data.conversations ?? [])
+  }
+
+  const loadConversation = async (conversationId: string) => {
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/chat?chatId=${encodeURIComponent(conversationId)}`)
+    if (!response.ok) throw new Error('加载历史对话失败')
+    const data = await response.json() as ProjectConversationDetail
+    const nextMessages = Array.isArray(data.messages) ? data.messages as ConversationMessage[] : []
+    setChatSessionId(data.id)
+    setChatSeedMessages(nextMessages)
+    setChatMessages(nextMessages)
+    setHistoryDialogOpen(false)
+    setChatInput('')
+    setPageError(null)
+  }
+
   useEffect(() => {
     Promise.all([fetchProject(), fetchModels()])
       .then(() => refreshPreview())
@@ -261,6 +314,11 @@ export default function Project() {
     setPromptHistory(readStoredPromptHistory(projectKey))
     setPromptHistoryIndex(null)
     promptHistoryDraftRef.current = ''
+    setChatSessionId(buildMessageId())
+    setChatSeedMessages([])
+    setChatMessages([])
+    setConversationSummaries([])
+    setHistoryDialogOpen(false)
   }, [projectKey])
 
   useEffect(() => {
@@ -345,8 +403,10 @@ export default function Project() {
     Array.from(files).forEach(file => formData.append('files', file))
     const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/upload`, { method: 'POST', body: formData })
     if (!response.ok) throw new Error('上传文件失败')
+    const data = await response.json() as { uploaded?: string[] }
     await fetchProject()
-    await refreshPreview()
+    setActiveTab('resources')
+    setSelectedFileName(data.uploaded?.[0] ?? null)
   }
 
   const handleChatResizeStart = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -376,10 +436,6 @@ export default function Project() {
       window.removeEventListener('mouseup', handlePointerUp)
     }
   }, [])
-
-  const updateSessionMessage = (messageId: string, updater: (message: ConversationMessage) => ConversationMessage) => {
-    setSessionMessages(current => current.map(message => message.id === messageId ? updater(message) : message))
-  }
 
   const rememberPrompt = (value: string) => {
     const nextPrompt = value.trim()
@@ -442,108 +498,9 @@ export default function Project() {
     const text = (content ?? chatInput).trim()
     const modelId = modelIdOverride ?? selectedModelId
     if (!text || !modelId || chatLoading) return
-
-    const userMessage: ConversationMessage = {
-      id: buildMessageId(),
-      role: 'user',
-      content: text,
-      createdAt: new Date().toISOString(),
-    }
-    const assistantMessageId = buildMessageId()
-
     rememberPrompt(text)
-    setShowHistory(false)
-    setSessionMessages(current => [
-      ...current,
-      userMessage,
-      { id: assistantMessageId, role: 'assistant', content: '', createdAt: new Date().toISOString(), toolEvents: [], parts: [], pending: true },
-    ])
-    setChatLoading(true)
     setPageError(null)
-    try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/chat/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text, modelId, includeHistory: false }),
-      })
-
-      if (!response.ok || !response.body) {
-        const data = await response.json().catch(() => null)
-        throw new Error(data?.error || '发送消息失败')
-      }
-
-      let buffer = ''
-      let nextProjectId = projectKey
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      const handleEvent = (rawEvent: string) => {
-        const lines = rawEvent.split('\n')
-        const eventName = lines.find(line => line.startsWith('event:'))?.slice(6).trim() || 'message'
-        const dataText = lines
-          .filter(line => line.startsWith('data:'))
-          .map(line => line.slice(5).trim())
-          .join('\n')
-        if (!dataText) return
-        const data = JSON.parse(dataText) as AgentRunEvent & { error?: string; projectId?: string }
-        if (eventName === 'message') {
-          if (data.type === 'text-delta' && data.text) {
-            updateSessionMessage(assistantMessageId, message => ({
-              ...message,
-              content: `${message.content}${data.text}`,
-              parts: appendTextPart([...(message.parts ?? [])], data.text!),
-            }))
-          }
-          if (data.type === 'tool') {
-            updateSessionMessage(assistantMessageId, message => ({
-              ...message,
-              toolEvents: mergeLiveToolEvents(message.toolEvents ?? [], data),
-              parts: mergeMessageToolPart([...(message.parts ?? [])], data),
-            }))
-          }
-          return
-        }
-        if (eventName === 'done' && data.projectId) {
-          nextProjectId = data.projectId
-          return
-        }
-        if (eventName === 'error') {
-          throw new Error(data.error || '发送消息失败')
-        }
-      }
-
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-        parts.forEach(handleEvent)
-      }
-      if (buffer.trim()) handleEvent(buffer)
-
-      setChatInput('')
-      updateSessionMessage(assistantMessageId, message => ({
-        ...message,
-        pending: false,
-        content: message.content.trim() ? message.content : '这次已经处理完成，你可以继续补充要求。',
-        parts: message.content.trim() || message.parts?.some(part => part.type === 'text' && part.text.trim())
-          ? message.parts
-          : appendTextPart([...(message.parts ?? [])], '这次已经处理完成，你可以继续补充要求。'),
-      }))
-
-      if (nextProjectId !== projectKey) {
-        navigate(`/projects/${nextProjectId}`, { replace: true })
-        return
-      }
-
-      await fetchProject()
-      await refreshPreview()
-    } catch (err) {
-      updateSessionMessage(assistantMessageId, message => ({ ...message, pending: false }))
-      setPageError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setChatLoading(false)
-    }
+    await sendMessage({ text })
   }
 
   const exportPpt = () => {
@@ -692,7 +649,7 @@ export default function Project() {
                           </div>
                           <div className="flex gap-2">
                             {selectedFile.kind === 'text' && <Button size="sm" variant="outline" onClick={() => saveCurrentTextFile().catch(err => setPageError(err instanceof Error ? err.message : String(err)))} disabled={!editorDirty}><Save className="h-4 w-4" />保存</Button>}
-                            {selectedFile.name !== 'index.js' && <Button size="sm" variant="ghost" onClick={deleteSelectedFile}><Trash2 className="h-4 w-4" />删除</Button>}
+                            {selectedFile.name !== 'index.js' && <Button size="sm" variant="destructive" onClick={deleteSelectedFile}><Trash2 className="h-4 w-4" />删除</Button>}
                           </div>
                         </div>
                         <div className="min-h-0 flex-1">
@@ -739,10 +696,22 @@ export default function Project() {
                   <Select className="min-w-44 flex-1 sm:max-w-52" value={selectedModelId?.toString() || ''} onChange={event => setSelectedModelId(Number(event.target.value))}>
                     {models.map(model => <option key={model.id} value={model.id}>{model.display_name || model.model_name}</option>)}
                   </Select>
-                  <Button size="sm" variant={showHistory ? 'outline' : 'default'} onClick={() => { setShowHistory(false); setSessionMessages([]); setPageError(null) }} disabled={chatLoading}>
+                  <Button size="sm" onClick={() => {
+                    setChatSessionId(buildMessageId())
+                    setChatSeedMessages([])
+                    setChatMessages([])
+                    setChatInput('')
+                    setPageError(null)
+                  }} disabled={chatLoading}>
                     <Plus className="h-4 w-4" />新对话
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setShowHistory(current => !current)}>
+                  <Button size="sm" variant="outline" onClick={() => {
+                    setHistoryDialogOpen(true)
+                    setHistoryLoading(true)
+                    fetchConversationSummaries()
+                      .catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+                      .finally(() => setHistoryLoading(false))
+                  }}>
                     <History className="h-4 w-4" />历史记录
                   </Button>
                 </div>
@@ -751,7 +720,7 @@ export default function Project() {
                 <div className="space-y-4">
                   {displayedMessages.length ? displayedMessages.map(message => (
                     <ChatMessage key={message.id} message={message} toolLabels={TOOL_LABELS} />
-                  )) : <div className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/60 p-5 text-sm text-gray-400">{showHistory ? '还没有保存过历史记录。你可以先开始一轮新对话。' : '先告诉助手你想做什么样的演示稿，或让它继续完善当前内容。'}</div>}
+                  )) : <div className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/60 p-5 text-sm text-gray-400">先告诉助手你想做什么样的演示稿，或让它继续完善当前内容。</div>}
                   <div ref={chatBottomRef} />
                 </div>
               </div>
@@ -776,6 +745,18 @@ export default function Project() {
           </aside>
         </div>
       </div>
+      <ProjectHistoryDialog
+        open={historyDialogOpen}
+        loading={historyLoading}
+        conversations={conversationSummaries}
+        onOpenChange={setHistoryDialogOpen}
+        onSelect={conversationId => {
+          setHistoryLoading(true)
+          loadConversation(conversationId)
+            .catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+            .finally(() => setHistoryLoading(false))
+        }}
+      />
     </div>
   )
 }

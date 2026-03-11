@@ -66,6 +66,28 @@ export interface ProjectChatMessage {
   parts?: ChatMessagePart[]
 }
 
+export interface ProjectChatMessageMetadata {
+  projectId?: string
+}
+
+export interface ProjectConversationSummary {
+  id: string
+  title: string
+  preview: string
+  messageCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProjectConversationDetail {
+  id: string
+  projectId: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  messages: unknown[]
+}
+
 export interface ProjectSummary {
   id: string
   name: string

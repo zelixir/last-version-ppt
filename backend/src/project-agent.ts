@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'fs';
 import path from 'path';
-import { streamText, tool } from 'ai';
+import { convertToModelMessages, streamText, tool, type UIMessage } from 'ai';
 import { z } from 'zod';
 import { createModelClient } from './dashscope-model.ts';
 import { appendProjectChat, createProjectRecord, getAiModelById, getProjectById, getProviderByName, ProjectChatEntry, ProjectChatMessagePart, ProjectChatToolEvent, renameProjectRecord, setSetting } from './db.ts';
@@ -36,6 +36,31 @@ function summarizeToolEvent(toolName: string, details: string, success = true): 
 export type ProjectAgentStreamEvent =
   | { type: 'text-delta'; text: string }
   | { type: 'tool'; toolName: string; summary: string; state: 'running' | 'done'; success?: boolean };
+
+export type ProjectChatUiMessage = UIMessage<{ projectId?: string }>;
+
+const TOOL_CAPABILITY_GROUPS = [
+  {
+    title: '项目整理',
+    tools: ['create-project', 'clone-project', 'switch-project', 'create-version', 'rename-project', 'get-current-project'],
+    summary: '新建、复制、切换、保存版本、改名，以及查看当前项目情况。',
+  },
+  {
+    title: '文件处理',
+    tools: ['list-file', 'read-file', 'read-range', 'create-file', 'rename-file', 'delete-file', 'grep', 'apply-patch'],
+    summary: '查看文件、按需读取内容、批量修改、写入新内容、重命名或删除资源。',
+  },
+  {
+    title: '检查效果',
+    tools: ['run-project', 'read-ppt-page'],
+    summary: '运行并检查演示稿是否能正常生成，也能查看某一页的预览效果。',
+  },
+  {
+    title: '看图辅助',
+    tools: ['read-image-file'],
+    summary: '查看你上传的图片，帮助判断配图是否合适。',
+  },
+] as const;
 
 function ensureProject(projectId: string) {
   const project = getProjectById(projectId);
@@ -128,6 +153,38 @@ function summarizeToolIntent(toolName: string, input: Record<string, unknown>): 
     default:
       return '正在处理';
   }
+}
+
+export function buildToolCapabilitySummary(enabledToolNames: string[]): string {
+  const enabledToolNameSet = new Set(enabledToolNames);
+  return TOOL_CAPABILITY_GROUPS
+    .map(group => {
+      const availableTools = group.tools.filter(toolName => enabledToolNameSet.has(toolName));
+      if (!availableTools.length) return null;
+      return `- ${group.title}：${group.summary}`;
+    })
+    .filter((item): item is string => Boolean(item))
+    .join('\n');
+}
+
+export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimodal: boolean, enabledToolNames: string[]): string {
+  return [
+    '你是“最后一版PPT”的内置 PPT 生成助手。你的目标是根据用户需求创建或编辑当前项目中的 PPT 脚本和资源文件。',
+    '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
+    '必须尽量完整实现用户要的 PPT 内容，不能只给最小骨架或占位内容。',
+    '在你认为已经完成时，必须先调用 run-project 检查脚本是否能运行；如果失败，要继续修复直到成功或明确说明阻塞原因。',
+    '如果用户问你“你能做什么”或“怎么用”，请按下面的能力清单，用自然中文做简短介绍，不要展开成长文：',
+    buildToolCapabilitySummary(enabledToolNames),
+    '读取文本文件时，优先使用 read-file；如果文件较大或只需要局部内容，要改用 read-range 工具按行查看。',
+    '最终回复面向不懂技术的普通用户，尽量使用自然中文，避免技术术语和英文缩写。',
+    supportsMultimodal
+      ? '当前模型支持看图：必要时可以读取上传的图片，也可以查看当前 PPT 某一页的预览图来判断版式是否合适。'
+      : '当前模型暂时不支持看图，请主要依靠文本文件和运行结果来完成任务。',
+    PPTXGENJS_GUIDE,
+    `当前项目：${projectId}`,
+    `当前资源：${listProjectFiles(projectId).map(file => file.name).join(', ') || '（空）'}`,
+    '所有工具渲染都需要简短明确，不输出 JSON 给最终用户。',
+  ].join('\n\n');
 }
 
 function createToolEventEmitter(
@@ -457,39 +514,23 @@ export async function chatWithProjectAgent(
   const toolEvents: ProjectChatToolEvent[] = [];
   const assistantParts: ProjectChatMessagePart[] = [];
   let activeProjectId = projectId;
+  const tools = buildProjectTools({
+    getProjectId: () => activeProjectId,
+    setProjectId: nextProjectId => {
+      activeProjectId = nextProjectId;
+      setSetting('currentProjectId', nextProjectId);
+    },
+    toolEvents,
+    messageParts: assistantParts,
+    supportsMultimodal: model.capabilities.multimodal === true,
+    onEvent: options?.onEvent,
+  });
 
   const result = streamText({
     model: createModelClient(model.model_name, model.provider),
-    system: [
-      '你是“最后一版PPT”的内置 PPT 生成助手。你的目标是根据用户需求创建或编辑当前项目中的 PPT 脚本和资源文件。',
-      '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
-      '必须尽量完整实现用户要的 PPT 内容，不能只给最小骨架或占位内容。',
-      '在你认为已经完成时，必须先调用 run-project 检查脚本是否能运行；如果失败，要继续修复直到成功或明确说明阻塞原因。',
-      '如果用户问你「你能做什么」或「怎么用」，请用自然中文简要说明你的能力。',
-      '你可以帮用户生成整份演示稿、修改现有内容、检查是否能正常生成、查看项目文件。',
-      '如果当前模型支持看图，也可以查看上传的图片和某一页的预览图。',
-      '读取文本文件时，优先使用 read-file；如果文件较大或只需要局部内容，要改用 read-range 工具按行查看。',
-      '最终回复面向不懂技术的普通用户，尽量使用自然中文，避免技术术语和英文缩写。',
-      model.capabilities.multimodal
-        ? '当前模型支持看图：必要时可以读取上传的图片，也可以查看当前 PPT 某一页的预览图来判断版式是否合适。'
-        : '当前模型暂时不支持看图，请主要依靠文本文件和运行结果来完成任务。',
-      PPTXGENJS_GUIDE,
-      `当前项目：${project.id}`,
-      `当前资源：${listProjectFiles(projectId).map(file => file.name).join(', ') || '（空）'}`,
-      '所有工具渲染都需要简短明确，不输出 JSON 给最终用户。',
-    ].join('\n\n'),
+    system: buildProjectAgentSystemPrompt(project.id, model.capabilities.multimodal === true, Object.keys(tools)),
     messages: history.concat({ role: 'user', content, createdAt: new Date().toISOString() }).map(item => ({ role: item.role, content: item.content })),
-    tools: buildProjectTools({
-      getProjectId: () => activeProjectId,
-      setProjectId: nextProjectId => {
-        activeProjectId = nextProjectId;
-        setSetting('currentProjectId', nextProjectId);
-      },
-      toolEvents,
-      messageParts: assistantParts,
-      supportsMultimodal: model.capabilities.multimodal === true,
-      onEvent: options?.onEvent,
-    }),
+    tools,
   });
 
   let assistantText = '';
@@ -514,4 +555,52 @@ export async function chatWithProjectAgent(
   const updated = appendProjectChat(activeProjectId, newHistory);
   if (!updated) throw new Error('保存对话失败');
   return { history: updated.chatHistory, toolEvents, activeProjectId };
+}
+
+export async function createProjectChatResponse(
+  projectId: string,
+  messages: ProjectChatUiMessage[],
+  modelId: number,
+  options?: {
+    onFinish?: (payload: { messages: ProjectChatUiMessage[]; activeProjectId: string }) => Promise<void> | void;
+  },
+): Promise<Response> {
+  const project = ensureProject(projectId);
+  const model = getAiModelById(modelId);
+  if (!model || model.enabled !== 'Y') {
+    throw new Error('所选模型不存在或未启用');
+  }
+  const provider = getProviderByName(model.provider);
+  if (!provider || !provider.api_key || exampleApiKeys.has(provider.api_key)) {
+    throw new Error(summarizeModelConfigurationError());
+  }
+
+  const toolEvents: ProjectChatToolEvent[] = [];
+  const assistantParts: ProjectChatMessagePart[] = [];
+  let activeProjectId = projectId;
+  const tools = buildProjectTools({
+    getProjectId: () => activeProjectId,
+    setProjectId: nextProjectId => {
+      activeProjectId = nextProjectId;
+      setSetting('currentProjectId', nextProjectId);
+    },
+    toolEvents,
+    messageParts: assistantParts,
+    supportsMultimodal: model.capabilities.multimodal === true,
+  });
+
+  const result = streamText({
+    model: createModelClient(model.model_name, model.provider),
+    system: buildProjectAgentSystemPrompt(project.id, model.capabilities.multimodal === true, Object.keys(tools)),
+    messages: await convertToModelMessages(messages, { tools }),
+    tools,
+  });
+
+  return result.toUIMessageStreamResponse<ProjectChatUiMessage>({
+    originalMessages: messages,
+    messageMetadata: ({ part }) => part.type === 'finish' ? { projectId: activeProjectId } : undefined,
+    onFinish: async ({ messages: nextMessages }) => {
+      await options?.onFinish?.({ messages: nextMessages, activeProjectId });
+    },
+  });
 }

@@ -1,4 +1,6 @@
+import type { UIMessage } from 'ai';
 import { Database } from 'bun:sqlite';
+import { randomUUID } from 'crypto';
 import { databasePath, ensureStorageLayout } from './storage.ts';
 
 ensureStorageLayout();
@@ -37,6 +39,15 @@ function runMigrations(): void {
       root_project_id TEXT NOT NULL,
       source_prompt TEXT NOT NULL DEFAULT '',
       chat_history TEXT NOT NULL DEFAULT '[]',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS project_conversations (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      messages TEXT NOT NULL DEFAULT '[]',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -231,6 +242,8 @@ export interface ProjectChatEntry {
   parts?: ProjectChatMessagePart[];
 }
 
+export type ProjectConversationMessage = UIMessage<{ projectId?: string }>;
+
 export interface ProjectRecord {
   id: string;
   name: string;
@@ -251,6 +264,24 @@ export interface ProjectRow {
   updatedAt: string;
 }
 
+export interface ProjectConversationRecord {
+  id: string;
+  project_id: string;
+  title: string;
+  messages: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectConversationRow {
+  id: string;
+  projectId: string;
+  title: string;
+  messages: ProjectConversationMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 function parseProject(row: ProjectRecord): ProjectRow {
   let chatHistory: ProjectChatEntry[] = [];
   try {
@@ -266,6 +297,25 @@ function parseProject(row: ProjectRecord): ProjectRow {
     rootProjectId: row.root_project_id || row.id,
     sourcePrompt: row.source_prompt || '',
     chatHistory,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function parseProjectConversation(row: ProjectConversationRecord): ProjectConversationRow {
+  let messages: ProjectConversationMessage[] = [];
+  try {
+    messages = JSON.parse(row.messages || '[]');
+    if (!Array.isArray(messages)) messages = [];
+  } catch {
+    messages = [];
+  }
+
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    title: row.title || '',
+    messages,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -317,6 +367,84 @@ export function appendProjectChat(id: string, entries: ProjectChatEntry[]): Proj
   return updateProjectRecord(id, { chatHistory: [...current.chatHistory, ...entries], touch: true });
 }
 
+export function listProjectConversations(projectId: string): ProjectConversationRow[] {
+  return (db.prepare(`
+    SELECT *
+    FROM project_conversations
+    WHERE project_id = ?
+    ORDER BY updated_at DESC, created_at DESC
+  `).all(projectId) as ProjectConversationRecord[]).map(parseProjectConversation);
+}
+
+export function getProjectConversation(projectId: string, conversationId: string): ProjectConversationRow | null {
+  const row = db.prepare(`
+    SELECT *
+    FROM project_conversations
+    WHERE project_id = ? AND id = ?
+  `).get(projectId, conversationId) as ProjectConversationRecord | undefined;
+  return row ? parseProjectConversation(row) : null;
+}
+
+export function upsertProjectConversation(data: {
+  id?: string;
+  projectId: string;
+  title?: string;
+  messages: ProjectConversationMessage[];
+}): ProjectConversationRow {
+  const conversationId = data.id?.trim() || randomUUID();
+  const existing = getProjectConversation(data.projectId, conversationId);
+  const title = data.title?.trim() || existing?.title || '';
+  if (existing) {
+    db.prepare(`
+      UPDATE project_conversations
+      SET title = ?,
+          messages = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE project_id = ? AND id = ?
+    `).run(
+      title,
+      JSON.stringify(data.messages),
+      data.projectId,
+      conversationId,
+    );
+  } else {
+    db.prepare(`
+      INSERT INTO project_conversations (id, project_id, title, messages)
+      VALUES (?, ?, ?, ?)
+    `).run(
+      conversationId,
+      data.projectId,
+      title,
+      JSON.stringify(data.messages),
+    );
+  }
+  return getProjectConversation(data.projectId, conversationId)!;
+}
+
+export function renameProjectConversations(projectId: string, nextProjectId: string): void {
+  db.prepare(`
+    UPDATE project_conversations
+    SET project_id = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE project_id = ?
+  `).run(nextProjectId, projectId);
+}
+
+export function copyProjectConversations(projectId: string, nextProjectId: string): void {
+  for (const conversation of listProjectConversations(projectId)) {
+    upsertProjectConversation({
+      id: `${nextProjectId}-${randomUUID()}`,
+      projectId: nextProjectId,
+      title: conversation.title,
+      messages: conversation.messages,
+    });
+  }
+}
+
+export function deleteProjectConversations(projectId: string): void {
+  db.prepare('DELETE FROM project_conversations WHERE project_id = ?').run(projectId);
+}
+
 export function renameProjectRecord(id: string, nextId: string, nextName?: string): ProjectRow | null {
   const current = getProjectById(id);
   if (!current) return null;
@@ -349,6 +477,8 @@ export function renameProjectRecord(id: string, nextId: string, nextName?: strin
     if (activeProjectId === id) {
       setSetting('currentProjectId', nextId);
     }
+
+    renameProjectConversations(id, nextId);
   })();
 
   return getProjectById(nextId);
@@ -356,6 +486,7 @@ export function renameProjectRecord(id: string, nextId: string, nextName?: strin
 
 export function deleteProjectRecord(id: string): void {
   db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  deleteProjectConversations(id);
 }
 
 export function setSetting(key: string, value: string): void {
