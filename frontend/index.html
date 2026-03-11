@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>last-version-ppt</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: #f8fafc;
+        color: #0f172a;
+      }
+
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 40px 20px 60px;
+      }
+
+      .card {
+        background: #fff;
+        border-radius: 20px;
+        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+        padding: 24px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+      }
+
+      p {
+        color: #475569;
+        line-height: 1.6;
+      }
+
+      form {
+        display: grid;
+        gap: 16px;
+      }
+
+      label {
+        display: grid;
+        gap: 8px;
+        font-weight: 600;
+      }
+
+      input,
+      textarea,
+      button {
+        font: inherit;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        padding: 12px 14px;
+        background: #fff;
+      }
+
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      button {
+        border: 0;
+        border-radius: 999px;
+        background: #2563eb;
+        color: white;
+        padding: 12px 20px;
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      @media (min-width: 720px) {
+        .grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      .result,
+      .hint,
+      .error {
+        margin-top: 20px;
+        border-radius: 14px;
+        padding: 16px;
+      }
+
+      .hint {
+        background: #e0f2fe;
+        color: #0c4a6e;
+      }
+
+      .result {
+        background: #dcfce7;
+        color: #166534;
+      }
+
+      .error {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      code {
+        background: rgba(15, 23, 42, 0.06);
+        padding: 2px 6px;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="card">
+        <h1>last-version-ppt</h1>
+        <p>
+          基于 PptxGenJS 的本地 AI PPT 生成器。面向 Win10 及以上环境，建议使用最新版 Chrome。
+          项目会保存到 <code>%appdata%/last-version-ppt</code>，目录名以 <code>yyyyMMdd_</code> 开头。
+        </p>
+
+        <div class="hint" id="storageRoot">正在读取本地配置…</div>
+
+        <form id="generatorForm">
+          <div class="grid">
+            <label>
+              OpenAI 兼容 Base URL
+              <input id="baseUrl" name="baseUrl" placeholder="https://api.openai.com" autocomplete="url" required />
+            </label>
+            <label>
+              模型
+              <input id="model" name="model" placeholder="gpt-4o-mini" autocomplete="organization-title" required />
+            </label>
+          </div>
+
+          <label>
+            API Key
+            <input id="apiKey" name="apiKey" type="password" placeholder="sk-..." autocomplete="current-password" required />
+          </label>
+
+          <label>
+            PPT 主题
+            <input id="topic" name="topic" placeholder="例如：2026 产品规划汇报" autocomplete="off" required />
+          </label>
+
+          <label>
+            补充要求
+            <textarea
+              id="instructions"
+              name="instructions"
+              placeholder="例如：面向管理层、控制在 8 页以内、突出商业价值。"
+            ></textarea>
+          </label>
+
+          <button id="submitButton" type="submit">生成 PPT</button>
+        </form>
+
+        <div id="message"></div>
+      </div>
+    </main>
+
+    <script>
+      const form = document.getElementById('generatorForm');
+      const message = document.getElementById('message');
+      const submitButton = document.getElementById('submitButton');
+      const storageRoot = document.getElementById('storageRoot');
+
+      function renderMessage(type, html) {
+        message.className = type;
+        message.innerHTML = html;
+      }
+
+      async function loadSettings() {
+        const response = await fetch('/api/settings');
+        const payload = await response.json();
+        document.getElementById('baseUrl').value = payload.provider.baseUrl || '';
+        document.getElementById('model').value = payload.provider.model || '';
+        storageRoot.textContent = `项目和配置将保存到：${payload.storageRoot}`;
+      }
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        submitButton.disabled = true;
+        renderMessage('hint', '正在调用 AI 生成大纲并导出 PPT，请稍候…');
+
+        const payload = {
+          provider: {
+            baseUrl: document.getElementById('baseUrl').value,
+            apiKey: document.getElementById('apiKey').value,
+            model: document.getElementById('model').value,
+          },
+          topic: document.getElementById('topic').value,
+          instructions: document.getElementById('instructions').value,
+        };
+
+        try {
+          const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            throw new Error(result.error || '生成失败');
+          }
+
+          renderMessage(
+            'result',
+            `生成成功：<strong>${result.title}</strong><br />
+             目录：<code>${result.projectDir}</code><br />
+             <a href="${result.downloadUrl}">下载 PPT 文件</a>`
+          );
+        } catch (error) {
+          renderMessage('error', error.message || '生成失败');
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+
+      loadSettings().catch((error) => {
+        storageRoot.textContent = `读取配置失败：${error.message || error}`;
+      });
+    </script>
+  </body>
+</html>
