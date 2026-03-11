@@ -1,4 +1,5 @@
 import { readFileSync } from 'fs';
+import { createContext, Script } from 'node:vm';
 import path from 'path';
 import PptxGenJS from 'pptxgenjs';
 import { getProjectDir, resolveProjectFile } from './storage.ts';
@@ -34,8 +35,16 @@ export async function runProject({ projectId }: RunProjectOptions): Promise<RunP
   };
 
   try {
-    const wrapper = new Function('module', 'exports', 'require', code);
-    wrapper(module, module.exports, requireProject);
+    const sandbox = createContext({
+      module,
+      exports: module.exports,
+      require: requireProject,
+      console: {
+        log: (...args: unknown[]) => logs.push(args.map(arg => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ')),
+      },
+    });
+    const script = new Script(code, { filename: `${projectId}/index.js` });
+    script.runInContext(sandbox, { timeout: 1000 });
     const buildPresentation = extractBuildFunction(module.exports);
     if (!buildPresentation) {
       throw new Error('index.js 必须导出一个函数，例如 module.exports = async function ({ pptx }) { ... }');

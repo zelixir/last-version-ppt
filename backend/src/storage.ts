@@ -54,7 +54,7 @@ export function ensureStorageLayout(): void {
   mkdirSync(projectsRoot, { recursive: true });
 }
 
-export function formatToday(date = new Date()): string {
+export function formatDateYYYYMMDD(date = new Date()): string {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, '0');
   const day = `${date.getDate()}`.padStart(2, '0');
@@ -73,7 +73,7 @@ export function sanitizeProjectName(input: string): string {
 }
 
 export function buildProjectId(name: string, date = new Date()): string {
-  return `${formatToday(date)}_${sanitizeProjectName(name)}`;
+  return `${formatDateYYYYMMDD(date)}_${sanitizeProjectName(name)}`;
 }
 
 export function stripVersionSuffix(projectId: string): string {
@@ -125,6 +125,10 @@ export function nextVersionProjectId(projectId: string): string {
 
 export function resolveProjectFile(projectId: string, fileName: string): string {
   const safeName = fileName.replace(/\\/g, '/').replace(/^\/+/, '');
+  const segments = safeName.split('/');
+  if (!safeName || segments.some(segment => !segment || segment === '.' || segment === '..')) {
+    throw new Error('非法文件路径');
+  }
   const fullPath = path.resolve(getProjectDir(projectId), safeName);
   const projectDir = path.resolve(getProjectDir(projectId));
   if (!fullPath.startsWith(projectDir + path.sep) && fullPath !== projectDir) {

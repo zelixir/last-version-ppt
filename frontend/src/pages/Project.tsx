@@ -65,7 +65,9 @@ function SlideCanvas({ slide, presentation, compact = false }: { slide: PreviewS
 }
 
 export default function Project() {
-  const { projectId = '' } = useParams()
+  const params = useParams()
+  const projectId = params.projectId
+  const projectKey = projectId ?? ''
   const navigate = useNavigate()
   const location = useLocation()
   const autoPromptRef = useRef<string | null>((location.state as { autoPrompt?: string } | null)?.autoPrompt ?? null)
@@ -97,12 +99,12 @@ export default function Project() {
   const selectedFile = useMemo(() => visibleFiles.find(file => file.name === selectedFileName) ?? null, [visibleFiles, selectedFileName])
 
   const fetchProject = async () => {
-    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`)
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}`)
     if (!response.ok) throw new Error('加载项目失败')
     const data = await response.json() as ProjectSummary
     setProject(data)
     setSelectedFileName(current => current && data.files.some(file => file.name === current) ? current : data.files.find(file => file.name !== 'index.js')?.name ?? data.files[0]?.name ?? null)
-    await fetch(`/api/projects/${encodeURIComponent(projectId)}/current`, { method: 'POST' })
+    await fetch(`/api/projects/${encodeURIComponent(projectKey)}/current`, { method: 'POST' })
   }
 
   const fetchModels = async () => {
@@ -117,10 +119,10 @@ export default function Project() {
     try {
       setPreviewLoading(true)
       setPreviewError(null)
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files/content?fileName=${encodeURIComponent('index.js')}`)
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/content?fileName=${encodeURIComponent('index.js')}`)
       if (!response.ok) throw new Error('加载 index.js 失败')
       const data = await response.json() as { content: string }
-      const rendered = await runProjectPreview(projectId, data.content)
+      const rendered = await runProjectPreview(projectKey, data.content)
       setPreview(rendered)
       setSelectedSlideIndex(0)
       setActiveTab('preview')
@@ -136,7 +138,7 @@ export default function Project() {
     if (file.kind !== 'text') return
     setEditorLoading(true)
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files/content?fileName=${encodeURIComponent(file.name)}`)
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/content?fileName=${encodeURIComponent(file.name)}`)
       if (!response.ok) throw new Error('读取文件失败')
       const data = await response.json() as { content: string }
       setEditorValue(data.content)
@@ -159,16 +161,17 @@ export default function Project() {
 
   useEffect(() => {
     if (selectedFile?.kind === 'text') loadTextFile(selectedFile)
-  }, [selectedFile?.name])
+  }, [selectedFile])
 
   useEffect(() => {
     if (!autoPromptRef.current || !selectedModelId || chatLoading) return
     const prompt = autoPromptRef.current
     autoPromptRef.current = null
-    setTimeout(() => {
+    const timeoutId = window.setTimeout(() => {
       sendChat(prompt, selectedModelId)
     }, 200)
-  }, [selectedModelId, projectId])
+    return () => window.clearTimeout(timeoutId)
+  }, [selectedModelId, projectId, chatLoading])
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -187,7 +190,7 @@ export default function Project() {
 
   const saveCurrentTextFile = async () => {
     if (!selectedFile || selectedFile.kind !== 'text') return
-    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files/content`, {
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/content`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fileName: selectedFile.name, content: editorValue }),
@@ -205,7 +208,7 @@ export default function Project() {
     if (!selectedFile || selectedFile.name === 'index.js') return
     const confirmed = window.confirm(`确定删除文件 ${selectedFile.name} 吗？`)
     if (!confirmed) return
-    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files?fileName=${encodeURIComponent(selectedFile.name)}`, { method: 'DELETE' })
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files?fileName=${encodeURIComponent(selectedFile.name)}`, { method: 'DELETE' })
     if (!response.ok) {
       const data = await response.json().catch(() => null)
       setPageError(data?.error || '删除文件失败')
@@ -217,7 +220,7 @@ export default function Project() {
   const uploadFiles = async (files: FileList | File[]) => {
     const formData = new FormData()
     Array.from(files).forEach(file => formData.append('files', file))
-    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files/upload`, { method: 'POST', body: formData })
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/upload`, { method: 'POST', body: formData })
     if (!response.ok) throw new Error('上传文件失败')
     await fetchProject()
     await refreshPreview()
@@ -230,7 +233,7 @@ export default function Project() {
     setChatLoading(true)
     setPageError(null)
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/chat`, {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: text, modelId }),
@@ -248,10 +251,18 @@ export default function Project() {
   }
 
   const exportPpt = () => {
-    window.open(`/api/projects/${encodeURIComponent(projectId)}/export`, '_blank')
+    window.open(`/api/projects/${encodeURIComponent(projectKey)}/export`, '_blank')
   }
 
   const currentSlide = preview?.slides[selectedSlideIndex] ?? preview?.slides[0] ?? null
+
+  if (!projectId) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-950 text-sm text-gray-400">
+        项目不存在。
+      </div>
+    )
+  }
 
   return (
     <div className="h-screen overflow-hidden bg-gray-950">

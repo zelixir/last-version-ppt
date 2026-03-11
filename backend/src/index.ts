@@ -214,6 +214,20 @@ function openSystemPath(targetPath: string): void {
   }
 }
 
+function openBrowserUrl(url: string): void {
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
+    } else if (process.platform === 'darwin') {
+      spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref();
+    }
+  } catch (error) {
+    console.warn('Failed to open browser URL:', error);
+  }
+}
+
 function configStatus() {
   const providers = getProviders();
   const enabledModels = getAiModels(true);
@@ -229,11 +243,10 @@ function configStatus() {
   };
 }
 
+syncProjectsWithFilesystem();
+
 const app = new Elysia({ adapter: node() })
   .use(cors())
-  .onBeforeHandle(() => {
-    syncProjectsWithFilesystem();
-  })
   .get('/api/health', () => ({ ok: true, storageRoot, projectsRoot }))
   .get('/api/config-status', () => configStatus())
   .get('/api/providers', () => getProviders())
@@ -266,6 +279,7 @@ const app = new Elysia({ adapter: node() })
     return { success: true };
   })
   .get('/api/projects', () => {
+    syncProjectsWithFilesystem();
     const projects = listProjects().map(project => buildProjectResponse(project.id));
     return { currentProjectId: getCurrentProjectId(), projects: projects.filter(Boolean) };
   })
@@ -488,5 +502,5 @@ console.log('Backend running on http://localhost:3101');
 console.log(`Storage root: ${storageRoot}`);
 
 if (process.env.NO_OPEN_BROWSER !== '1') {
-  openSystemPath('http://localhost:3101');
+  openBrowserUrl('http://localhost:3101');
 }
