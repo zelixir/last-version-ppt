@@ -257,6 +257,9 @@ export function parseApplyPatch(patch: string): ApplyPatchOp[] | null {
 
     const lastOp = ops[ops.length - 1];
     if (lastOp?.type === 'create') {
+      if (!line.startsWith(HUNK_ADD_LINE_PREFIX)) {
+        return null;
+      }
       lastOp.content = appendLine(lastOp.content, line.slice(HUNK_ADD_LINE_PREFIX.length));
       continue;
     }
@@ -336,7 +339,7 @@ class Parser {
   }
 
   private readString(prefix = '', returnEverything = false): string {
-    if (this.index >= this.lines.length) throw new DiffError(`Index: ${this.index} >= ${this.lines.length}`);
+    if (this.index >= this.lines.length) throw new InvalidPatchFormatError('Unexpected end of patch', 'unexpectedEndOfPatch');
     const current = this.lines[this.index] ?? '';
     if (!current.startsWith(prefix)) return '';
     this.index += 1;
@@ -508,16 +511,17 @@ function replaceExplicitNl(value: string): string {
 
 function levenshteinDistance(a = '', b = ''): number {
   if (a === b) return 0;
-  const rows = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
-  for (let i = 0; i <= a.length; i += 1) rows[i][0] = i;
-  for (let j = 0; j <= b.length; j += 1) rows[0][j] = j;
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
   for (let i = 1; i <= a.length; i += 1) {
+    const current = new Array<number>(b.length + 1);
+    current[0] = i;
     for (let j = 1; j <= b.length; j += 1) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      rows[i][j] = Math.min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + cost);
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
     }
+    previous = current;
   }
-  return rows[a.length][b.length];
+  return previous[b.length];
 }
 
 function findDefinitionIndex(lines: string[], defLine: string, start: number): number | undefined {

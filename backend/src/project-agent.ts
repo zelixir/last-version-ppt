@@ -269,9 +269,12 @@ export async function chatWithProjectAgent(projectId: string, content: string, m
             return { changed: summary.changedFiles, created: summary.createdFiles, deleted: summary.deletedFiles, moved: summary.movedFiles, fuzz: summary.fuzz };
           }
 
-          const targetPath = resolveProjectFile(projectId, fileName!);
+          if (!fileName || typeof search !== 'string' || typeof replace !== 'string') {
+            throw new Error('apply-patch 缺少必要的 legacy 参数');
+          }
+          const targetPath = resolveProjectFile(projectId, fileName);
           const original = readFileSync(targetPath, 'utf8');
-          const updated = applyLegacySearchReplace(original, search!, replace!, replaceAll);
+          const updated = applyLegacySearchReplace(original, search, replace, replaceAll);
           writeFileSync(targetPath, updated, 'utf8');
           toolEvents.push(summarizeToolEvent('apply-patch', `修改 ${fileName}`));
           return { changed: [fileName], legacy: true };
