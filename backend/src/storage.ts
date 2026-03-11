@@ -6,7 +6,7 @@ export const APP_FOLDER_NAME = 'last-version-ppt';
 export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentation({ pptx, getResourceUrl, log }) {
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'last-version-ppt';
-  pptx.subject = 'AI 生成演示文稿';
+  pptx.subject = '自动生成演示文稿';
   pptx.title = '新的演示文稿';
 
   const slide = pptx.addSlide();
@@ -20,7 +20,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     bold: true,
     color: '0F172A'
   });
-  slide.addText('请在右侧告诉 AI 你想要的 PPT 内容。', {
+  slide.addText('请在右侧告诉智能助手，你想做什么样的演示稿。', {
     x: 0.8,
     y: 1.8,
     w: 11,
@@ -36,7 +36,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     fontSize: 14,
     color: '475569'
   });
-  log('模板已创建，等待 AI 或用户继续编辑 index.js');
+  log('模板已创建，等待继续完善这份 PPT');
 };
 `;
 

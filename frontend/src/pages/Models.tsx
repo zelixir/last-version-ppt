@@ -144,7 +144,7 @@ export default function Models() {
                   <Sparkles className="h-8 w-8 text-blue-400" />
                   <div>
                     <h1 className="text-2xl font-bold text-white">模型配置</h1>
-                    <p className="text-sm text-gray-400">配置 PPT agent 使用的服务商与模型。示例 Key 需要替换为真实可用值。</p>
+                    <p className="text-sm text-gray-400">在这里填写做演示稿要用到的模型服务。示例密钥需要替换成你自己的可用密钥。</p>
                   </div>
                 </div>
               </div>
@@ -165,16 +165,16 @@ export default function Models() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-white">服务商配置</h2>
-                  <p className="text-sm text-gray-400">维护 OpenAI 兼容接口地址和 API Key。</p>
+                   <p className="text-sm text-gray-400">填写模型服务地址和接口密钥。</p>
                 </div>
                 <Button size="sm" onClick={() => { setShowProviderForm(prev => !prev); setEditingProviderName(null); setProviderForm(emptyProviderForm) }}><Plus className="h-4 w-4" />新增服务商</Button>
               </div>
               {showProviderForm && (
                 <div className="grid gap-3 rounded-xl border border-gray-800 bg-gray-950/60 p-4 md:grid-cols-2">
-                  <Input placeholder="服务商标识，如 openai" value={providerForm.name} onChange={e => setProviderForm(prev => ({ ...prev, name: e.target.value }))} />
+                   <Input placeholder="服务标识，例如 openai" value={providerForm.name} onChange={e => setProviderForm(prev => ({ ...prev, name: e.target.value }))} />
                   <Input placeholder="显示名称" value={providerForm.label} onChange={e => setProviderForm(prev => ({ ...prev, label: e.target.value }))} />
-                  <Input className="md:col-span-2" placeholder="Base URL" value={providerForm.base_url} onChange={e => setProviderForm(prev => ({ ...prev, base_url: e.target.value }))} />
-                  <Input className="md:col-span-2" type="password" placeholder="API Key" value={providerForm.api_key} onChange={e => setProviderForm(prev => ({ ...prev, api_key: e.target.value }))} />
+                   <Input className="md:col-span-2" placeholder="服务地址（可直接粘贴服务商提供的地址）" value={providerForm.base_url} onChange={e => setProviderForm(prev => ({ ...prev, base_url: e.target.value }))} />
+                   <Input className="md:col-span-2" type="password" placeholder="接口密钥" value={providerForm.api_key} onChange={e => setProviderForm(prev => ({ ...prev, api_key: e.target.value }))} />
                   <div className="md:col-span-2 flex justify-end gap-2"><Button type="button" variant="ghost" onClick={resetProviderForm}>取消</Button><Button onClick={() => saveProvider().catch(err => setError(err instanceof Error ? err.message : String(err)))}>保存</Button></div>
                 </div>
               )}
@@ -216,7 +216,7 @@ export default function Models() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-white">模型管理</h2>
-                  <p className="text-sm text-gray-400">为项目页 AI 对话维护可用模型列表。</p>
+                   <p className="text-sm text-gray-400">选择项目页里可供智能助手使用的模型。</p>
                 </div>
                 <Button size="sm" onClick={() => { setShowModelForm(prev => !prev); setEditingModelId(null); setModelForm({ ...emptyModelForm, provider: providers[0]?.name || '' }) }} disabled={providers.length === 0}><Plus className="h-4 w-4" />新增模型</Button>
               </div>

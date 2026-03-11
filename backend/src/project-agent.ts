@@ -4,6 +4,7 @@ import { generateText, stepCountIs, tool } from 'ai';
 import { z } from 'zod';
 import { createModelClient } from './dashscope-model.ts';
 import { appendProjectChat, createProjectRecord, getAiModelById, getProjectById, getProviderByName, ProjectChatEntry, ProjectChatToolEvent, setSetting } from './db.ts';
+import { PPTXGENJS_GUIDE } from './pptxgenjs-guide.ts';
 import { exampleApiKeys, summarizeModelConfigurationError } from './project-support.ts';
 import { runProject } from './project-runner.ts';
 import { APPLY_PATCH_AGENT_INSTRUCTIONS, APPLY_PATCH_TOOL_DESCRIPTION, applyLegacySearchReplace, applyProjectPatch } from './apply-patch.ts';
@@ -16,20 +17,6 @@ import {
   resolveProjectFile,
   sanitizeProjectName,
 } from './storage.ts';
-
-const PPTXGENJS_GUIDE = [
-  'PptxGenJS 快速使用要点：',
-  '1. 使用 const pptx = context.pptx; 不要自己写文件，框架会负责预览与导出。',
-  '2. 添加页面：const slide = pptx.addSlide(); 常用 layout 为 LAYOUT_WIDE / LAYOUT_16X9。',
-  '3. 文本：slide.addText(text, { x, y, w, h, fontSize, color, bold, align, valign });',
-  '4. 图片：slide.addImage({ path: getResourceUrl("图片名.png"), x, y, w, h });',
-  '5. 形状：slide.addShape("rect", { x, y, w, h, fill: { color }, line: { color } });',
-  '6. 表格：slide.addTable(rows, { x, y, w, h, fontSize, color, border });',
-  '7. 可以设置 slide.background = { color: "F8FAFC" }；也可以设置 pptx.author/title/subject。',
-  '8. 如需日志，请调用 log("说明")。日志会在运行项目时展示。',
-  '9. index.js 必须导出函数：module.exports = async function ({ pptx, pptxgenjs, getResourceUrl, log }) { ... }',
-  '10. 不要使用 import / require 外部模块，不要直接 writeFile / write。',
-].join('\n');
 
 function summarizeToolEvent(toolName: string, details: string, success = true): ProjectChatToolEvent {
   return { toolName, summary: details, success };
@@ -104,8 +91,11 @@ export async function chatWithProjectAgent(projectId: string, content: string, m
   const result = await generateText({
     model: createModelClient(model.model_name, model.provider),
     system: [
-      '你是 last-version-ppt 的内置 PPT 生成代理。你的目标是根据用户需求创建或编辑当前项目中的 index.js 和资源文件。',
+      '你是 last-version-ppt 的内置 PPT 生成助手。你的目标是根据用户需求创建或编辑当前项目中的 PPT 脚本和资源文件。',
       '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
+      '必须尽量完整实现用户要的 PPT 内容，不能只给最小骨架或占位内容。',
+      '在你认为已经完成时，必须先调用 run-project 检查脚本是否能运行；如果失败，要继续修复直到成功或明确说明阻塞原因。',
+      '最终回复面向不懂技术的普通用户，尽量使用自然中文，避免技术术语和英文缩写。',
       PPTXGENJS_GUIDE,
       `当前项目：${project.id}`,
       `当前资源：${listProjectFiles(projectId).map(file => file.name).join(', ') || '（空）'}`,

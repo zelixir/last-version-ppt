@@ -9,6 +9,13 @@ import { Textarea } from '../components/ui/textarea'
 import { Message, MessageContent, MessageResponse } from '../components/ai-elements/message'
 import { runProjectPreview } from '../lib/project-preview'
 
+const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
+  text: '文本',
+  image: '图片',
+  media: '音视频',
+  binary: '其他文件',
+}
+
 function ToolSummary({ events }: { events: ProjectChatMessage['toolEvents'] }) {
   if (!events?.length) return null
   return (
@@ -120,7 +127,7 @@ export default function Project() {
       setPreviewLoading(true)
       setPreviewError(null)
       const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/content?fileName=${encodeURIComponent('index.js')}`)
-      if (!response.ok) throw new Error('加载 index.js 失败')
+      if (!response.ok) throw new Error('加载 PPT 脚本失败')
       const data = await response.json() as { content: string }
       const rendered = await runProjectPreview(projectKey, data.content)
       setPreview(rendered)
@@ -298,7 +305,7 @@ export default function Project() {
                   </div>
                 ) : (
                   <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-2 text-sm text-gray-300"><input type="checkbox" checked={showIndexSource} onChange={e => setShowIndexSource(e.target.checked)} />显示 AI 代码</label>
+                    <label className="flex items-center gap-2 text-sm text-gray-300"><input type="checkbox" checked={showIndexSource} onChange={e => setShowIndexSource(e.target.checked)} />显示 PPT 脚本</label>
                     <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><ImageUp className="h-4 w-4" />上传文件</Button>
                     <input ref={fileInputRef} className="hidden" type="file" multiple onChange={event => event.target.files && uploadFiles(event.target.files).catch(err => setPageError(err instanceof Error ? err.message : String(err)))} />
                   </div>
@@ -317,7 +324,7 @@ export default function Project() {
                     {!previewLoading && !previewError && preview?.slides.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-500">当前没有生成任何幻灯片。</div>}
                   </div>
                   <div className="min-h-0 overflow-y-auto rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
-                    {previewLoading && <div className="flex h-full items-center justify-center gap-2 text-sm text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />正在运行 index.js…</div>}
+                    {previewLoading && <div className="flex h-full items-center justify-center gap-2 text-sm text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />正在生成预览…</div>}
                     {!previewLoading && previewError && (
                       <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-red-900/40 bg-red-950/20 p-6 text-center">
                         <div className="text-3xl font-bold text-red-200">出错啦</div>
@@ -329,7 +336,7 @@ export default function Project() {
                         <SlideCanvas slide={currentSlide} presentation={preview} />
                         {preview.logs.length > 0 && (
                           <div className="rounded-xl border border-gray-800 bg-gray-950/70 p-4">
-                            <div className="mb-2 text-sm font-medium text-white">index.js 日志</div>
+                            <div className="mb-2 text-sm font-medium text-white">生成记录</div>
                             <div className="space-y-1 text-xs text-gray-400">{preview.logs.map((log, index) => <div key={index}>{log}</div>)}</div>
                           </div>
                         )}
@@ -343,10 +350,10 @@ export default function Project() {
                     {visibleFiles.map(file => (
                       <button key={file.name} onClick={() => setSelectedFileName(file.name)} className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${selectedFileName === file.name ? 'border-blue-500 bg-blue-500/10 text-white' : 'border-gray-800 bg-gray-950/70 text-gray-300 hover:border-gray-700'}`}>
                         <div className="truncate font-medium">{file.name}</div>
-                        <div className="mt-1 text-[11px] text-gray-500">{file.kind} · {Math.max(1, Math.round(file.size / 1024))} KB</div>
+                        <div className="mt-1 text-[11px] text-gray-500">{FILE_KIND_LABELS[file.kind]} · {Math.max(1, Math.round(file.size / 1024))} KB</div>
                       </button>
                     ))}
-                    {visibleFiles.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-500">暂无资源文件。可以上传图片/文本，也可以勾选显示 index.js。</div>}
+                    {visibleFiles.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-500">暂时还没有资源文件。你可以上传图片或文本，也可以勾选显示 PPT 脚本。</div>}
                   </div>
                   <div className="min-h-0 overflow-hidden rounded-2xl border border-gray-800 bg-gray-900/60">
                     {selectedFile ? (
@@ -354,7 +361,7 @@ export default function Project() {
                         <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
                           <div>
                             <div className="text-sm font-medium text-white">{selectedFile.name}</div>
-                            <div className="text-xs text-gray-500">按 Delete 可删除当前文件（index.js 除外）</div>
+                            <div className="text-xs text-gray-500">按删除键可删除当前文件（PPT 脚本除外）</div>
                           </div>
                           <div className="flex gap-2">
                             {selectedFile.kind === 'text' && <Button size="sm" variant="outline" onClick={() => saveCurrentTextFile().catch(err => setPageError(err instanceof Error ? err.message : String(err)))} disabled={!editorDirty}><Save className="h-4 w-4" />保存</Button>}
@@ -377,7 +384,7 @@ export default function Project() {
                           ) : selectedFile.kind === 'media' ? (
                             <div className="flex h-full items-center justify-center p-6">{selectedFile.name.endsWith('.mp4') ? <video controls className="max-h-full max-w-full rounded-xl" src={selectedFile.url} /> : <audio controls src={selectedFile.url} className="w-full max-w-lg" />}</div>
                           ) : (
-                            <div className="flex h-full items-center justify-center text-sm text-gray-500">该类型暂不支持内嵌预览，但可由 index.js 通过 getResourceUrl 使用。</div>
+                            <div className="flex h-full items-center justify-center px-6 text-center text-sm text-gray-500">这种文件暂时不能直接预览，但仍然可以在 PPT 脚本里使用。</div>
                           )}
                         </div>
                       </div>
@@ -395,8 +402,8 @@ export default function Project() {
               <div className="border-b border-gray-800 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-white">AI 对话</div>
-                    <div className="text-xs text-gray-500">让 AI 修改 index.js，或操作当前项目资源</div>
+                    <div className="text-sm font-semibold text-white">智能助手</div>
+                    <div className="text-xs text-gray-500">让助手继续完善这份 PPT，或整理当前项目里的素材</div>
                   </div>
                   <Select className="max-w-52" value={selectedModelId?.toString() || ''} onChange={event => setSelectedModelId(Number(event.target.value))}>
                     {models.map(model => <option key={model.id} value={model.id}>{model.display_name || model.model_name}</option>)}
@@ -411,8 +418,8 @@ export default function Project() {
                         {message.role === 'user' ? <div className="whitespace-pre-wrap text-sm">{message.content}</div> : <div><ToolSummary events={message.toolEvents} /><MessageResponse>{message.content}</MessageResponse></div>}
                       </MessageContent>
                     </Message>
-                  )) : <div className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/60 p-5 text-sm text-gray-400">先告诉 AI 你想要生成什么 PPT，或让它修改当前的 index.js。</div>}
-                  {chatLoading && <div className="flex items-center gap-2 text-sm text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />AI 正在思考…</div>}
+                  )) : <div className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/60 p-5 text-sm text-gray-400">先告诉助手你想做什么样的演示稿，或让它继续完善当前内容。</div>}
+                  {chatLoading && <div className="flex items-center gap-2 text-sm text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />助手正在整理内容…</div>}
                   <div ref={chatBottomRef} />
                 </div>
               </div>

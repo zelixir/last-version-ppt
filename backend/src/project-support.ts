@@ -7,5 +7,5 @@ export const exampleApiKeys = new Set(
 );
 
 export function summarizeModelConfigurationError(): string {
-  return '请先在模型配置页填写真实可用的 API Key，并启用至少一个支持工具调用的模型。';
+  return '请先在模型配置页填写真实可用的接口密钥，并启用至少一个可用模型。';
 }
