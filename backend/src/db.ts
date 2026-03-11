@@ -1,10 +1,10 @@
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import { databasePath, ensureStorageLayout } from './storage.ts';
 
 ensureStorageLayout();
 
 const db = new Database(databasePath);
-db.pragma('journal_mode = WAL');
+db.exec('PRAGMA journal_mode = WAL');
 
 function runMigrations(): void {
   db.exec(`
