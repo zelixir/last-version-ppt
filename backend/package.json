@@ -6,7 +6,8 @@
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
     "mcp-sqlite": "bun run src/mcp-sqlite.ts",
-    "seed-models": "bun run src/seed-models.ts"
+    "seed-models": "bun run src/seed-models.ts",
+    "test": "node --test src/*.test.ts"
   },
   "dependencies": {
     "@ai-sdk/provider": "^3.0.8",
