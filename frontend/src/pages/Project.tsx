@@ -41,6 +41,8 @@ const PROJECT_TAB_STORAGE_KEY_PREFIX = 'last-version-ppt:project-tab:'
 const PROMPT_HISTORY_STORAGE_KEY_PREFIX = 'last-version-ppt:prompt-history:'
 const MIN_CHAT_PANEL_WIDTH = 320
 const MAX_CHAT_PANEL_WIDTH = 760
+const PREVIEW_WHEEL_DELTA_THRESHOLD = 8
+const PREVIEW_WHEEL_THROTTLE_MS = 160
 
 function buildMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -94,7 +96,8 @@ function readStoredPromptHistory(projectKey: string): string[] {
 
 function buildProjectPageTitle(project: ProjectSummary | null, projectId?: string) {
   const baseName = project?.name?.trim()
-  const versionSuffix = (project?.id || projectId || '').match(/_v\d{2}$/i)?.[0]?.replace('_', ' ') ?? ''
+  const effectiveProjectId = project?.id ?? projectId ?? ''
+  const versionSuffix = effectiveProjectId.match(/_v\d{2}$/i)?.[0]?.replace('_', ' ') ?? ''
   if (!baseName) return '最后一版PPT'
   return `${baseName}${versionSuffix} - 最后一版PPT`
 }
@@ -548,9 +551,9 @@ export default function Project() {
   }
 
   const handlePreviewWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    if (!preview?.slides.length || Math.abs(event.deltaY) < 8) return
+    if (!preview?.slides.length || Math.abs(event.deltaY) < PREVIEW_WHEEL_DELTA_THRESHOLD) return
     const now = Date.now()
-    if (now - previewWheelAtRef.current < 160) {
+    if (now - previewWheelAtRef.current < PREVIEW_WHEEL_THROTTLE_MS) {
       event.preventDefault()
       return
     }
@@ -640,7 +643,7 @@ export default function Project() {
                         <div onWheel={handlePreviewWheel}>
                           <SlideCanvas slide={currentSlide} presentation={preview} />
                         </div>
-                        <div className="text-xs text-gray-500">把鼠标放在预览页上滚动滚轮，可以切换上一页或下一页。</div>
+                        <div className="text-xs text-gray-500">把鼠标放在预览页上，向上或向下滑动鼠标中间的小轮子，就能切换上一页或下一页。</div>
                         {preview.logs.length > 0 && (
                           <div className="rounded-xl border border-gray-800 bg-gray-950/70 p-4">
                             <div className="mb-2 text-sm font-medium text-white">生成记录</div>
@@ -767,7 +770,7 @@ export default function Project() {
                     <Send className="h-4 w-4" />发送
                   </Button>
                 </PromptInput>
-                <div className="mt-2 text-xs text-gray-500">按回车发送，按 Shift + 回车换行；按上下方向键可切换之前输入过的内容。</div>
+                <div className="mt-2 text-xs text-gray-500">直接按回车会发送；按住上档再按回车可以换行；按键盘上下键可找回之前输入过的内容。</div>
               </div>
             </div>
           </aside>
