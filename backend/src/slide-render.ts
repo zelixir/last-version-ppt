@@ -1,9 +1,11 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import path from 'path';
 import PptxGenJS from 'pptxgenjs';
+import { getImageMediaType } from './project-tool-helpers.ts';
 
 const EMU_PER_INCH = 914400;
 const PX_PER_INCH = 96;
+const MAX_EMBED_IMAGE_BYTES = 10 * 1024 * 1024;
 
 function toInches(value: unknown): number {
   if (typeof value !== 'number' || Number.isNaN(value)) return 0;
@@ -30,32 +32,15 @@ function normalizeColor(value: unknown, fallback = '#000000'): string {
   return `#${color.toUpperCase()}`;
 }
 
-function getMimeTypeFromPath(filePath: string): string {
-  switch (path.extname(filePath).toLowerCase()) {
-    case '.png':
-      return 'image/png';
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg';
-    case '.gif':
-      return 'image/gif';
-    case '.webp':
-      return 'image/webp';
-    case '.svg':
-      return 'image/svg+xml';
-    default:
-      return 'application/octet-stream';
-  }
-}
-
 function toDataUrl(input: string): string {
   if (!input) return '';
   if (input.startsWith('data:') || input.startsWith('http://') || input.startsWith('https://')) {
     return input;
   }
   if (!existsSync(input)) return '';
+  if (statSync(input).size > MAX_EMBED_IMAGE_BYTES) return '';
   const buffer = readFileSync(input);
-  return `data:${getMimeTypeFromPath(input)};base64,${buffer.toString('base64')}`;
+  return `data:${getImageMediaType(input)};base64,${buffer.toString('base64')}`;
 }
 
 function renderTextBlock(text: string, x: number, y: number, w: number, h: number, options: any): string {

@@ -16,15 +16,15 @@ async function withTestProject(run: (projectId: string) => Promise<void> | void)
   }
 }
 
-test('readProjectTextFile blocks oversized files and readProjectTextFileRange reads the requested lines', async () => {
-  await withTestProject(projectId => {
+test('大文件会提示改用按行读取工具', async () => {
+  await withTestProject(async projectId => {
     writeFileSync(resolveProjectFile(projectId, 'notes.txt'), ['第 1 行', '第 2 行', '第 3 行', '第 4 行'].join('\n'), 'utf8');
     writeFileSync(resolveProjectFile(projectId, 'big.txt'), 'A'.repeat(20 * 1024 + 1), 'utf8');
 
     const file = readProjectTextFile(projectId, 'notes.txt');
     assert.equal(file.content, '第 1 行\n第 2 行\n第 3 行\n第 4 行');
 
-    const range = readProjectTextFileRange(projectId, 'notes.txt', 2, 3);
+    const range = await readProjectTextFileRange(projectId, 'notes.txt', 2, 3);
     assert.equal(range.totalLines, 4);
     assert.equal(range.content, '第 2 行\n第 3 行');
 
@@ -32,7 +32,7 @@ test('readProjectTextFile blocks oversized files and readProjectTextFileRange re
   });
 });
 
-test('buildImageToolModelOutput and toDashscopeToolContent preserve image payloads', () => {
+test('图片工具结果会保留给多模态模型使用的图片内容', () => {
   const output = buildImageToolModelOutput('图片 cover.svg', 'cover.svg', 'image/svg+xml', 'PHN2Zz48L3N2Zz4=');
   assert.equal(output.type, 'content');
   assert.equal(output.value[1].type, 'file-data');
@@ -51,7 +51,7 @@ test('buildImageToolModelOutput and toDashscopeToolContent preserve image payloa
   ]);
 });
 
-test('renderPptPageAsImage returns an SVG preview for a slide', async () => {
+test('可以把指定页面渲染成预览图片', async () => {
   await withTestProject(async projectId => {
     const { runProject } = await import('./project-runner.ts');
     const result = await runProject({ projectId });

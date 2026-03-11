@@ -146,7 +146,7 @@ function createToolEventEmitter(
   };
 }
 
-export function buildProjectTools(options: {
+function buildProjectTools(options: {
   getProjectId: () => string;
   setProjectId: (projectId: string) => void;
   toolEvents: ProjectChatToolEvent[];
@@ -279,7 +279,7 @@ export function buildProjectTools(options: {
       },
     }),
     'read-file': tool({
-      description: '读取当前项目中的文本文件；如果文件过大，会提示改用按行读取。',
+      description: '读取当前项目中的文本文件，如果文件过大，会提示改用按行读取。',
       inputSchema: z.object({ fileName: z.string() }),
       execute: async ({ fileName }) => {
         emitter.start('read-file', { fileName });
@@ -293,7 +293,7 @@ export function buildProjectTools(options: {
       inputSchema: z.object({ fileName: z.string(), startLine: z.number().int().min(1), endLine: z.number().int().min(1) }),
       execute: async ({ fileName, startLine, endLine }) => {
         emitter.start('read-range', { fileName, startLine, endLine });
-        const result = readProjectTextFileRange(options.getProjectId(), fileName, startLine, endLine);
+        const result = await readProjectTextFileRange(options.getProjectId(), fileName, startLine, endLine);
         emitter.finish('read-range', `读取 ${fileName} 的第 ${result.startLine}-${result.endLine} 行`);
         return result;
       },
@@ -458,8 +458,10 @@ export async function chatWithProjectAgent(
       '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
       '必须尽量完整实现用户要的 PPT 内容，不能只给最小骨架或占位内容。',
       '在你认为已经完成时，必须先调用 run-project 检查脚本是否能运行；如果失败，要继续修复直到成功或明确说明阻塞原因。',
-      '如果用户问你“你能做什么”或“怎么用”，请用自然中文简要说明你可以帮他生成整份演示稿、修改现有内容、检查是否能正常生成、查看项目文件；如果当前模型支持看图，也可以查看上传的图片和某一页的预览图。',
-      '读取文本文件时，优先使用 read-file；如果文件较大或只需要局部内容，要改用 read-range 按行查看。',
+      '如果用户问你「你能做什么」或「怎么用」，请用自然中文简要说明你的能力。',
+      '你可以帮用户生成整份演示稿、修改现有内容、检查是否能正常生成、查看项目文件。',
+      '如果当前模型支持看图，也可以查看上传的图片和某一页的预览图。',
+      '读取文本文件时，优先使用 read-file；如果文件较大或只需要局部内容，要改用 read-range 工具按行查看。',
       '最终回复面向不懂技术的普通用户，尽量使用自然中文，避免技术术语和英文缩写。',
       model.capabilities.multimodal
         ? '当前模型支持看图：必要时可以读取上传的图片，也可以查看当前 PPT 某一页的预览图来判断版式是否合适。'

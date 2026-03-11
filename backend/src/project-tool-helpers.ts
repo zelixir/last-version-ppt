@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, statSync } from 'fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'fs';
+import readline from 'node:readline';
 import path from 'path';
 import { resolveProjectFile } from './storage.ts';
 
@@ -43,19 +44,35 @@ export function readProjectTextFile(projectId: string, fileName: string): { file
   return { fileName, content: readFileSync(filePath, 'utf8'), size };
 }
 
-export function readProjectTextFileRange(
+export async function readProjectTextFileRange(
   projectId: string,
   fileName: string,
   startLine: number,
   endLine: number,
-): { fileName: string; totalLines: number; startLine: number; endLine: number; content: string } {
-  if (!Number.isInteger(startLine) || startLine < 1) throw new Error('startLine 必须是大于等于 1 的整数');
-  if (!Number.isInteger(endLine) || endLine < startLine) throw new Error('endLine 必须是大于等于 startLine 的整数');
+): Promise<{ fileName: string; totalLines: number; startLine: number; endLine: number; content: string }> {
+  if (!Number.isInteger(startLine) || startLine < 1) throw new Error('起始行号必须是大于等于 1 的整数');
+  if (!Number.isInteger(endLine) || endLine < startLine) throw new Error('结束行号必须大于等于起始行号');
   if (!isTextFile(fileName)) throw new Error('该文件不是文本文件');
   const filePath = resolveProjectFile(projectId, fileName);
   if (!existsSync(filePath) || statSync(filePath).isDirectory()) throw new Error(`文件 ${fileName} 不存在`);
-  const lines = readFileSync(filePath, 'utf8').split(/\r?\n/);
-  const totalLines = lines.length;
+
+  const stream = createReadStream(filePath, { encoding: 'utf8' });
+  const reader = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  const selectedLines: string[] = [];
+  let totalLines = 0;
+
+  try {
+    for await (const line of reader) {
+      totalLines += 1;
+      if (totalLines >= startLine && totalLines <= endLine) {
+        selectedLines.push(line);
+      }
+    }
+  } finally {
+    reader.close();
+    stream.close();
+  }
+
   const actualStart = Math.min(startLine, totalLines || startLine);
   const actualEnd = Math.min(endLine, totalLines);
   return {
@@ -63,7 +80,7 @@ export function readProjectTextFileRange(
     totalLines,
     startLine: actualStart,
     endLine: actualEnd,
-    content: actualEnd >= actualStart ? lines.slice(actualStart - 1, actualEnd).join('\n') : '',
+    content: actualEnd >= actualStart ? selectedLines.join('\n') : '',
   };
 }
 
