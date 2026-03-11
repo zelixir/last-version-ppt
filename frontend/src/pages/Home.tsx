@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, BrainCircuit, CopyPlus, FolderOpen, Layers3, LoaderCircle, Plus, Settings2, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BrainCircuit, CopyPlus, FolderOpen, LoaderCircle, Plus, Search, Settings2, Sparkles, Trash2 } from 'lucide-react'
 import type { ConfigStatus, ProjectSummary } from '../types'
 import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
 import { Textarea } from '../components/ui/textarea'
 
 const PLACEHOLDERS = [
@@ -16,12 +17,21 @@ export default function Home() {
   const navigate = useNavigate()
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null)
-  const [requirement, setRequirement] = useState('')
+  const [placeholderSeed, setPlaceholderSeed] = useState(() => Math.floor(Math.random() * PLACEHOLDERS.length))
+  const [requirement, setRequirement] = useState(() => PLACEHOLDERS[placeholderSeed % PLACEHOLDERS.length])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [placeholderSeed, setPlaceholderSeed] = useState(() => Math.floor(Math.random() * PLACEHOLDERS.length))
+  const [searchText, setSearchText] = useState('')
 
   const placeholder = useMemo(() => PLACEHOLDERS[placeholderSeed % PLACEHOLDERS.length], [placeholderSeed])
+  const filteredProjects = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase()
+    if (!keyword) return projects
+    return projects.filter(project =>
+      [project.name, project.id, project.sourcePrompt]
+        .some(value => value.toLowerCase().includes(keyword)),
+    )
+  }, [projects, searchText])
 
   const fetchProjects = () => {
     fetch('/api/projects')
@@ -72,8 +82,9 @@ export default function Home() {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || '创建项目失败')
       const prompt = requirement.trim()
-      setRequirement('')
-      setPlaceholderSeed(current => current + 1)
+      const nextSeed = placeholderSeed + 1
+      setPlaceholderSeed(nextSeed)
+      setRequirement(PLACEHOLDERS[nextSeed % PLACEHOLDERS.length])
       navigate(`/projects/${data.id}`, { state: { autoPrompt: prompt, suggestedModelId: configStatus.firstUsableModelId } })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -98,11 +109,24 @@ export default function Home() {
     fetchProjects()
   }
 
-  const createVersion = async (project: ProjectSummary) => {
-    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/create-version`, { method: 'POST' })
+  const openProjectFolder = async (project: ProjectSummary) => {
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/open-folder`, { method: 'POST' })
     if (!response.ok) {
       const data = await response.json().catch(() => null)
-      setError(data?.error || '创建版本失败')
+      setError(data?.error || '打开文件夹失败')
+      return
+    }
+  }
+
+  const deleteProject = async (project: ProjectSummary) => {
+    const firstConfirm = window.confirm(`确定要删除“${project.name}”吗？`)
+    if (!firstConfirm) return
+    const secondConfirm = window.confirm(`删除：${project.files.length} 个文件，${project.chatHistory.length} 条消息。\n删除后无法恢复，确定继续吗？`)
+    if (!secondConfirm) return
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: 'DELETE' })
+    if (!response.ok) {
+      const data = await response.json().catch(() => null)
+      setError(data?.error || '删除项目失败')
       return
     }
     fetchProjects()
@@ -150,11 +174,20 @@ export default function Home() {
             <Textarea
               value={requirement}
               onChange={event => setRequirement(event.target.value)}
-              placeholder={placeholder}
+              placeholder="请直接写下你想做的演示稿要求"
               className="min-h-32 bg-gray-900"
             />
             <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <Button variant="ghost" onClick={() => setPlaceholderSeed(current => current + 1)}>换一个示例</Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  const nextSeed = placeholderSeed + 1
+                  setPlaceholderSeed(nextSeed)
+                  setRequirement(PLACEHOLDERS[nextSeed % PLACEHOLDERS.length])
+                }}
+              >
+                换一个示例
+              </Button>
               <Button onClick={createProject} disabled={loading || !requirement.trim()}>
                 {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                   创建项目并开始制作
@@ -164,23 +197,29 @@ export default function Home() {
         </section>
 
         <section className="space-y-4 rounded-3xl border border-gray-800 bg-gray-900/70 p-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-white">项目列表</h2>
-               <p className="text-sm text-gray-400">点击项目可继续完善内容；也支持复制一份或新建版本。</p>
+                <p className="text-sm text-gray-400">点击项目可继续完善内容，也可以复制、删除或直接打开对应文件夹。</p>
             </div>
-            <Button variant="outline" onClick={fetchProjects}><FolderOpen className="h-4 w-4" />刷新列表</Button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="relative min-w-0 sm:w-72">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                <Input value={searchText} onChange={event => setSearchText(event.target.value)} placeholder="搜索项目名、编号或需求内容" className="pl-9" />
+              </div>
+              <Button variant="outline" onClick={fetchProjects}><FolderOpen className="h-4 w-4" />刷新列表</Button>
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {projects.map(project => (
+            {filteredProjects.map(project => (
               <div key={project.id} className="rounded-2xl border border-gray-800 bg-gray-950/60 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-base font-semibold text-white">{project.name}</div>
                     <div className="mt-1 text-xs text-gray-500">{project.id}</div>
                   </div>
-                  {project.id !== project.rootProjectId && <span className="rounded-full bg-blue-500/15 px-2 py-1 text-[10px] text-blue-200">版本</span>}
+                  <Button size="sm" variant="ghost" onClick={() => openProjectFolder(project)}><FolderOpen className="h-4 w-4" />打开文件夹</Button>
                 </div>
                 <div className="mt-3 line-clamp-3 min-h-14 text-sm text-gray-400">{project.sourcePrompt || '这个项目还没有保存初始需求。'}</div>
                 <div className="mt-4 flex flex-wrap gap-2 text-xs text-gray-500">
@@ -188,17 +227,19 @@ export default function Home() {
                   <span className="rounded-full border border-gray-800 px-2 py-1">{project.chatHistory.length} 条消息</span>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => navigate(`/projects/${project.id}`)}><ArrowRight className="h-4 w-4" />进入项目</Button>
+                  <Button size="sm" asChild>
+                    <a href={`/projects/${project.id}`}><ArrowRight className="h-4 w-4" />进入项目</a>
+                  </Button>
                   <Button size="sm" variant="ghost" onClick={() => cloneProject(project)}><CopyPlus className="h-4 w-4" />克隆</Button>
-                  <Button size="sm" variant="ghost" onClick={() => createVersion(project)}><Layers3 className="h-4 w-4" />创建版本</Button>
+                  <Button size="sm" variant="ghost" onClick={() => deleteProject(project)}><Trash2 className="h-4 w-4" />删除</Button>
                 </div>
               </div>
             ))}
           </div>
 
-          {projects.length === 0 && (
+          {filteredProjects.length === 0 && (
             <div className="rounded-2xl border border-dashed border-gray-700 p-10 text-center text-sm text-gray-500">
-              还没有项目。先在顶部输入需求，系统会自动命名并创建第一个项目。
+              {projects.length === 0 ? '还没有项目。先在顶部输入需求，系统会自动命名并创建第一个项目。' : '没有找到符合条件的项目，请换个关键词试试。'}
             </div>
           )}
         </section>

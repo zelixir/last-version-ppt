@@ -3,7 +3,8 @@ import path from 'path';
 import { stepCountIs, streamText, tool } from 'ai';
 import { z } from 'zod';
 import { createModelClient } from './dashscope-model.ts';
-import { appendProjectChat, createProjectRecord, getAiModelById, getProjectById, getProviderByName, ProjectChatEntry, ProjectChatToolEvent, renameProjectRecord, setSetting } from './db.ts';
+import { appendProjectChat, createProjectRecord, getAiModelById, getProjectById, getProviderByName, ProjectChatEntry, ProjectChatMessagePart, ProjectChatToolEvent, renameProjectRecord, setSetting } from './db.ts';
+import { appendTextPart, mergeToolPart } from './chat-message-parts.ts';
 import { PPTXGENJS_GUIDE } from './pptxgenjs-guide.ts';
 import { exampleApiKeys, summarizeModelConfigurationError } from './project-support.ts';
 import { runProject } from './project-runner.ts';
@@ -131,15 +132,19 @@ function summarizeToolIntent(toolName: string, input: Record<string, unknown>): 
 
 function createToolEventEmitter(
   toolEvents: ProjectChatToolEvent[],
+  messageParts: ProjectChatMessagePart[],
   onEvent?: (event: ProjectAgentStreamEvent) => void,
 ) {
   return {
     start(toolName: string, input: Record<string, unknown>) {
-      onEvent?.({ type: 'tool', toolName, summary: summarizeToolIntent(toolName, input), state: 'running' });
+      const summary = summarizeToolIntent(toolName, input);
+      mergeToolPart(messageParts, { toolName, summary, state: 'running' });
+      onEvent?.({ type: 'tool', toolName, summary, state: 'running' });
     },
     finish(toolName: string, summary: string, success = true) {
       const event = summarizeToolEvent(toolName, summary, success);
       toolEvents.push(event);
+      mergeToolPart(messageParts, { toolName, summary, state: 'done', success });
       onEvent?.({ type: 'tool', toolName, summary, state: 'done', success });
       return event;
     },
@@ -150,10 +155,11 @@ function buildProjectTools(options: {
   getProjectId: () => string;
   setProjectId: (projectId: string) => void;
   toolEvents: ProjectChatToolEvent[];
+  messageParts: ProjectChatMessagePart[];
   supportsMultimodal?: boolean;
   onEvent?: (event: ProjectAgentStreamEvent) => void;
 }) {
-  const emitter = createToolEventEmitter(options.toolEvents, options.onEvent);
+  const emitter = createToolEventEmitter(options.toolEvents, options.messageParts, options.onEvent);
 
   return {
     'create-project': tool({
@@ -449,6 +455,7 @@ export async function chatWithProjectAgent(
 
   const history = options?.includeHistory ? project.chatHistory : [];
   const toolEvents: ProjectChatToolEvent[] = [];
+  const assistantParts: ProjectChatMessagePart[] = [];
   let activeProjectId = projectId;
 
   const result = streamText({
@@ -479,6 +486,7 @@ export async function chatWithProjectAgent(
         setSetting('currentProjectId', nextProjectId);
       },
       toolEvents,
+      messageParts: assistantParts,
       supportsMultimodal: model.capabilities.multimodal === true,
       onEvent: options?.onEvent,
     }),
@@ -489,13 +497,19 @@ export async function chatWithProjectAgent(
   for await (const chunk of result.fullStream) {
     if (chunk.type === 'text-delta' && chunk.text) {
       assistantText += chunk.text;
+      appendTextPart(assistantParts, chunk.text);
       options?.onEvent?.({ type: 'text-delta', text: chunk.text });
     }
   }
 
+  const finalAssistantText = (assistantText.trim() || await result.text).trim() || '这次已经处理完成，你可以继续补充要求。';
+  if (!assistantParts.some(part => part.type === 'text' && part.text.trim())) {
+    appendTextPart(assistantParts, finalAssistantText);
+  }
+
   const newHistory: ProjectChatEntry[] = [
     { role: 'user', content, createdAt: new Date().toISOString() },
-    { role: 'assistant', content: (assistantText.trim() || await result.text).trim(), createdAt: new Date().toISOString(), toolEvents },
+    { role: 'assistant', content: finalAssistantText, createdAt: new Date().toISOString(), toolEvents, parts: assistantParts },
   ];
 
   const updated = appendProjectChat(activeProjectId, newHistory);

@@ -211,11 +211,24 @@ export interface ProjectChatToolEvent {
   success: boolean;
 }
 
+export interface ProjectChatTextPart {
+  type: 'text';
+  text: string;
+}
+
+export interface ProjectChatToolPart extends ProjectChatToolEvent {
+  type: 'tool';
+  state?: 'running' | 'done';
+}
+
+export type ProjectChatMessagePart = ProjectChatTextPart | ProjectChatToolPart;
+
 export interface ProjectChatEntry {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
   toolEvents?: ProjectChatToolEvent[];
+  parts?: ProjectChatMessagePart[];
 }
 
 export interface ProjectRecord {

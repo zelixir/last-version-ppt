@@ -37,6 +37,18 @@ export interface ToolEvent {
   success: boolean
 }
 
+export interface ChatTextPart {
+  type: 'text'
+  text: string
+}
+
+export interface ChatToolPart extends ToolEvent {
+  type: 'tool'
+  state?: 'running' | 'done'
+}
+
+export type ChatMessagePart = ChatTextPart | ChatToolPart
+
 export interface AgentRunEvent {
   type: 'text-delta' | 'tool'
   text?: string
@@ -51,6 +63,7 @@ export interface ProjectChatMessage {
   content: string
   createdAt: string
   toolEvents?: ToolEvent[]
+  parts?: ChatMessagePart[]
 }
 
 export interface ProjectSummary {

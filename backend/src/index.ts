@@ -12,6 +12,7 @@ import {
   createProjectRecord,
   createProvider,
   deleteAiModel,
+  deleteProjectRecord,
   deleteProvider,
   getAiModelById,
   getAiModels,
@@ -36,6 +37,7 @@ import {
   buildProjectId,
   copyProjectDirectory,
   createProjectFiles,
+  deleteProjectDirectory,
   getFileStatSafe,
   getProjectDir,
   listProjectDirectories,
@@ -185,7 +187,7 @@ function syncProjectsWithFilesystem(): void {
 }
 
 function getCurrentProjectId(): string | null {
-  return getSetting('currentProjectId');
+  return getSetting('currentProjectId') || null;
 }
 
 function setCurrentProjectId(projectId: string): void {
@@ -361,6 +363,17 @@ const app = new Elysia()
     });
     setCurrentProjectId(projectId);
     return buildProjectResponse(projectId);
+  })
+  .delete('/api/projects/:id', ({ params }) => {
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+    deleteProjectDirectory(params.id);
+    deleteProjectRecord(params.id);
+    if (getCurrentProjectId() === params.id) {
+      const nextProjectId = listProjects()[0]?.id;
+      setSetting('currentProjectId', nextProjectId ?? '');
+    }
+    return { success: true };
   })
   .post('/api/projects/:id/current', ({ params }) => {
     if (!getProjectById(params.id)) return new Response('Not found', { status: 404 });

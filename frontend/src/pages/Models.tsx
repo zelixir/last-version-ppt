@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, BrainCircuit, Building2, Check, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import type { AiModel, ModelProvider } from '../types'
 import { Button } from '../components/ui/button'
@@ -17,6 +17,8 @@ type ConfirmState =
 
 export default function Models() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo || '/'
   const [tab, setTab] = useState<Tab>('providers')
   const [providers, setProviders] = useState<ModelProvider[]>([])
   const [models, setModels] = useState<AiModel[]>([])
@@ -140,7 +142,7 @@ export default function Models() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <Button variant="ghost" size="icon" onClick={() => navigate('/')}><ArrowLeft className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => navigate(returnTo)}><ArrowLeft className="h-4 w-4" /></Button>
                   <Sparkles className="h-8 w-8 text-blue-400" />
                   <div>
                     <h1 className="text-2xl font-bold text-white">模型配置</h1>

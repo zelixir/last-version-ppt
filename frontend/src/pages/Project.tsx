@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Trash2 } from 'lucide-react'
-import type { AgentRunEvent, AiModel, PreviewPresentation, PreviewSlide, ProjectChatMessage, ProjectFile, ProjectSummary, ToolEvent } from '../types'
+import type { AgentRunEvent, AiModel, ChatMessagePart, PreviewPresentation, PreviewSlide, ProjectChatMessage, ProjectFile, ProjectSummary, ToolEvent } from '../types'
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
-import { Message, MessageContent, MessageResponse } from '../components/ai-elements/message'
+import ChatMessage, { appendTextPart, mergeMessageToolPart } from '../components/ChatMessage'
 import { runProjectPreview } from '../lib/project-preview'
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
@@ -33,7 +33,12 @@ const TOOL_LABELS: Record<string, string> = {
 }
 
 type LiveToolEvent = ToolEvent & { state?: 'running' | 'done' }
-type ConversationMessage = ProjectChatMessage & { id: string; toolEvents?: LiveToolEvent[]; pending?: boolean }
+type ConversationMessage = ProjectChatMessage & { id: string; toolEvents?: LiveToolEvent[]; parts?: ChatMessagePart[]; pending?: boolean }
+
+const SHOW_SCRIPT_STORAGE_KEY = 'last-version-ppt:show-script'
+const CHAT_WIDTH_STORAGE_KEY = 'last-version-ppt:chat-width'
+const MIN_CHAT_PANEL_WIDTH = 320
+const MAX_CHAT_PANEL_WIDTH = 760
 
 function buildMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -60,27 +65,6 @@ function mergeLiveToolEvents(events: LiveToolEvent[], nextEvent: AgentRunEvent):
   return events.map((event, eventIndex) => eventIndex === runningIndex
     ? { ...event, summary: nextEvent.summary!, success: nextEvent.success !== false, state: 'done' }
     : event)
-}
-
-function ToolActivityList({ events }: { events: Array<LiveToolEvent> | undefined }) {
-  if (!events?.length) return null
-  return (
-    <div className="mb-3 space-y-2">
-      {events.map((event, index) => (
-        <div key={`${event.toolName}-${index}`} className={`rounded-2xl border px-3 py-2 ${event.state === 'running'
-          ? 'border-blue-500/30 bg-blue-500/10 text-blue-100'
-          : event.success
-            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
-            : 'border-red-500/20 bg-red-500/10 text-red-100'}`}>
-          <div className="flex items-center justify-between gap-3 text-xs">
-            <span className="font-medium">{TOOL_LABELS[event.toolName] || event.toolName}</span>
-            <span className="text-[11px] opacity-80">{event.state === 'running' ? '处理中' : event.success ? '已完成' : '未完成'}</span>
-          </div>
-          <div className="mt-1 text-xs opacity-90">{event.summary}</div>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 function SlideCanvas({ slide, presentation, compact = false }: { slide: PreviewSlide; presentation: PreviewPresentation; compact?: boolean }) {
@@ -135,6 +119,7 @@ export default function Project() {
   const autoModelRef = useRef<number | null>((location.state as { suggestedModelId?: number } | null)?.suggestedModelId ?? null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const chatBottomRef = useRef<HTMLDivElement | null>(null)
+  const chatResizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [project, setProject] = useState<ProjectSummary | null>(null)
   const [models, setModels] = useState<AiModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState<number | null>(null)
@@ -144,7 +129,10 @@ export default function Project() {
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
-  const [showIndexSource, setShowIndexSource] = useState(false)
+  const [showIndexSource, setShowIndexSource] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem(SHOW_SCRIPT_STORAGE_KEY) === 'true'
+  })
   const [editorValue, setEditorValue] = useState('')
   const [editorLoading, setEditorLoading] = useState(false)
   const [editorDirty, setEditorDirty] = useState(false)
@@ -153,6 +141,12 @@ export default function Project() {
   const [showHistory, setShowHistory] = useState(false)
   const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([])
   const [pageError, setPageError] = useState<string | null>(null)
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false)
+  const [chatPanelWidth, setChatPanelWidth] = useState(() => {
+    if (typeof window === 'undefined') return 420
+    const savedWidth = Number(window.localStorage.getItem(CHAT_WIDTH_STORAGE_KEY) || '')
+    return Number.isFinite(savedWidth) ? Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, savedWidth)) : 420
+  })
 
   const visibleFiles = useMemo(() => {
     if (!project) return []
@@ -246,6 +240,14 @@ export default function Project() {
   }, [displayedMessages, chatLoading])
 
   useEffect(() => {
+    window.localStorage.setItem(SHOW_SCRIPT_STORAGE_KEY, String(showIndexSource))
+  }, [showIndexSource])
+
+  useEffect(() => {
+    window.localStorage.setItem(CHAT_WIDTH_STORAGE_KEY, String(chatPanelWidth))
+  }, [chatPanelWidth])
+
+  useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.key !== 'Delete' || !selectedFileName || selectedFileName === 'index.js') return
       const target = event.target as HTMLElement | null
@@ -294,6 +296,34 @@ export default function Project() {
     await refreshPreview()
   }
 
+  const handleChatResizeStart = (event: React.MouseEvent<HTMLDivElement>) => {
+    chatResizeStateRef.current = { startX: event.clientX, startWidth: chatPanelWidth }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
+
+  useEffect(() => {
+    const handlePointerMove = (event: MouseEvent) => {
+      const resizeState = chatResizeStateRef.current
+      if (!resizeState) return
+      const delta = resizeState.startX - event.clientX
+      setChatPanelWidth(Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, resizeState.startWidth + delta)))
+    }
+
+    const handlePointerUp = () => {
+      chatResizeStateRef.current = null
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    window.addEventListener('mousemove', handlePointerMove)
+    window.addEventListener('mouseup', handlePointerUp)
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove)
+      window.removeEventListener('mouseup', handlePointerUp)
+    }
+  }, [])
+
   const updateSessionMessage = (messageId: string, updater: (message: ConversationMessage) => ConversationMessage) => {
     setSessionMessages(current => current.map(message => message.id === messageId ? updater(message) : message))
   }
@@ -315,7 +345,7 @@ export default function Project() {
     setSessionMessages(current => [
       ...current,
       userMessage,
-      { id: assistantMessageId, role: 'assistant', content: '', createdAt: new Date().toISOString(), toolEvents: [], pending: true },
+      { id: assistantMessageId, role: 'assistant', content: '', createdAt: new Date().toISOString(), toolEvents: [], parts: [], pending: true },
     ])
     setChatLoading(true)
     setPageError(null)
@@ -346,12 +376,17 @@ export default function Project() {
         const data = JSON.parse(dataText) as AgentRunEvent & { error?: string; projectId?: string }
         if (eventName === 'message') {
           if (data.type === 'text-delta' && data.text) {
-            updateSessionMessage(assistantMessageId, message => ({ ...message, content: `${message.content}${data.text}` }))
+            updateSessionMessage(assistantMessageId, message => ({
+              ...message,
+              content: `${message.content}${data.text}`,
+              parts: appendTextPart([...(message.parts ?? [])], data.text!),
+            }))
           }
           if (data.type === 'tool') {
             updateSessionMessage(assistantMessageId, message => ({
               ...message,
               toolEvents: mergeLiveToolEvents(message.toolEvents ?? [], data),
+              parts: mergeMessageToolPart([...(message.parts ?? [])], data),
             }))
           }
           return
@@ -380,6 +415,9 @@ export default function Project() {
         ...message,
         pending: false,
         content: message.content.trim() ? message.content : '这次已经处理完成，你可以继续补充要求。',
+        parts: message.content.trim() || message.parts?.some(part => part.type === 'text' && part.text.trim())
+          ? message.parts
+          : appendTextPart([...(message.parts ?? [])], '这次已经处理完成，你可以继续补充要求。'),
       }))
 
       if (nextProjectId !== projectKey) {
@@ -424,13 +462,16 @@ export default function Project() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => fetch(`/api/projects/${encodeURIComponent(projectId)}/open-folder`, { method: 'POST' })}><FolderOpen className="h-4 w-4" />打开资源管理器</Button>
-            <Button variant="outline" size="sm" onClick={() => navigate('/models')}><BrainCircuit className="h-4 w-4" />模型配置</Button>
+            <Button variant="outline" size="sm" onClick={() => navigate('/models', { state: { returnTo: location.pathname } })}><BrainCircuit className="h-4 w-4" />模型配置</Button>
           </div>
         </header>
 
         {pageError && <div className="border-b border-red-900/40 bg-red-950/40 px-4 py-3 text-sm text-red-200">{pageError}</div>}
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div
+          className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_8px_var(--chat-panel-width)]"
+          style={{ '--chat-panel-width': `${chatPanelWidth}px` } as React.CSSProperties}
+        >
           <section className="min-h-0 border-b border-gray-800 xl:border-b-0 xl:border-r">
             <div className="flex h-full min-h-0 flex-col">
               <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
@@ -485,7 +526,24 @@ export default function Project() {
                   </div>
                 </div>
               ) : (
-                <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-4 p-4">
+                <div
+                  className={`grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-4 p-4 ${isDraggingFiles ? 'rounded-2xl border-2 border-dashed border-blue-500/70 bg-blue-500/5' : ''}`}
+                  onDragOver={event => {
+                    event.preventDefault()
+                    setIsDraggingFiles(true)
+                  }}
+                  onDragLeave={event => {
+                    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+                    setIsDraggingFiles(false)
+                  }}
+                  onDrop={event => {
+                    event.preventDefault()
+                    setIsDraggingFiles(false)
+                    if (event.dataTransfer.files?.length) {
+                      uploadFiles(event.dataTransfer.files).catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+                    }
+                  }}
+                >
                   <div className="space-y-2 overflow-y-auto rounded-2xl border border-gray-800 bg-gray-900/60 p-3">
                     {visibleFiles.map(file => (
                       <button key={file.name} onClick={() => setSelectedFileName(file.name)} className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${selectedFileName === file.name ? 'border-blue-500 bg-blue-500/10 text-white' : 'border-gray-800 bg-gray-950/70 text-gray-300 hover:border-gray-700'}`}>
@@ -493,7 +551,7 @@ export default function Project() {
                         <div className="mt-1 text-[11px] text-gray-500">{FILE_KIND_LABELS[file.kind]} · {Math.max(1, Math.round(file.size / 1024))} KB</div>
                       </button>
                     ))}
-                    {visibleFiles.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-500">暂时还没有资源文件。你可以上传图片或文本，也可以勾选显示 PPT 脚本。</div>}
+                    {visibleFiles.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-400">暂时还没有资源文件。你可以把文件直接拖到这里上传，也可以点上方按钮选择文件；如果想看脚本，也可以勾选“显示 PPT 脚本”。</div>}
                   </div>
                   <div className="min-h-0 overflow-hidden rounded-2xl border border-gray-800 bg-gray-900/60">
                     {selectedFile ? (
@@ -537,13 +595,20 @@ export default function Project() {
             </div>
           </section>
 
+          <div
+            className="hidden cursor-col-resize bg-gray-900/80 transition-colors hover:bg-blue-500/50 xl:block"
+            onMouseDown={handleChatResizeStart}
+            role="separator"
+            aria-label="调整聊天区域宽度"
+            aria-orientation="vertical"
+          />
+
           <aside className="min-h-0 bg-gray-950/90">
             <div className="flex h-full min-h-0 flex-col">
               <div className="border-b border-gray-800 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-white">智能助手</div>
-                    <div className="text-xs text-gray-500">默认每次都按新需求开始；需要回看旧记录时，再点历史记录即可</div>
                   </div>
                   <Select className="max-w-52" value={selectedModelId?.toString() || ''} onChange={event => setSelectedModelId(Number(event.target.value))}>
                     {models.map(model => <option key={model.id} value={model.id}>{model.display_name || model.model_name}</option>)}
@@ -560,24 +625,9 @@ export default function Project() {
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-gray-800 bg-gray-900/40 px-4 py-3 text-xs text-gray-400">
-                    {showHistory ? `这里展示的是已保存的历史记录，共 ${historyMessages.length} 条。` : '这里展示的是当前这轮对话，会实时看到助手输出和处理步骤。'}
-                  </div>
                   {displayedMessages.length ? displayedMessages.map(message => (
-                    <Message key={message.id} from={message.role === 'user' ? 'user' : 'assistant'}>
-                      <MessageContent className={message.role === 'user' ? 'max-w-xl rounded-2xl bg-blue-600 px-4 py-3 text-white' : 'max-w-3xl rounded-2xl border border-gray-800 bg-gray-900 px-4 py-3 text-gray-100'}>
-                        {message.role === 'user' ? (
-                          <div className="whitespace-pre-wrap text-sm">{message.content}</div>
-                        ) : (
-                          <div>
-                            <ToolActivityList events={message.toolEvents} />
-                            {message.content ? <MessageResponse>{message.content}</MessageResponse> : <div className="text-sm text-gray-400">{message.pending ? '正在整理中…' : '这次没有补充文字说明。'}</div>}
-                          </div>
-                        )}
-                      </MessageContent>
-                    </Message>
+                    <ChatMessage key={message.id} message={message} toolLabels={TOOL_LABELS} />
                   )) : <div className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/60 p-5 text-sm text-gray-400">{showHistory ? '还没有保存过历史记录。你可以先开始一轮新对话。' : '先告诉助手你想做什么样的演示稿，或让它继续完善当前内容。'}</div>}
-                  {chatLoading && <div className="flex items-center gap-2 text-sm text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />助手正在整理内容…</div>}
                   <div ref={chatBottomRef} />
                 </div>
               </div>
