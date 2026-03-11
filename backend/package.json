@@ -2,7 +2,7 @@
   "name": "last-version-ppt-backend",
   "version": "1.0.0",
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
+    "dev": "NO_OPEN_BROWSER=1 bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
     "mcp-sqlite": "bun run src/mcp-sqlite.ts",

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, ImageUp, LoaderCircle, RefreshCcw, Save, Send, Trash2 } from 'lucide-react'
-import type { AiModel, PreviewPresentation, PreviewSlide, ProjectChatMessage, ProjectFile, ProjectSummary } from '../types'
+import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Trash2 } from 'lucide-react'
+import type { AgentRunEvent, AiModel, PreviewPresentation, PreviewSlide, ProjectChatMessage, ProjectFile, ProjectSummary, ToolEvent } from '../types'
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
@@ -16,14 +16,62 @@ const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
   binary: '其他文件',
 }
 
-function ToolSummary({ events }: { events: ProjectChatMessage['toolEvents'] }) {
+const TOOL_LABELS: Record<string, string> = {
+  'create-project': '新建项目',
+  'clone-project': '复制项目',
+  'switch-project': '切换项目',
+  'create-version': '保存版本',
+  'rename-project': '项目改名',
+  'get-current-project': '查看项目',
+  'run-project': '检查预览',
+  'list-file': '查看文件',
+  'create-file': '写入文件',
+  'rename-file': '文件改名',
+  'delete-file': '删除文件',
+  grep: '查找内容',
+  'apply-patch': '批量修改',
+}
+
+type LiveToolEvent = ToolEvent & { state?: 'running' | 'done' }
+type ConversationMessage = ProjectChatMessage & { id: string; toolEvents?: LiveToolEvent[]; pending?: boolean }
+
+function buildMessageId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function mergeLiveToolEvents(events: LiveToolEvent[], nextEvent: AgentRunEvent): LiveToolEvent[] {
+  if (nextEvent.type !== 'tool' || !nextEvent.toolName || !nextEvent.summary) return events
+  if (nextEvent.state === 'running') {
+    return [...events, { toolName: nextEvent.toolName, summary: nextEvent.summary, success: true, state: 'running' }]
+  }
+
+  const index = [...events].reverse().findIndex(event => event.toolName === nextEvent.toolName && event.state === 'running')
+  if (index === -1) {
+    return [...events, { toolName: nextEvent.toolName, summary: nextEvent.summary, success: nextEvent.success !== false, state: 'done' }]
+  }
+
+  const actualIndex = events.length - 1 - index
+  return events.map((event, eventIndex) => eventIndex === actualIndex
+    ? { ...event, summary: nextEvent.summary!, success: nextEvent.success !== false, state: 'done' }
+    : event)
+}
+
+function ToolActivityList({ events }: { events: Array<LiveToolEvent> | undefined }) {
   if (!events?.length) return null
   return (
-    <div className="mb-3 flex flex-wrap gap-2">
+    <div className="mb-3 space-y-2">
       {events.map((event, index) => (
-        <span key={`${event.toolName}-${index}`} className={`rounded-full px-2.5 py-1 text-[11px] ${event.success ? 'bg-emerald-500/15 text-emerald-200' : 'bg-red-500/15 text-red-200'}`}>
-          {event.toolName} · {event.summary}
-        </span>
+        <div key={`${event.toolName}-${index}`} className={`rounded-2xl border px-3 py-2 ${event.state === 'running'
+          ? 'border-blue-500/30 bg-blue-500/10 text-blue-100'
+          : event.success
+            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
+            : 'border-red-500/20 bg-red-500/10 text-red-100'}`}>
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <span className="font-medium">{TOOL_LABELS[event.toolName] || event.toolName}</span>
+            <span className="text-[11px] opacity-80">{event.state === 'running' ? '处理中' : event.success ? '已完成' : '未完成'}</span>
+          </div>
+          <div className="mt-1 text-xs opacity-90">{event.summary}</div>
+        </div>
       ))}
     </div>
   )
@@ -96,6 +144,8 @@ export default function Project() {
   const [editorDirty, setEditorDirty] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([])
   const [pageError, setPageError] = useState<string | null>(null)
 
   const visibleFiles = useMemo(() => {
@@ -104,6 +154,11 @@ export default function Project() {
   }, [project, showIndexSource])
 
   const selectedFile = useMemo(() => visibleFiles.find(file => file.name === selectedFileName) ?? null, [visibleFiles, selectedFileName])
+  const historyMessages = useMemo<ConversationMessage[]>(
+    () => (project?.chatHistory ?? []).map((message, index) => ({ ...message, id: `history-${message.createdAt}-${index}` })),
+    [project?.chatHistory],
+  )
+  const displayedMessages = showHistory ? historyMessages : sessionMessages
 
   const fetchProject = async () => {
     const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}`)
@@ -182,7 +237,7 @@ export default function Project() {
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [project?.chatHistory, chatLoading])
+  }, [displayedMessages, chatLoading])
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -233,24 +288,103 @@ export default function Project() {
     await refreshPreview()
   }
 
+  const updateSessionMessage = (messageId: string, updater: (message: ConversationMessage) => ConversationMessage) => {
+    setSessionMessages(current => current.map(message => message.id === messageId ? updater(message) : message))
+  }
+
   const sendChat = async (content?: string, modelIdOverride?: number) => {
     const text = (content ?? chatInput).trim()
     const modelId = modelIdOverride ?? selectedModelId
     if (!text || !modelId || chatLoading) return
+
+    const userMessage: ConversationMessage = {
+      id: buildMessageId(),
+      role: 'user',
+      content: text,
+      createdAt: new Date().toISOString(),
+    }
+    const assistantMessageId = buildMessageId()
+
+    setShowHistory(false)
+    setSessionMessages(current => [
+      ...current,
+      userMessage,
+      { id: assistantMessageId, role: 'assistant', content: '', createdAt: new Date().toISOString(), toolEvents: [], pending: true },
+    ])
     setChatLoading(true)
     setPageError(null)
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/chat`, {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text, modelId }),
+        body: JSON.stringify({ content: text, modelId, includeHistory: false }),
       })
-      const data = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(data?.error || '发送消息失败')
+
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => null)
+        throw new Error(data?.error || '发送消息失败')
+      }
+
+      let buffer = ''
+      let nextProjectId = projectKey
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      const handleEvent = (rawEvent: string) => {
+        const lines = rawEvent.split('\n')
+        const eventName = lines.find(line => line.startsWith('event:'))?.slice(6).trim() || 'message'
+        const dataText = lines
+          .filter(line => line.startsWith('data:'))
+          .map(line => line.slice(5).trim())
+          .join('\n')
+        if (!dataText) return
+        const data = JSON.parse(dataText) as AgentRunEvent & { error?: string; projectId?: string }
+        if (eventName === 'message') {
+          if (data.type === 'text-delta' && data.text) {
+            updateSessionMessage(assistantMessageId, message => ({ ...message, content: `${message.content}${data.text}` }))
+          }
+          if (data.type === 'tool') {
+            updateSessionMessage(assistantMessageId, message => ({
+              ...message,
+              toolEvents: mergeLiveToolEvents(message.toolEvents ?? [], data),
+            }))
+          }
+          return
+        }
+        if (eventName === 'done' && data.projectId) {
+          nextProjectId = data.projectId
+          return
+        }
+        if (eventName === 'error') {
+          throw new Error(data.error || '发送消息失败')
+        }
+      }
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() ?? ''
+        parts.forEach(handleEvent)
+      }
+      if (buffer.trim()) handleEvent(buffer)
+
       setChatInput('')
+      updateSessionMessage(assistantMessageId, message => ({
+        ...message,
+        pending: false,
+        content: message.content.trim() ? message.content : '这次已经处理完成，你可以继续补充要求。',
+      }))
+
+      if (nextProjectId !== projectKey) {
+        navigate(`/projects/${nextProjectId}`, { replace: true })
+        return
+      }
+
       await fetchProject()
       await refreshPreview()
     } catch (err) {
+      updateSessionMessage(assistantMessageId, message => ({ ...message, pending: false }))
       setPageError(err instanceof Error ? err.message : String(err))
     } finally {
       setChatLoading(false)
@@ -403,22 +537,40 @@ export default function Project() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-white">智能助手</div>
-                    <div className="text-xs text-gray-500">让助手继续完善这份 PPT，或整理当前项目里的素材</div>
+                    <div className="text-xs text-gray-500">默认每次都按新需求开始；需要回看旧记录时，再点历史记录即可</div>
                   </div>
                   <Select className="max-w-52" value={selectedModelId?.toString() || ''} onChange={event => setSelectedModelId(Number(event.target.value))}>
                     {models.map(model => <option key={model.id} value={model.id}>{model.display_name || model.model_name}</option>)}
                   </Select>
                 </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" variant={showHistory ? 'outline' : 'default'} onClick={() => { setShowHistory(false); setSessionMessages([]); setPageError(null) }} disabled={chatLoading}>
+                    <Plus className="h-4 w-4" />新对话
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setShowHistory(current => !current)}>
+                    <History className="h-4 w-4" />历史记录
+                  </Button>
+                </div>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
                 <div className="space-y-4">
-                  {project?.chatHistory.length ? project.chatHistory.map((message, index) => (
-                    <Message key={`${message.role}-${index}`} from={message.role === 'user' ? 'user' : 'assistant'}>
+                  <div className="rounded-2xl border border-gray-800 bg-gray-900/40 px-4 py-3 text-xs text-gray-400">
+                    {showHistory ? `这里展示的是已保存的历史记录，共 ${historyMessages.length} 条。` : '这里展示的是当前这轮对话，会实时看到助手输出和处理步骤。'}
+                  </div>
+                  {displayedMessages.length ? displayedMessages.map(message => (
+                    <Message key={message.id} from={message.role === 'user' ? 'user' : 'assistant'}>
                       <MessageContent className={message.role === 'user' ? 'max-w-xl rounded-2xl bg-blue-600 px-4 py-3 text-white' : 'max-w-3xl rounded-2xl border border-gray-800 bg-gray-900 px-4 py-3 text-gray-100'}>
-                        {message.role === 'user' ? <div className="whitespace-pre-wrap text-sm">{message.content}</div> : <div><ToolSummary events={message.toolEvents} /><MessageResponse>{message.content}</MessageResponse></div>}
+                        {message.role === 'user' ? (
+                          <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+                        ) : (
+                          <div>
+                            <ToolActivityList events={message.toolEvents} />
+                            {message.content ? <MessageResponse>{message.content}</MessageResponse> : <div className="text-sm text-gray-400">{message.pending ? '正在整理中…' : '这次没有补充文字说明。'}</div>}
+                          </div>
+                        )}
                       </MessageContent>
                     </Message>
-                  )) : <div className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/60 p-5 text-sm text-gray-400">先告诉助手你想做什么样的演示稿，或让它继续完善当前内容。</div>}
+                  )) : <div className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/60 p-5 text-sm text-gray-400">{showHistory ? '还没有保存过历史记录。你可以先开始一轮新对话。' : '先告诉助手你想做什么样的演示稿，或让它继续完善当前内容。'}</div>}
                   {chatLoading && <div className="flex items-center gap-2 text-sm text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />助手正在整理内容…</div>}
                   <div ref={chatBottomRef} />
                 </div>

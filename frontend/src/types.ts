@@ -37,6 +37,15 @@ export interface ToolEvent {
   success: boolean
 }
 
+export interface AgentRunEvent {
+  type: 'text-delta' | 'tool'
+  text?: string
+  toolName?: string
+  summary?: string
+  success?: boolean
+  state?: 'running' | 'done'
+}
+
 export interface ProjectChatMessage {
   role: 'user' | 'assistant'
   content: string
