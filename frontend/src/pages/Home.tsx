@@ -229,7 +229,7 @@ export default function Home() {
                     <a href={`/projects/${project.id}`}><ArrowRight className="h-4 w-4" />进入项目</a>
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => cloneProject(project)}><CopyPlus className="h-4 w-4" />克隆</Button>
-                  <Button size="sm" variant="ghost" onClick={() => deleteProject(project)}><Trash2 className="h-4 w-4" />删除</Button>
+                  <Button size="sm" variant="destructive" onClick={() => deleteProject(project)}><Trash2 className="h-4 w-4" />删除</Button>
                 </div>
               </div>
             ))}

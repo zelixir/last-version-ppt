@@ -3,9 +3,9 @@ import Editor from '@monaco-editor/react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Trash2 } from 'lucide-react'
 import type { AgentRunEvent, AiModel, ChatMessagePart, PreviewPresentation, PreviewSlide, ProjectChatMessage, ProjectFile, ProjectSummary, ToolEvent } from '../types'
+import { PromptInput } from '../components/ai-elements/prompt-input'
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
-import { Textarea } from '../components/ui/textarea'
 import ChatMessage, { appendTextPart, mergeMessageToolPart } from '../components/ChatMessage'
 import { runProjectPreview } from '../lib/project-preview'
 
@@ -37,6 +37,8 @@ type ConversationMessage = ProjectChatMessage & { id: string; toolEvents?: LiveT
 
 const SHOW_SCRIPT_STORAGE_KEY = 'last-version-ppt:show-script'
 const CHAT_WIDTH_STORAGE_KEY = 'last-version-ppt:chat-width'
+const PROJECT_TAB_STORAGE_KEY_PREFIX = 'last-version-ppt:project-tab:'
+const PROMPT_HISTORY_STORAGE_KEY_PREFIX = 'last-version-ppt:prompt-history:'
 const MIN_CHAT_PANEL_WIDTH = 320
 const MAX_CHAT_PANEL_WIDTH = 760
 
@@ -65,6 +67,36 @@ function mergeLiveToolEvents(events: LiveToolEvent[], nextEvent: AgentRunEvent):
   return events.map((event, eventIndex) => eventIndex === runningIndex
     ? { ...event, summary: nextEvent.summary!, success: nextEvent.success !== false, state: 'done' }
     : event)
+}
+
+function getProjectTabStorageKey(projectKey: string) {
+  return `${PROJECT_TAB_STORAGE_KEY_PREFIX}${projectKey}`
+}
+
+function getPromptHistoryStorageKey(projectKey: string) {
+  return `${PROMPT_HISTORY_STORAGE_KEY_PREFIX}${projectKey}`
+}
+
+function readStoredProjectTab(projectKey: string): 'preview' | 'resources' {
+  return window.localStorage.getItem(getProjectTabStorageKey(projectKey)) === 'resources' ? 'resources' : 'preview'
+}
+
+function readStoredPromptHistory(projectKey: string): string[] {
+  try {
+    const rawValue = window.localStorage.getItem(getPromptHistoryStorageKey(projectKey))
+    if (!rawValue) return []
+    const parsed = JSON.parse(rawValue)
+    return Array.isArray(parsed) ? parsed.filter(item => typeof item === 'string' && item.trim()) : []
+  } catch {
+    return []
+  }
+}
+
+function buildProjectPageTitle(project: ProjectSummary | null, projectId?: string) {
+  const baseName = project?.name?.trim()
+  const versionSuffix = (project?.id || projectId || '').match(/_v\d{2}$/i)?.[0]?.replace('_', ' ') ?? ''
+  if (!baseName) return '最后一版PPT'
+  return `${baseName}${versionSuffix} - 最后一版PPT`
 }
 
 function SlideCanvas({ slide, presentation, compact = false }: { slide: PreviewSlide; presentation: PreviewPresentation; compact?: boolean }) {
@@ -119,11 +151,14 @@ export default function Project() {
   const autoModelRef = useRef<number | null>((location.state as { suggestedModelId?: number } | null)?.suggestedModelId ?? null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const chatBottomRef = useRef<HTMLDivElement | null>(null)
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null)
   const chatResizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const promptHistoryDraftRef = useRef('')
+  const previewWheelAtRef = useRef(0)
   const [project, setProject] = useState<ProjectSummary | null>(null)
   const [models, setModels] = useState<AiModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState<number | null>(null)
-  const [activeTab, setActiveTab] = useState<'preview' | 'resources'>('preview')
+  const [activeTab, setActiveTab] = useState<'preview' | 'resources'>(() => readStoredProjectTab(projectKey))
   const [selectedSlideIndex, setSelectedSlideIndex] = useState(0)
   const [preview, setPreview] = useState<PreviewPresentation | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -134,6 +169,8 @@ export default function Project() {
   const [editorLoading, setEditorLoading] = useState(false)
   const [editorDirty, setEditorDirty] = useState(false)
   const [chatInput, setChatInput] = useState('')
+  const [promptHistory, setPromptHistory] = useState<string[]>(() => readStoredPromptHistory(projectKey))
+  const [promptHistoryIndex, setPromptHistoryIndex] = useState<number | null>(null)
   const [chatLoading, setChatLoading] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([])
@@ -183,7 +220,6 @@ export default function Project() {
       const rendered = await runProjectPreview(projectKey, data.content)
       setPreview(rendered)
       setSelectedSlideIndex(0)
-      setActiveTab('preview')
     } catch (err) {
       setPreview(null)
       setPreviewError(err instanceof Error ? err.message : String(err))
@@ -218,6 +254,13 @@ export default function Project() {
   }, [projectId])
 
   useEffect(() => {
+    setActiveTab(readStoredProjectTab(projectKey))
+    setPromptHistory(readStoredPromptHistory(projectKey))
+    setPromptHistoryIndex(null)
+    promptHistoryDraftRef.current = ''
+  }, [projectKey])
+
+  useEffect(() => {
     if (selectedFile?.kind === 'text') loadTextFile(selectedFile)
   }, [selectedFile])
 
@@ -232,6 +275,13 @@ export default function Project() {
   }, [selectedModelId, projectId, chatLoading])
 
   useEffect(() => {
+    document.title = buildProjectPageTitle(project, projectId)
+    return () => {
+      document.title = '最后一版PPT'
+    }
+  }, [project, projectId])
+
+  useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [displayedMessages, chatLoading])
 
@@ -242,6 +292,10 @@ export default function Project() {
   useEffect(() => {
     window.localStorage.setItem(CHAT_WIDTH_STORAGE_KEY, String(chatPanelWidth))
   }, [chatPanelWidth])
+
+  useEffect(() => {
+    window.localStorage.setItem(getProjectTabStorageKey(projectKey), activeTab)
+  }, [activeTab, projectKey])
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -324,6 +378,63 @@ export default function Project() {
     setSessionMessages(current => current.map(message => message.id === messageId ? updater(message) : message))
   }
 
+  const rememberPrompt = (value: string) => {
+    const nextPrompt = value.trim()
+    if (!nextPrompt) return
+    setPromptHistory(current => {
+      const nextHistory = current[current.length - 1] === nextPrompt
+        ? current
+        : [...current, nextPrompt].slice(-100)
+      window.localStorage.setItem(getPromptHistoryStorageKey(projectKey), JSON.stringify(nextHistory))
+      return nextHistory
+    })
+    setPromptHistoryIndex(null)
+    promptHistoryDraftRef.current = ''
+  }
+
+  const handleChatInputChange = (value: string) => {
+    setChatInput(value)
+    if (promptHistoryIndex !== null) {
+      setPromptHistoryIndex(null)
+    }
+    promptHistoryDraftRef.current = value
+  }
+
+  const handlePromptHistoryKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((event.key !== 'ArrowUp' && event.key !== 'ArrowDown') || event.altKey || event.ctrlKey || event.metaKey) return
+    const target = event.currentTarget
+    if (target.selectionStart !== target.selectionEnd) return
+
+    const textBeforeCursor = target.value.slice(0, target.selectionStart)
+    const textAfterCursor = target.value.slice(target.selectionEnd)
+    const canGoBackward = event.key === 'ArrowUp' && !textBeforeCursor.includes('\n')
+    const canGoForward = event.key === 'ArrowDown' && !textAfterCursor.includes('\n')
+    if (!canGoBackward && !canGoForward) return
+
+    if (event.key === 'ArrowUp') {
+      if (!promptHistory.length) return
+      event.preventDefault()
+      const nextIndex = promptHistoryIndex === null ? promptHistory.length - 1 : Math.max(0, promptHistoryIndex - 1)
+      if (promptHistoryIndex === null) {
+        promptHistoryDraftRef.current = chatInput
+      }
+      setPromptHistoryIndex(nextIndex)
+      setChatInput(promptHistory[nextIndex] ?? '')
+      return
+    }
+
+    if (promptHistoryIndex === null) return
+    event.preventDefault()
+    const nextIndex = promptHistoryIndex + 1
+    if (nextIndex >= promptHistory.length) {
+      setPromptHistoryIndex(null)
+      setChatInput(promptHistoryDraftRef.current)
+      return
+    }
+    setPromptHistoryIndex(nextIndex)
+    setChatInput(promptHistory[nextIndex] ?? '')
+  }
+
   const sendChat = async (content?: string, modelIdOverride?: number) => {
     const text = (content ?? chatInput).trim()
     const modelId = modelIdOverride ?? selectedModelId
@@ -337,6 +448,7 @@ export default function Project() {
     }
     const assistantMessageId = buildMessageId()
 
+    rememberPrompt(text)
     setShowHistory(false)
     setSessionMessages(current => [
       ...current,
@@ -435,6 +547,21 @@ export default function Project() {
     window.open(`/api/projects/${encodeURIComponent(projectKey)}/export`, '_blank')
   }
 
+  const handlePreviewWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    if (!preview?.slides.length || Math.abs(event.deltaY) < 8) return
+    const now = Date.now()
+    if (now - previewWheelAtRef.current < 160) {
+      event.preventDefault()
+      return
+    }
+    previewWheelAtRef.current = now
+    event.preventDefault()
+    setSelectedSlideIndex(current => {
+      const nextIndex = current + (event.deltaY > 0 ? 1 : -1)
+      return Math.min(preview.slides.length - 1, Math.max(0, nextIndex))
+    })
+  }
+
   const currentSlide = preview?.slides[selectedSlideIndex] ?? preview?.slides[0] ?? null
 
   if (!projectId) {
@@ -510,7 +637,10 @@ export default function Project() {
                     )}
                     {!previewLoading && !previewError && currentSlide && preview && (
                       <div className="space-y-4">
-                        <SlideCanvas slide={currentSlide} presentation={preview} />
+                        <div onWheel={handlePreviewWheel}>
+                          <SlideCanvas slide={currentSlide} presentation={preview} />
+                        </div>
+                        <div className="text-xs text-gray-500">把鼠标放在预览页上滚动滚轮，可以切换上一页或下一页。</div>
                         {preview.logs.length > 0 && (
                           <div className="rounded-xl border border-gray-800 bg-gray-950/70 p-4">
                             <div className="mb-2 text-sm font-medium text-white">生成记录</div>
@@ -602,15 +732,10 @@ export default function Project() {
           <aside className="min-h-0 bg-gray-950/90">
             <div className="flex h-full min-h-0 flex-col">
               <div className="border-b border-gray-800 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-white">智能助手</div>
-                  </div>
-                  <Select className="max-w-52" value={selectedModelId?.toString() || ''} onChange={event => setSelectedModelId(Number(event.target.value))}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select className="min-w-44 flex-1 sm:max-w-52" value={selectedModelId?.toString() || ''} onChange={event => setSelectedModelId(Number(event.target.value))}>
                     {models.map(model => <option key={model.id} value={model.id}>{model.display_name || model.model_name}</option>)}
                   </Select>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
                   <Button size="sm" variant={showHistory ? 'outline' : 'default'} onClick={() => { setShowHistory(false); setSessionMessages([]); setPageError(null) }} disabled={chatLoading}>
                     <Plus className="h-4 w-4" />新对话
                   </Button>
@@ -628,10 +753,21 @@ export default function Project() {
                 </div>
               </div>
               <div className="border-t border-gray-800 px-4 py-4">
-                <Textarea value={chatInput} onChange={event => setChatInput(event.target.value)} placeholder={selectedModelId ? '例如：做一个三页的产品发布会 PPT，强调问题、方案和优势。也可以先问我：你可以帮我做什么？' : '请先在模型配置中启用模型'} className="min-h-28 bg-gray-900" />
-                <div className="mt-3 flex justify-end">
-                  <Button onClick={() => sendChat()} disabled={chatLoading || !selectedModelId || !chatInput.trim()}><Send className="h-4 w-4" />发送</Button>
-                </div>
+                <PromptInput
+                  ref={chatInputRef}
+                  value={chatInput}
+                  onChange={handleChatInputChange}
+                  onSubmit={() => sendChat()}
+                  onKeyDown={handlePromptHistoryKeyDown}
+                  disabled={chatLoading || !selectedModelId}
+                  placeholder={selectedModelId ? '例如：做一个三页的产品发布会 PPT，强调问题、方案和优势。也可以先问我：你可以帮我做什么？' : '请先在模型配置中启用模型'}
+                  className="min-h-28 items-stretch bg-gray-900"
+                >
+                  <Button onClick={() => sendChat()} disabled={chatLoading || !selectedModelId || !chatInput.trim()} className="self-end">
+                    <Send className="h-4 w-4" />发送
+                  </Button>
+                </PromptInput>
+                <div className="mt-2 text-xs text-gray-500">按回车发送，按 Shift + 回车换行；按上下方向键可切换之前输入过的内容。</div>
               </div>
             </div>
           </aside>
