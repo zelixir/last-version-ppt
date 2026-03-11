@@ -2,7 +2,7 @@ export const PPTXGENJS_GUIDE = [
   'PptxGenJS 使用指南（给内置 PPT 助手）：',
   '',
   '一、先牢记当前项目运行环境',
-  '1. index.js 必须导出函数：module.exports = async function buildPresentation(context) { ... }。',
+  '1. index.js 必须导出函数：module.exports = async function buildPresentation({ pptx, pptxgenjs, getResourceUrl, getResourcePath, log, projectId, projectDir, path }) { ... }。',
   '2. 可用上下文：',
   '   - context.pptx：当前演示文稿实例。',
   '   - context.pptxgenjs：PptxGenJS 构造函数与枚举。',
