@@ -1,0 +1,15 @@
+{
+  "name": "last-version-ppt",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node backend/src/index.js",
+    "start": "node backend/src/index.js",
+    "build": "node --check backend/src/index.js && node --check backend/src/ai.js && node --check backend/src/paths.js && node --check backend/src/ppt.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "pptxgenjs": "^4.0.1"
+  }
+}
