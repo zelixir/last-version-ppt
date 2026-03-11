@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';
 
@@ -76,6 +76,13 @@ export function buildProjectId(name: string, date = new Date()): string {
   return `${formatDateYYYYMMDD(date)}_${sanitizeProjectName(name)}`;
 }
 
+export function buildRenamedProjectId(projectId: string, name: string): string {
+  const safeName = sanitizeProjectName(name);
+  const datePrefix = projectId.match(/^\d{8}_/)?.[0] ?? '';
+  const versionSuffix = projectId.match(/_v\d{2}$/i)?.[0] ?? '';
+  return `${datePrefix}${safeName}${versionSuffix}`;
+}
+
 export function stripVersionSuffix(projectId: string): string {
   return projectId.replace(/_v\d{2}$/i, '');
 }
@@ -103,6 +110,10 @@ export function copyProjectDirectory(sourceProjectId: string, targetProjectId: s
   const sourceDir = getProjectDir(sourceProjectId);
   const targetDir = getProjectDir(targetProjectId);
   cpSync(sourceDir, targetDir, { recursive: true, force: true });
+}
+
+export function renameProjectDirectory(sourceProjectId: string, targetProjectId: string): void {
+  renameSync(getProjectDir(sourceProjectId), getProjectDir(targetProjectId));
 }
 
 export function listProjectDirectories(): string[] {

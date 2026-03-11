@@ -304,6 +304,43 @@ export function appendProjectChat(id: string, entries: ProjectChatEntry[]): Proj
   return updateProjectRecord(id, { chatHistory: [...current.chatHistory, ...entries], touch: true });
 }
 
+export function renameProjectRecord(id: string, nextId: string, nextName?: string): ProjectRow | null {
+  const current = getProjectById(id);
+  if (!current) return null;
+
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE projects
+      SET id = ?,
+          name = ?,
+          root_project_id = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      nextId,
+      nextName ?? current.name,
+      current.rootProjectId === current.id ? nextId : current.rootProjectId,
+      id,
+    );
+
+    if (current.rootProjectId === current.id) {
+      db.prepare(`
+        UPDATE projects
+        SET root_project_id = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE root_project_id = ? AND id <> ?
+      `).run(nextId, id, nextId);
+    }
+
+    const activeProjectId = getSetting('currentProjectId');
+    if (activeProjectId === id) {
+      setSetting('currentProjectId', nextId);
+    }
+  })();
+
+  return getProjectById(nextId);
+}
+
 export function deleteProjectRecord(id: string): void {
   db.prepare('DELETE FROM projects WHERE id = ?').run(id);
 }

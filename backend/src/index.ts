@@ -8,7 +8,6 @@ import { frontendAssets } from './frontend-assets.ts';
 import exampleProviderData from '../model-provider.example.json';
 import exampleModelData from '../models.example.json';
 import {
-  appendProjectChat,
   createAiModel,
   createProjectRecord,
   createProvider,
@@ -21,6 +20,7 @@ import {
   getProviders,
   getSetting,
   listProjects,
+  renameProjectRecord,
   seedModelsFromJson,
   seedProvidersFromJson,
   setSetting,
@@ -28,10 +28,11 @@ import {
   updateProjectRecord,
   updateProvider,
 } from './db.ts';
-import { chatWithProjectAgent, generateProjectName } from './project-agent.ts';
+import { chatWithProjectAgent, generateProjectName, ProjectAgentStreamEvent } from './project-agent.ts';
 import { runProject } from './project-runner.ts';
 import { exampleApiKeys } from './project-support.ts';
 import {
+  buildRenamedProjectId,
   buildProjectId,
   copyProjectDirectory,
   createProjectFiles,
@@ -40,6 +41,7 @@ import {
   listProjectDirectories,
   nextVersionProjectId,
   projectsRoot,
+  renameProjectDirectory,
   resolveProjectFile,
   sanitizeProjectName,
   storageRoot,
@@ -141,6 +143,31 @@ function json(data: unknown, status = 200): Response {
 
 function errorResponse(message: string, status = 400): Response {
   return json({ error: message }, status);
+}
+
+function createSseResponse(run: (push: (event: string, payload: unknown) => void) => Promise<void>): Response {
+  const encoder = new TextEncoder();
+  return new Response(new ReadableStream({
+    async start(controller) {
+      const push = (event: string, payload: unknown) => {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`));
+      };
+
+      try {
+        await run(push);
+      } catch (error) {
+        push('error', { error: error instanceof Error ? error.message : String(error) });
+      } finally {
+        controller.close();
+      }
+    },
+  }), {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+    },
+  });
 }
 
 function syncProjectsWithFilesystem(): void {
@@ -340,6 +367,17 @@ const app = new Elysia()
     setCurrentProjectId(params.id);
     return { success: true };
   })
+  .post('/api/projects/:id/rename', ({ params, body }) => {
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+    const nextName = sanitizeProjectName(((body as any).name ?? project.name) as string);
+    const nextProjectId = buildRenamedProjectId(project.id, nextName);
+    if (nextProjectId === project.id) return buildProjectResponse(project.id);
+    if (getProjectById(nextProjectId) || existsSync(getProjectDir(nextProjectId))) return errorResponse('同名项目已存在，请换一个名称');
+    renameProjectDirectory(project.id, nextProjectId);
+    renameProjectRecord(project.id, nextProjectId, nextName);
+    return buildProjectResponse(nextProjectId);
+  })
   .get('/api/projects/:id', ({ params }) => {
     const project = buildProjectResponse(params.id);
     return project ?? new Response('Not found', { status: 404 });
@@ -350,15 +388,28 @@ const app = new Elysia()
   })
   .post('/api/projects/:id/chat', async ({ params, body }) => {
     if (!getProjectById(params.id)) return new Response('Not found', { status: 404 });
-    const payload = body as { content: string; modelId: number };
+    const payload = body as { content: string; modelId: number; includeHistory?: boolean };
     if (!payload.content?.trim()) return errorResponse('消息不能为空');
     try {
-      const result = await chatWithProjectAgent(params.id, payload.content.trim(), payload.modelId);
-      updateProjectRecord(params.id, { touch: true });
-      return { history: result.history, toolEvents: result.toolEvents };
+      const result = await chatWithProjectAgent(params.id, payload.content.trim(), payload.modelId, { includeHistory: payload.includeHistory === true });
+      updateProjectRecord(result.activeProjectId, { touch: true });
+      return { history: result.history, toolEvents: result.toolEvents, projectId: result.activeProjectId };
     } catch (error) {
       return errorResponse(error instanceof Error ? error.message : String(error), 500);
     }
+  })
+  .post('/api/projects/:id/chat/stream', ({ params, body }) => {
+    if (!getProjectById(params.id)) return new Response('Not found', { status: 404 });
+    const payload = body as { content: string; modelId: number; includeHistory?: boolean };
+    if (!payload.content?.trim()) return errorResponse('消息不能为空');
+    return createSseResponse(async push => {
+      const result = await chatWithProjectAgent(params.id, payload.content.trim(), payload.modelId, {
+        includeHistory: payload.includeHistory === true,
+        onEvent: (event: ProjectAgentStreamEvent) => push('message', event),
+      });
+      updateProjectRecord(result.activeProjectId, { touch: true });
+      push('done', { projectId: result.activeProjectId });
+    });
   })
   .get('/api/projects/:id/files', ({ params }) => {
     const project = buildProjectResponse(params.id);
