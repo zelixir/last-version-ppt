@@ -624,7 +624,7 @@ export function createModelClient(modelId: string, provider: string): DashscopeC
   return new DashscopeChatLanguageModel(modelId, api_key, base_url);
 }
 
-export default function dashscope(modelId: string): DashscopeChatLanguageModel {
-  const { api_key, base_url } = loadProviderConfig('阿里云');
+export default function dashscope(modelId: string, provider: string): DashscopeChatLanguageModel {
+  const { api_key, base_url } = loadProviderConfig(provider);
   return new DashscopeChatLanguageModel(modelId, api_key, base_url);
 }

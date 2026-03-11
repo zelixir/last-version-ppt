@@ -85,6 +85,11 @@ function deriveConversationTitle(messages: ChatMessage[]): string {
 const backendDir = getBackendDir();
 const isExeMode = frontendAssets !== null;
 const backendRoot = isExeMode ? backendDir : pathModule.join(backendDir, '..');
+const exampleApiKeys = new Set(
+  ((exampleProviderData as { providers?: Array<{ api_key?: string }> }).providers ?? [])
+    .map(provider => provider.api_key)
+    .filter((apiKey): apiKey is string => Boolean(apiKey))
+);
 
 const modelProviderPath = pathModule.join(backendRoot, 'model-provider.json');
 if (existsSync(modelProviderPath)) {
@@ -265,7 +270,7 @@ const app = new Elysia()
     }
 
     const providerConfig = getProviderByName(modelConfig.provider);
-    if (!providerConfig || !providerConfig.api_key || providerConfig.api_key.startsWith('your_')) {
+    if (!providerConfig || !providerConfig.api_key || exampleApiKeys.has(providerConfig.api_key)) {
       return new Response(JSON.stringify({ error: 'Please configure a valid API key for the selected provider first' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 

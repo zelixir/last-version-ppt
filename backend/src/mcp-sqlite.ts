@@ -52,6 +52,8 @@ server.registerTool(
       };
     }
 
+    // SQLite does not support parameter binding for PRAGMA table_info, so we
+    // validate the identifier strictly above and interpolate the sanitized name here.
     const cols = db.query(`PRAGMA table_info(\"${safeName}\")`).all() as Array<{ cid: number; name: string; type: string; notnull: number; dflt_value: string | null; pk: number }>;
     const lines = cols.map(col => `  ${col.name} ${col.type}` + (col.pk ? ' PRIMARY KEY' : '') + (col.notnull ? ' NOT NULL' : '') + (col.dflt_value !== null ? ` DEFAULT ${col.dflt_value}` : ''));
     return { content: [{ type: 'text' as const, text: `CREATE TABLE ${table} (\n${lines.join(',\n')}\n)` }] };

@@ -31,6 +31,7 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>(getStoredTab)
   const [providers, setProviders] = useState<ModelProvider[]>([])
   const [models, setModels] = useState<AiModel[]>([])
+  const [error, setError] = useState<string | null>(null)
   const [showProviderForm, setShowProviderForm] = useState(false)
   const [showModelForm, setShowModelForm] = useState(false)
   const [providerForm, setProviderForm] = useState(emptyProviderForm)
@@ -44,11 +45,35 @@ export default function Home() {
   }, [tab])
 
   const fetchProviders = () => {
-    fetch('/api/providers').then(r => r.json()).then(setProviders).catch(console.error)
+    fetch('/api/providers')
+      .then(async r => {
+        if (!r.ok) throw new Error(`加载服务商失败（${r.status} ${r.statusText}）`)
+        return r.json()
+      })
+      .then(data => {
+        setProviders(data)
+        setError(current => current === '加载服务商失败，请刷新页面重试。' ? null : current)
+      })
+      .catch(err => {
+        console.error(err)
+        setError('加载服务商失败，请刷新页面重试。')
+      })
   }
 
   const fetchModels = () => {
-    fetch('/api/ai-models').then(r => r.json()).then(setModels).catch(console.error)
+    fetch('/api/ai-models')
+      .then(async r => {
+        if (!r.ok) throw new Error(`加载模型失败（${r.status} ${r.statusText}）`)
+        return r.json()
+      })
+      .then(data => {
+        setModels(data)
+        setError(current => current === '加载模型失败，请刷新页面重试。' ? null : current)
+      })
+      .catch(err => {
+        console.error(err)
+        setError('加载模型失败，请刷新页面重试。')
+      })
   }
 
   useEffect(() => {
@@ -174,6 +199,11 @@ export default function Home() {
 
       <div className="min-h-screen bg-gray-950 p-8">
         <div className="mx-auto max-w-5xl space-y-6">
+          {error && (
+            <div className="rounded-xl border border-red-900/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">
+              {error}
+            </div>
+          )}
           <div className="flex flex-col gap-4 rounded-2xl border border-gray-800 bg-gray-900/80 p-6 shadow-2xl shadow-black/20 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-3">
               <div className="flex items-center gap-3">

@@ -34,14 +34,36 @@ export default function Chat() {
   const selectedModel = useMemo(() => models.find(model => model.id === selectedModelId) ?? null, [models, selectedModelId])
 
   const fetchModels = () => {
-    fetch('/api/ai-models?enabled=true').then(r => r.json()).then((data: AiModel[]) => {
-      setModels(data)
-      setSelectedModelId(current => current ?? data[0]?.id ?? null)
-    }).catch(console.error)
+    fetch('/api/ai-models?enabled=true')
+      .then(async r => {
+        if (!r.ok) throw new Error(`加载模型失败（${r.status} ${r.statusText}）`)
+        return r.json()
+      })
+      .then((data: AiModel[]) => {
+        setModels(data)
+        setSelectedModelId(current => current ?? data[0]?.id ?? null)
+        setError(current => current === '加载模型失败，请返回首页检查配置。' ? null : current)
+      })
+      .catch(err => {
+        console.error(err)
+        setError('加载模型失败，请返回首页检查配置。')
+      })
   }
 
   const fetchConversations = () => {
-    fetch('/api/conversations').then(r => r.json()).then(setConversations).catch(console.error)
+    fetch('/api/conversations')
+      .then(async r => {
+        if (!r.ok) throw new Error(`加载对话历史失败（${r.status} ${r.statusText}）`)
+        return r.json()
+      })
+      .then(data => {
+        setConversations(data)
+        setError(current => current === '加载对话历史失败，请刷新页面重试。' ? null : current)
+      })
+      .catch(err => {
+        console.error(err)
+        setError('加载对话历史失败，请刷新页面重试。')
+      })
   }
 
   useEffect(() => {
@@ -54,12 +76,17 @@ export default function Chat() {
   }, [messages, loading])
 
   const loadConversation = async (id: number) => {
-    const response = await fetch(`/api/conversations/${id}`)
-    if (!response.ok) return
-    const conversation = await response.json() as Conversation
-    setConversationId(id)
-    setMessages(parseStoredMessages(conversation.messages))
-    setError(null)
+    try {
+      const response = await fetch(`/api/conversations/${id}`)
+      if (!response.ok) throw new Error('加载对话失败')
+      const conversation = await response.json() as Conversation
+      setConversationId(id)
+      setMessages(parseStoredMessages(conversation.messages))
+      setError(null)
+    } catch (err) {
+      console.error(err)
+      setError('加载对话失败，请刷新页面后重试。')
+    }
   }
 
   const handleNewConversation = () => {
@@ -91,8 +118,11 @@ export default function Chat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: nextMessages, modelId: selectedModelId, conversationId: conversationId ?? undefined }),
       })
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(errorData?.error || `聊天请求失败（${response.status} ${response.statusText}）`)
+      }
       const data = await response.json()
-      if (!response.ok) throw new Error(data.error || '聊天请求失败')
 
       setMessages(prev => [...prev, { role: 'assistant', content: data.message || '' }])
       if (typeof data.conversationId === 'number') setConversationId(data.conversationId)

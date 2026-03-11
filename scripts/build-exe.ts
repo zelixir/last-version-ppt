@@ -5,7 +5,7 @@
 
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import pathModule from 'path';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __dirname = pathModule.dirname(fileURLToPath(import.meta.url));
@@ -41,7 +41,7 @@ function getMimeType(filePath: string): string {
 function collectFiles(dir: string, base: string, results: Array<{ urlPath: string; absPath: string }> = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const absPath = pathModule.join(dir, entry.name);
-    const urlPath = base + '/' + entry.name;
+    const urlPath = pathModule.posix.join(base || '/', entry.name);
     if (entry.isDirectory()) {
       collectFiles(absPath, urlPath, results);
     } else {
@@ -52,7 +52,10 @@ function collectFiles(dir: string, base: string, results: Array<{ urlPath: strin
 }
 
 console.log('📦 Building frontend...');
-execSync('npm run build', { cwd: frontendDir, stdio: 'inherit' });
+const frontendBuild = spawnSync('bun', ['run', 'build'], { cwd: frontendDir, stdio: 'inherit' });
+if (frontendBuild.status !== 0) {
+  process.exit(frontendBuild.status ?? 1);
+}
 if (!existsSync(frontendDistDir)) {
   console.error('Frontend build failed: dist directory not found');
   process.exit(1);
@@ -79,10 +82,22 @@ const exePath = pathModule.join(outputDir, 'last-version-ppt.exe');
 
 console.log('🔨 Compiling Windows exe (target: bun-windows-x64)...');
 console.log(`   Output: ${exePath}`);
-execSync(
-  `bun build --compile --minify --target=bun-windows-x64 --outfile ${JSON.stringify(exePath)} ${JSON.stringify(pathModule.join(backendDir, 'src', 'index.ts'))}`,
-  { cwd: rootDir, stdio: 'inherit', shell: false }
+const backendBuild = spawnSync(
+  'bun',
+  [
+    'build',
+    '--compile',
+    '--minify',
+    '--target=bun-windows-x64',
+    '--outfile',
+    exePath,
+    pathModule.join(backendDir, 'src', 'index.ts'),
+  ],
+  { cwd: rootDir, stdio: 'inherit' }
 );
+if (backendBuild.status !== 0) {
+  process.exit(backendBuild.status ?? 1);
+}
 
 const STUB_CONTENT = `// Stub file — overwritten by scripts/build-exe.ts when packaging the Windows exe.\n// In dev mode this exports null, causing the backend to serve files from the filesystem.\nexport const frontendAssets: Map<string, { content: Buffer; mimeType: string }> | null = null;\n`;
 writeFileSync(embeddedAssetsFile, STUB_CONTENT, 'utf-8');

@@ -26,11 +26,14 @@
 
 import { readFileSync } from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { createAiModel, getAiModels } from "./db";
+
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
 const configPath = process.argv[2]
   ? path.resolve(process.argv[2])
-  : path.join(path.dirname(new URL(import.meta.url).pathname), "..", "models.example.json");
+  : path.join(currentDir, "..", "models.example.json");
 
 console.log(`Loading models from: ${configPath}`);
 
