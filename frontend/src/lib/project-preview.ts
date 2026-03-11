@@ -1,0 +1,124 @@
+import PptxGenJS from 'pptxgenjs'
+import type { PreviewElement, PreviewPresentation, PreviewSlide } from '../types'
+
+const EMU_PER_INCH = 914400
+
+function toInches(value: unknown): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 0
+  return Math.abs(value) > 1000 ? value / EMU_PER_INCH : value
+}
+
+function findBuildFunction(moduleExports: unknown): ((context: any) => Promise<unknown> | unknown) | null {
+  if (typeof moduleExports === 'function') return moduleExports as (context: any) => Promise<unknown> | unknown
+  if (moduleExports && typeof moduleExports === 'object') {
+    const maybeDefault = (moduleExports as Record<string, unknown>).default
+    const maybeBuild = (moduleExports as Record<string, unknown>).buildPresentation
+    if (typeof maybeDefault === 'function') return maybeDefault as (context: any) => Promise<unknown> | unknown
+    if (typeof maybeBuild === 'function') return maybeBuild as (context: any) => Promise<unknown> | unknown
+  }
+  return null
+}
+
+function serializeSlide(slide: any): PreviewSlide {
+  const relsMedia = Array.isArray(slide?._relsMedia) ? slide._relsMedia : []
+  const elements: PreviewElement[] = (Array.isArray(slide?._slideObjects) ? slide._slideObjects : []).flatMap((item: any, index: number) => {
+    if (item?._type === 'image') {
+      const media = relsMedia.find((entry: any) => entry?.rId === item.imageRid)
+      const src = media?.data || media?.path || item.image || ''
+      return src
+        ? [{ kind: 'image', x: toInches(item.options?.x), y: toInches(item.options?.y), w: toInches(item.options?.w), h: toInches(item.options?.h), src }]
+        : []
+    }
+
+    if (item?._type === 'table') {
+      const rows = Array.isArray(item.arrTabRows)
+        ? item.arrTabRows.map((row: any[]) => row.map(cell => String(cell?.text ?? '')))
+        : []
+      return [{
+        kind: 'table',
+        x: toInches(item.options?.x),
+        y: toInches(item.options?.y),
+        w: toInches(item.options?.w),
+        h: toInches(item.options?.h),
+        rows,
+      }]
+    }
+
+    const textRuns = Array.isArray(item?.text) ? item.text : []
+    if (textRuns.length > 0) {
+      const text = textRuns.map((run: any) => run?.text ?? '').join('')
+      const options = item.options ?? textRuns[0]?.options ?? {}
+      return [{
+        kind: 'text',
+        x: toInches(options.x),
+        y: toInches(options.y),
+        w: toInches(options.w),
+        h: toInches(options.h),
+        text,
+        color: options.color,
+        fontSize: typeof options.fontSize === 'number' ? options.fontSize : undefined,
+        bold: Boolean(options.bold),
+        align: options.align,
+        valign: options.valign || options._bodyProp?.anchor,
+        fillColor: options.fill?.color,
+        borderColor: options.line?.color,
+      }]
+    }
+
+    const options = item?.options ?? {}
+    return [{
+      kind: 'shape',
+      x: toInches(options.x),
+      y: toInches(options.y),
+      w: toInches(options.w),
+      h: toInches(options.h),
+      fillColor: options.fill?.color,
+      borderColor: options.line?.color,
+      shape: item?.shape || `shape-${index}`,
+    }]
+  })
+
+  return {
+    id: String(slide?._slideId ?? Math.random()),
+    backgroundColor: slide?._background?.color,
+    elements,
+  }
+}
+
+export async function runProjectPreview(projectId: string, code: string): Promise<PreviewPresentation> {
+  const logs: string[] = []
+  const module = { exports: {} as any }
+
+  try {
+    const evaluator = new Function('module', 'exports', code)
+    evaluator(module, module.exports)
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error))
+  }
+
+  const build = findBuildFunction(module.exports)
+  if (!build) {
+    throw new Error('index.js 必须导出一个函数，例如 module.exports = async function ({ pptx }) { ... }')
+  }
+
+  const pptx = new PptxGenJS()
+  pptx.layout = 'LAYOUT_WIDE'
+
+  const context = {
+    pptx,
+    pptxgenjs: PptxGenJS,
+    getResourceUrl: (fileName: string) => `/${projectId}/${encodeURIComponent(fileName)}`,
+    log: (...args: unknown[]) => logs.push(args.map(arg => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ')),
+  }
+
+  const output = await build(context)
+  const finalPptx = output instanceof PptxGenJS ? output : pptx
+  const layout = (finalPptx as any)._presLayout
+
+  return {
+    width: toInches(layout?.width) || 13.333,
+    height: toInches(layout?.height) || 7.5,
+    slides: ((finalPptx as any)._slides ?? []).map((slide: any) => serializeSlide(slide)),
+    logs,
+  }
+}

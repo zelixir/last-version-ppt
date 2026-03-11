@@ -1,6 +1,7 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import Home from './pages/Home'
-import Chat from './pages/Chat'
+import Models from './pages/Models'
+import Project from './pages/Project'
 import Help from './pages/Help'
 
 export default function App() {
@@ -8,7 +9,8 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/chat" element={<Chat />} />
+        <Route path="/projects/:projectId" element={<Project />} />
+        <Route path="/models" element={<Models />} />
         <Route path="/help" element={<Help />} />
       </Routes>
     </BrowserRouter>

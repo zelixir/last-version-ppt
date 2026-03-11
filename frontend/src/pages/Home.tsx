@@ -1,384 +1,213 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, BrainCircuit, Building2, Check, HelpCircle, MessageSquare, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react'
-import type { AiModel, ModelProvider } from '../types'
+import { AlertTriangle, ArrowRight, BrainCircuit, CopyPlus, FolderOpen, Layers3, LoaderCircle, Plus, Settings2, Sparkles } from 'lucide-react'
+import type { ConfigStatus, ProjectSummary } from '../types'
 import { Button } from '../components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
-import { Input } from '../components/ui/input'
-import { Select } from '../components/ui/select'
+import { Textarea } from '../components/ui/textarea'
 
-type Tab = 'providers' | 'models'
-
-const emptyModelForm = { model_name: '', display_name: '', provider: '', enabled: 'Y' as 'Y' | 'N' }
-const emptyProviderForm = { name: '', label: '', base_url: '', api_key: '' }
-const TAB_STORAGE_KEY = 'lastVersionPpt_activeTab'
-
-type ConfirmState =
-  | { type: 'provider'; name: string; affectedModels: AiModel[] }
-  | { type: 'model'; id: number; name: string }
-
-function getStoredTab(): Tab {
-  try {
-    const stored = localStorage.getItem(TAB_STORAGE_KEY)
-    return stored === 'models' ? 'models' : 'providers'
-  } catch {
-    return 'providers'
-  }
-}
+const PLACEHOLDERS = [
+  '做一个 8 页的产品介绍 PPT，风格科技感强，包含时间线与功能亮点。',
+  '把我的商业计划书整理成投资人演示稿，重点突出市场规模、商业模式和财务预测。',
+  '生成一份培训课件，主题是团队沟通协作，要求有封面、目录、案例和总结页。',
+  '做一个汇报型 PPT，总结本季度运营数据，包含图表、关键结论和下季度计划。',
+]
 
 export default function Home() {
   const navigate = useNavigate()
-  const [tab, setTab] = useState<Tab>(getStoredTab)
-  const [providers, setProviders] = useState<ModelProvider[]>([])
-  const [models, setModels] = useState<AiModel[]>([])
+  const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null)
+  const [requirement, setRequirement] = useState('')
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showProviderForm, setShowProviderForm] = useState(false)
-  const [showModelForm, setShowModelForm] = useState(false)
-  const [providerForm, setProviderForm] = useState(emptyProviderForm)
-  const [modelForm, setModelForm] = useState(emptyModelForm)
-  const [editingProviderName, setEditingProviderName] = useState<string | null>(null)
-  const [editingModelId, setEditingModelId] = useState<number | null>(null)
-  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)
+  const [placeholderSeed, setPlaceholderSeed] = useState(() => Math.floor(Math.random() * PLACEHOLDERS.length))
 
-  useEffect(() => {
-    try { localStorage.setItem(TAB_STORAGE_KEY, tab) } catch {}
-  }, [tab])
+  const placeholder = useMemo(() => PLACEHOLDERS[placeholderSeed % PLACEHOLDERS.length], [placeholderSeed])
 
-  const fetchProviders = () => {
-    fetch('/api/providers')
-      .then(async r => {
-        if (!r.ok) throw new Error(`加载服务商失败（${r.status} ${r.statusText}）`)
-        return r.json()
+  const fetchProjects = () => {
+    fetch('/api/projects')
+      .then(async response => {
+        if (!response.ok) throw new Error('加载项目失败')
+        return response.json()
       })
-      .then(data => {
-        setProviders(data)
-        setError(current => current === '加载服务商失败，请刷新页面重试。' ? null : current)
-      })
+      .then(data => setProjects(data.projects ?? []))
       .catch(err => {
         console.error(err)
-        setError('加载服务商失败，请刷新页面重试。')
+        setError('加载项目失败，请刷新页面后重试。')
       })
   }
 
-  const fetchModels = () => {
-    fetch('/api/ai-models')
-      .then(async r => {
-        if (!r.ok) throw new Error(`加载模型失败（${r.status} ${r.statusText}）`)
-        return r.json()
+  const fetchStatus = () => {
+    fetch('/api/config-status')
+      .then(async response => {
+        if (!response.ok) throw new Error('加载模型状态失败')
+        return response.json()
       })
-      .then(data => {
-        setModels(data)
-        setError(current => current === '加载模型失败，请刷新页面重试。' ? null : current)
-      })
+      .then((data: ConfigStatus) => setConfigStatus(data))
       .catch(err => {
         console.error(err)
-        setError('加载模型失败，请刷新页面重试。')
+        setError('加载模型状态失败，请刷新页面后重试。')
       })
   }
 
   useEffect(() => {
-    fetchProviders()
-    fetchModels()
+    fetchProjects()
+    fetchStatus()
   }, [])
 
-  useEffect(() => {
-    if (!modelForm.provider && providers[0]) {
-      setModelForm(form => ({ ...form, provider: providers[0].name }))
+  const createProject = async () => {
+    if (!requirement.trim() || loading) return
+    if (!configStatus?.firstUsableModelId) {
+      setError('当前没有可用模型，先去模型配置页面填写真实 API Key 并启用模型。')
+      return
     }
-  }, [providers, modelForm.provider])
 
-  const resetProviderForm = () => {
-    setProviderForm(emptyProviderForm)
-    setEditingProviderName(null)
-    setShowProviderForm(false)
+    setLoading(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirement: requirement.trim(), modelId: configStatus.firstUsableModelId }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || '创建项目失败')
+      const prompt = requirement.trim()
+      setRequirement('')
+      setPlaceholderSeed(current => current + 1)
+      navigate(`/projects/${data.id}`, { state: { autoPrompt: prompt, suggestedModelId: configStatus.firstUsableModelId } })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const resetModelForm = () => {
-    setModelForm({ ...emptyModelForm, provider: providers[0]?.name || '' })
-    setEditingModelId(null)
-    setShowModelForm(false)
-  }
-
-  const handleAddProvider = async (e: React.FormEvent) => {
-    e.preventDefault()
-    await fetch('/api/providers', {
+  const cloneProject = async (project: ProjectSummary) => {
+    const name = window.prompt('请输入新项目名称', `${project.name}-copy`)
+    if (!name) return
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/clone`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(providerForm),
+      body: JSON.stringify({ name }),
     })
-    resetProviderForm()
-    fetchProviders()
-  }
-
-  const handleSaveProviderEdit = async (originalName: string) => {
-    await fetch(`/api/providers/${encodeURIComponent(originalName)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(providerForm),
-    })
-    resetProviderForm()
-    fetchProviders()
-    fetchModels()
-  }
-
-  const handleDeleteProvider = async (name: string) => {
-    await fetch(`/api/providers/${encodeURIComponent(name)}`, { method: 'DELETE' })
-    setProviders(prev => prev.filter(provider => provider.name !== name))
-    setModels(prev => prev.filter(model => model.provider !== name))
-  }
-
-  const handleAddModel = async (e: React.FormEvent) => {
-    e.preventDefault()
-    await fetch('/api/ai-models', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(modelForm),
-    })
-    resetModelForm()
-    fetchModels()
-  }
-
-  const handleSaveModelEdit = async (id: number) => {
-    await fetch(`/api/ai-models/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(modelForm),
-    })
-    resetModelForm()
-    fetchModels()
-  }
-
-  const handleToggleModel = async (model: AiModel) => {
-    await fetch(`/api/ai-models/${model.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: model.enabled === 'Y' ? 'N' : 'Y' }),
-    })
-    fetchModels()
-  }
-
-  const handleDeleteModel = async (id: number) => {
-    await fetch(`/api/ai-models/${id}`, { method: 'DELETE' })
-    setModels(prev => prev.filter(model => model.id !== id))
-  }
-
-  const handleConfirmDelete = async () => {
-    if (!confirmState) return
-    if (confirmState.type === 'provider') {
-      for (const model of confirmState.affectedModels) {
-        await handleDeleteModel(model.id)
-      }
-      await handleDeleteProvider(confirmState.name)
-    } else {
-      await handleDeleteModel(confirmState.id)
+    if (!response.ok) {
+      const data = await response.json().catch(() => null)
+      setError(data?.error || '克隆项目失败')
+      return
     }
-    setConfirmState(null)
+    fetchProjects()
+  }
+
+  const createVersion = async (project: ProjectSummary) => {
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/create-version`, { method: 'POST' })
+    if (!response.ok) {
+      const data = await response.json().catch(() => null)
+      setError(data?.error || '创建版本失败')
+      return
+    }
+    fetchProjects()
   }
 
   return (
-    <>
-      <Dialog open={!!confirmState} onOpenChange={open => !open && setConfirmState(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-red-400" />
-              确认删除
-            </DialogTitle>
-            <DialogDescription>
-              {confirmState?.type === 'provider'
-                ? `删除服务商「${confirmState.name}」会同时删除其下 ${confirmState.affectedModels.length} 个模型。`
-                : `删除模型「${confirmState?.name}」后无法恢复。`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirmState(null)}>取消</Button>
-            <Button variant="destructive" onClick={handleConfirmDelete}>确认删除</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+    <div className="min-h-screen bg-gray-950 p-6 md:p-8">
+      <div className="mx-auto max-w-6xl space-y-6">
+        {error && <div className="rounded-xl border border-red-900/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">{error}</div>}
 
-      <div className="min-h-screen bg-gray-950 p-8">
-        <div className="mx-auto max-w-5xl space-y-6">
-          {error && (
-            <div className="rounded-xl border border-red-900/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">
-              {error}
-            </div>
-          )}
-          <div className="flex flex-col gap-4 rounded-2xl border border-gray-800 bg-gray-900/80 p-6 shadow-2xl shadow-black/20 lg:flex-row lg:items-center lg:justify-between">
+        <section className="rounded-3xl border border-gray-800 bg-gray-900/80 p-6 shadow-2xl shadow-black/20">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <Sparkles className="h-8 w-8 text-blue-400" />
                 <div>
-                  <h1 className="text-2xl font-bold text-white">Last Version PPT 框架</h1>
-                  <p className="text-sm text-gray-400">迁移自 terminal-agent 的非终端骨架，保留模型、服务商、聊天与本地会话能力。</p>
+                  <h1 className="text-2xl font-bold text-white">Last Version PPT</h1>
+                  <p className="text-sm text-gray-400">输入需求，AI 会先为项目命名，再进入项目页自动开始生成与编辑 index.js。</p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 text-xs text-gray-400">
-                <span className="rounded-full border border-gray-700 px-2 py-1">Bun + Elysia</span>
-                <span className="rounded-full border border-gray-700 px-2 py-1">React + Vite</span>
-                <span className="rounded-full border border-gray-700 px-2 py-1">SQLite</span>
-                <span className="rounded-full border border-gray-700 px-2 py-1">AI Provider / Model 管理</span>
+                <span className="rounded-full border border-gray-700 px-2 py-1">项目目录：%appdata%/last-version-ppt</span>
+                <span className="rounded-full border border-gray-700 px-2 py-1">PptxGenJS</span>
+                <span className="rounded-full border border-gray-700 px-2 py-1">AI 生成 index.js</span>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => navigate('/help')}>
-                <HelpCircle className="h-4 w-4" />
-                使用帮助
-              </Button>
-              <Button onClick={() => navigate('/chat')}>
-                <MessageSquare className="h-4 w-4" />
-                进入聊天
-              </Button>
-            </div>
+            <Button
+              variant={configStatus?.needsAttention ? 'destructive' : 'outline'}
+              onClick={() => navigate('/models')}
+              className={configStatus?.needsAttention ? 'animate-pulse' : ''}
+            >
+              <Settings2 className="h-4 w-4" />
+              模型配置
+            </Button>
           </div>
 
-          <div className="flex gap-1 border-b border-gray-800">
-            <button onClick={() => setTab('providers')} className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${tab === 'providers' ? 'border-b-2 border-purple-400 bg-gray-900 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
-              <span className="flex items-center gap-2"><Building2 className="h-4 w-4" />服务商</span>
-            </button>
-            <button onClick={() => setTab('models')} className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${tab === 'models' ? 'border-b-2 border-blue-400 bg-gray-900 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
-              <span className="flex items-center gap-2"><BrainCircuit className="h-4 w-4" />模型</span>
-            </button>
-          </div>
-
-          {tab === 'providers' && (
-            <div className="space-y-4 rounded-2xl border border-gray-800 bg-gray-900 p-6">
-              <div className="flex items-center justify-between">
+          {configStatus?.needsAttention && (
+            <div className="mt-5 rounded-2xl border border-amber-700/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              <div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4" />
                 <div>
-                  <h2 className="text-lg font-semibold text-white">服务商配置</h2>
-                  <p className="text-sm text-gray-400">配置 OpenAI 兼容接口，聊天页会从这里读取 base URL 和 API Key。</p>
+                  <div className="font-medium">需要先配置真实模型</div>
+                  <div className="mt-1 text-amber-200/80">如果服务商仍使用示例 stub API Key，或者当前没有启用可用模型，AI 创建项目与项目对话都会被阻止。</div>
                 </div>
-                <Button size="sm" onClick={() => { setShowProviderForm(prev => !prev); setEditingProviderName(null); setProviderForm(emptyProviderForm) }}>
-                  <Plus className="h-4 w-4" />新增服务商
-                </Button>
-              </div>
-
-              {showProviderForm && (
-                <form className="grid gap-3 rounded-xl border border-gray-800 bg-gray-950/60 p-4 md:grid-cols-2" onSubmit={handleAddProvider}>
-                  <Input placeholder="服务商标识，如 openai" value={providerForm.name} onChange={e => setProviderForm(prev => ({ ...prev, name: e.target.value }))} required />
-                  <Input placeholder="显示名称" value={providerForm.label} onChange={e => setProviderForm(prev => ({ ...prev, label: e.target.value }))} />
-                  <Input className="md:col-span-2" placeholder="Base URL" value={providerForm.base_url} onChange={e => setProviderForm(prev => ({ ...prev, base_url: e.target.value }))} required />
-                  <Input className="md:col-span-2" type="password" placeholder="API Key" value={providerForm.api_key} onChange={e => setProviderForm(prev => ({ ...prev, api_key: e.target.value }))} required />
-                  <div className="md:col-span-2 flex justify-end gap-2">
-                    <Button type="button" variant="ghost" onClick={resetProviderForm}>取消</Button>
-                    <Button type="submit">保存</Button>
-                  </div>
-                </form>
-              )}
-
-              <div className="space-y-3">
-                {providers.map(provider => {
-                  const isEditing = editingProviderName === provider.name
-                  return (
-                    <div key={provider.name} className="rounded-xl border border-gray-800 bg-gray-950/60 p-4">
-                      {isEditing ? (
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <Input value={providerForm.name} onChange={e => setProviderForm(prev => ({ ...prev, name: e.target.value }))} />
-                          <Input value={providerForm.label} onChange={e => setProviderForm(prev => ({ ...prev, label: e.target.value }))} />
-                          <Input className="md:col-span-2" value={providerForm.base_url} onChange={e => setProviderForm(prev => ({ ...prev, base_url: e.target.value }))} />
-                          <Input className="md:col-span-2" type="password" value={providerForm.api_key} onChange={e => setProviderForm(prev => ({ ...prev, api_key: e.target.value }))} />
-                          <div className="md:col-span-2 flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" onClick={resetProviderForm}><X className="h-4 w-4" />取消</Button>
-                            <Button size="sm" onClick={() => handleSaveProviderEdit(provider.name)}><Check className="h-4 w-4" />保存</Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                          <div className="space-y-1">
-                            <div className="text-sm font-medium text-white">{provider.label || provider.name}</div>
-                            <div className="text-xs text-gray-500">标识：{provider.name}</div>
-                            <div className="text-xs text-gray-400 break-all">{provider.base_url}</div>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="ghost" onClick={() => {
-                              setEditingProviderName(provider.name)
-                              setProviderForm({ name: provider.name, label: provider.label || '', base_url: provider.base_url, api_key: provider.api_key })
-                            }}><Pencil className="h-4 w-4" />编辑</Button>
-                            <Button size="sm" variant="ghost" onClick={() => setConfirmState({ type: 'provider', name: provider.name, affectedModels: models.filter(model => model.provider === provider.name) })}><Trash2 className="h-4 w-4" />删除</Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-                {providers.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-8 text-center text-sm text-gray-500">还没有服务商配置，先添加一个可用的 OpenAI 兼容接口。</div>}
               </div>
             </div>
           )}
 
-          {tab === 'models' && (
-            <div className="space-y-4 rounded-2xl border border-gray-800 bg-gray-900 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-white">模型管理</h2>
-                  <p className="text-sm text-gray-400">为聊天页面维护可用模型列表，并控制是否启用。</p>
-                </div>
-                <Button size="sm" onClick={() => { setShowModelForm(prev => !prev); setEditingModelId(null); setModelForm({ ...emptyModelForm, provider: providers[0]?.name || '' }) }} disabled={providers.length === 0}>
-                  <Plus className="h-4 w-4" />新增模型
-                </Button>
-              </div>
+          <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-950/70 p-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white"><BrainCircuit className="h-4 w-4 text-blue-400" />新建项目需求</div>
+            <Textarea
+              value={requirement}
+              onChange={event => setRequirement(event.target.value)}
+              placeholder={placeholder}
+              className="min-h-32 bg-gray-900"
+            />
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <Button variant="ghost" onClick={() => setPlaceholderSeed(current => current + 1)}>换一个示例</Button>
+              <Button onClick={createProject} disabled={loading || !requirement.trim()}>
+                {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                创建项目并开始生成
+              </Button>
+            </div>
+          </div>
+        </section>
 
-              {showModelForm && (
-                <form className="grid gap-3 rounded-xl border border-gray-800 bg-gray-950/60 p-4 md:grid-cols-2" onSubmit={handleAddModel}>
-                  <Input placeholder="模型 ID" value={modelForm.model_name} onChange={e => setModelForm(prev => ({ ...prev, model_name: e.target.value }))} required />
-                  <Input placeholder="显示名称" value={modelForm.display_name} onChange={e => setModelForm(prev => ({ ...prev, display_name: e.target.value }))} />
-                  <Select value={modelForm.provider} onChange={e => setModelForm(prev => ({ ...prev, provider: e.target.value }))} required>
-                    <option value="">选择服务商</option>
-                    {providers.map(provider => <option key={provider.name} value={provider.name}>{provider.label || provider.name}</option>)}
-                  </Select>
-                  <Select value={modelForm.enabled} onChange={e => setModelForm(prev => ({ ...prev, enabled: e.target.value as 'Y' | 'N' }))}>
-                    <option value="Y">启用</option>
-                    <option value="N">停用</option>
-                  </Select>
-                  <div className="md:col-span-2 flex justify-end gap-2">
-                    <Button type="button" variant="ghost" onClick={resetModelForm}>取消</Button>
-                    <Button type="submit">保存</Button>
+        <section className="space-y-4 rounded-3xl border border-gray-800 bg-gray-900/70 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">项目列表</h2>
+              <p className="text-sm text-gray-400">点击项目可进入对应工作区；支持克隆和创建版本。</p>
+            </div>
+            <Button variant="outline" onClick={fetchProjects}><FolderOpen className="h-4 w-4" />刷新列表</Button>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {projects.map(project => (
+              <div key={project.id} className="rounded-2xl border border-gray-800 bg-gray-950/60 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-base font-semibold text-white">{project.name}</div>
+                    <div className="mt-1 text-xs text-gray-500">{project.id}</div>
                   </div>
-                </form>
-              )}
-
-              <div className="space-y-3">
-                {models.map(model => {
-                  const isEditing = editingModelId === model.id
-                  return (
-                    <div key={model.id} className="rounded-xl border border-gray-800 bg-gray-950/60 p-4">
-                      {isEditing ? (
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <Input value={modelForm.model_name} onChange={e => setModelForm(prev => ({ ...prev, model_name: e.target.value }))} />
-                          <Input value={modelForm.display_name} onChange={e => setModelForm(prev => ({ ...prev, display_name: e.target.value }))} />
-                          <Select value={modelForm.provider} onChange={e => setModelForm(prev => ({ ...prev, provider: e.target.value }))}>{providers.map(provider => <option key={provider.name} value={provider.name}>{provider.label || provider.name}</option>)}</Select>
-                          <Select value={modelForm.enabled} onChange={e => setModelForm(prev => ({ ...prev, enabled: e.target.value as 'Y' | 'N' }))}><option value="Y">启用</option><option value="N">停用</option></Select>
-                          <div className="md:col-span-2 flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" onClick={resetModelForm}><X className="h-4 w-4" />取消</Button>
-                            <Button size="sm" onClick={() => handleSaveModelEdit(model.id)}><Check className="h-4 w-4" />保存</Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-white">{model.display_name || model.model_name}</span>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${model.enabled === 'Y' ? 'bg-green-500/15 text-green-300' : 'bg-gray-700 text-gray-400'}`}>{model.enabled === 'Y' ? '已启用' : '已停用'}</span>
-                            </div>
-                            <div className="text-xs text-gray-500">{model.model_name}</div>
-                            <div className="text-xs text-gray-400">服务商：{providers.find(provider => provider.name === model.provider)?.label || model.provider}</div>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Button size="sm" variant="ghost" onClick={() => handleToggleModel(model)}>{model.enabled === 'Y' ? '停用' : '启用'}</Button>
-                            <Button size="sm" variant="ghost" onClick={() => { setEditingModelId(model.id); setModelForm({ model_name: model.model_name, display_name: model.display_name || model.model_name, provider: model.provider, enabled: model.enabled }) }}><Pencil className="h-4 w-4" />编辑</Button>
-                            <Button size="sm" variant="ghost" onClick={() => setConfirmState({ type: 'model', id: model.id, name: model.display_name || model.model_name })}><Trash2 className="h-4 w-4" />删除</Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-                {models.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-8 text-center text-sm text-gray-500">{providers.length === 0 ? '请先配置服务商，再添加模型。' : '还没有模型配置。'}</div>}
+                  {project.id !== project.rootProjectId && <span className="rounded-full bg-blue-500/15 px-2 py-1 text-[10px] text-blue-200">版本</span>}
+                </div>
+                <div className="mt-3 line-clamp-3 min-h-14 text-sm text-gray-400">{project.sourcePrompt || '这个项目还没有保存初始需求。'}</div>
+                <div className="mt-4 flex flex-wrap gap-2 text-xs text-gray-500">
+                  <span className="rounded-full border border-gray-800 px-2 py-1">{project.files.length} 个文件</span>
+                  <span className="rounded-full border border-gray-800 px-2 py-1">{project.chatHistory.length} 条消息</span>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => navigate(`/projects/${project.id}`)}><ArrowRight className="h-4 w-4" />进入项目</Button>
+                  <Button size="sm" variant="ghost" onClick={() => cloneProject(project)}><CopyPlus className="h-4 w-4" />克隆</Button>
+                  <Button size="sm" variant="ghost" onClick={() => createVersion(project)}><Layers3 className="h-4 w-4" />创建版本</Button>
+                </div>
               </div>
+            ))}
+          </div>
+
+          {projects.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-gray-700 p-10 text-center text-sm text-gray-500">
+              还没有项目。先在顶部输入需求，AI 会自动命名并创建第一个项目。
             </div>
           )}
-        </div>
+        </section>
       </div>
-    </>
+    </div>
   )
 }

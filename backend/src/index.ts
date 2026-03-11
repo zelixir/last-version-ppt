@@ -1,151 +1,134 @@
-import { Elysia, t } from 'elysia';
+import { spawn } from 'child_process';
+import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
-import { existsSync, readFileSync } from 'fs';
-import pathModule from 'path';
+import { node } from '@elysiajs/node';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'fs';
+import path from 'path';
 import { fileURLToPath } from 'url';
-import { generateText } from 'ai';
-import {
-  getConversations,
-  getConversation,
-  createConversation,
-  updateConversation,
-  deleteConversation,
-  clearConversations,
-  getRecentPrompts,
-  getAiModels,
-  getAiModelById,
-  createAiModel,
-  updateAiModel,
-  deleteAiModel,
-  seedModelsFromJson,
-  getProviders,
-  getProviderByName,
-  createProvider,
-  updateProvider,
-  deleteProvider,
-  seedProvidersFromJson,
-} from './db';
-import { createModelClient } from './dashscope-model';
-import { frontendAssets } from './frontend-assets';
+import { frontendAssets } from './frontend-assets.ts';
 import exampleProviderData from '../model-provider.example.json';
 import exampleModelData from '../models.example.json';
+import {
+  appendProjectChat,
+  createAiModel,
+  createProjectRecord,
+  createProvider,
+  deleteAiModel,
+  deleteProvider,
+  getAiModelById,
+  getAiModels,
+  getProjectById,
+  getProviderByName,
+  getProviders,
+  getSetting,
+  listProjects,
+  seedModelsFromJson,
+  seedProvidersFromJson,
+  setSetting,
+  updateAiModel,
+  updateProjectRecord,
+  updateProvider,
+} from './db.ts';
+import { chatWithProjectAgent, generateProjectName } from './project-agent.ts';
+import { runProject } from './project-runner.ts';
+import { exampleApiKeys } from './project-support.ts';
+import {
+  buildProjectId,
+  copyProjectDirectory,
+  createProjectFiles,
+  getFileStatSafe,
+  getProjectDir,
+  listProjectDirectories,
+  nextVersionProjectId,
+  projectsRoot,
+  resolveProjectFile,
+  sanitizeProjectName,
+  storageRoot,
+  stripVersionSuffix,
+} from './storage.ts';
 
-type ChatRole = 'system' | 'user' | 'assistant';
-type ChatMessage = { role: ChatRole; content: string };
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.pdf': 'application/pdf',
+  '.mp4': 'video/mp4',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+};
+
+const TEXT_FILE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.csv', '.html', '.css', '.xml', '.yml', '.yaml', '.svg']);
+const IMAGE_FILE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
+const MEDIA_FILE_EXTENSIONS = new Set(['.mp4', '.mp3', '.wav']);
 
 function getBackendDir(): string {
   try {
-    return pathModule.dirname(fileURLToPath(import.meta.url));
+    return path.dirname(fileURLToPath(import.meta.url));
   } catch {
     return process.cwd();
   }
 }
 
-function normalizeMessageContent(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .map(part => {
-        if (typeof part === 'string') return part;
-        if (part && typeof part === 'object' && 'text' in part && typeof (part as { text?: unknown }).text === 'string') {
-          return (part as { text: string }).text;
-        }
-        return '';
-      })
-      .join('')
-      .trim();
-  }
-  return '';
-}
-
-function normalizeMessages(messages: Array<{ role?: unknown; content?: unknown }>): ChatMessage[] {
-  return messages
-    .map(message => {
-      const role: ChatRole =
-        message.role === 'system'
-          ? 'system'
-          : message.role === 'assistant'
-            ? 'assistant'
-            : 'user';
-
-      return {
-        role,
-        content: normalizeMessageContent(message.content),
-      };
-    })
-    .filter(message => Boolean(message.content));
-}
-
-function deriveConversationTitle(messages: ChatMessage[]): string {
-  const firstUser = messages.find(message => message.role === 'user')?.content?.trim();
-  if (!firstUser) return '新对话';
-  return firstUser.length > 40 ? `${firstUser.slice(0, 40)}…` : firstUser;
-}
-
 const backendDir = getBackendDir();
 const isExeMode = frontendAssets !== null;
-const backendRoot = isExeMode ? backendDir : pathModule.join(backendDir, '..');
-const exampleApiKeys = new Set(
-  ((exampleProviderData as { providers?: Array<{ api_key?: string }> }).providers ?? [])
-    .map(provider => provider.api_key)
-    .filter((apiKey): apiKey is string => Boolean(apiKey))
-);
+const backendRoot = isExeMode ? backendDir : path.join(backendDir, '..');
 
-const modelProviderPath = pathModule.join(backendRoot, 'model-provider.json');
+const modelProviderPath = path.join(backendRoot, 'model-provider.json');
 if (existsSync(modelProviderPath)) {
   try {
     seedProvidersFromJson(readFileSync(modelProviderPath, 'utf-8'));
-  } catch (e) {
-    console.warn('Failed to migrate model-provider.json to DB:', e);
+  } catch (error) {
+    console.warn('Failed to migrate model-provider.json to DB:', error);
   }
 }
 
-{
-  const providerCount = getProviders().length;
-  const modelCount = getAiModels().length;
-  if (providerCount === 0 && modelCount === 0) {
-    try {
-      seedProvidersFromJson(exampleProviderData);
-    } catch (e) {
-      console.warn('Failed to seed providers from example:', e);
-    }
-    try {
-      seedModelsFromJson(exampleModelData);
-    } catch (e) {
-      console.warn('Failed to seed models from example:', e);
-    }
+if (getProviders().length === 0 && getAiModels().length === 0) {
+  try {
+    seedProvidersFromJson(exampleProviderData);
+    seedModelsFromJson(exampleModelData);
+  } catch (error) {
+    console.warn('Failed to seed defaults:', error);
   }
 }
-
-const MIME_TYPES: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'application/javascript',
-  '.mjs': 'application/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-  '.txt': 'text/plain',
-};
 
 function getMimeType(filePath: string): string {
-  const ext = pathModule.extname(filePath).toLowerCase();
-  return MIME_TYPES[ext] || 'application/octet-stream';
+  return MIME_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+}
+
+function isTextFile(fileName: string): boolean {
+  return TEXT_FILE_EXTENSIONS.has(path.extname(fileName).toLowerCase());
+}
+
+function getFileKind(fileName: string): 'text' | 'image' | 'media' | 'binary' {
+  const ext = path.extname(fileName).toLowerCase();
+  if (TEXT_FILE_EXTENSIONS.has(ext)) return 'text';
+  if (IMAGE_FILE_EXTENSIONS.has(ext)) return 'image';
+  if (MEDIA_FILE_EXTENSIONS.has(ext)) return 'media';
+  return 'binary';
 }
 
 function findFrontendDistDir(): string | null {
   const candidates = [
-    pathModule.join(backendRoot, '..', 'frontend', 'dist'),
-    pathModule.join(backendRoot, 'public'),
-    pathModule.join(process.cwd(), 'public'),
+    path.join(backendRoot, '..', 'frontend', 'dist'),
+    path.join(backendRoot, 'public'),
+    path.join(process.cwd(), 'public'),
   ];
   for (const candidate of candidates) {
-    if (existsSync(pathModule.join(candidate, 'index.html'))) return candidate;
+    if (existsSync(path.join(candidate, 'index.html'))) return candidate;
   }
   return null;
 }
@@ -153,174 +136,336 @@ function findFrontendDistDir(): string | null {
 const embeddedAssets = frontendAssets;
 const frontendDistDir = embeddedAssets ? null : findFrontendDistDir();
 
-const app = new Elysia()
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
+}
+
+function errorResponse(message: string, status = 400): Response {
+  return json({ error: message }, status);
+}
+
+function syncProjectsWithFilesystem(): void {
+  for (const projectId of listProjectDirectories()) {
+    if (!getProjectById(projectId)) {
+      createProjectRecord({
+        id: projectId,
+        name: sanitizeProjectName(projectId.replace(/^\d{8}_/, '')),
+        rootProjectId: stripVersionSuffix(projectId),
+        chatHistory: [],
+      });
+    }
+    createProjectFiles(projectId);
+  }
+}
+
+function getCurrentProjectId(): string | null {
+  return getSetting('currentProjectId');
+}
+
+function setCurrentProjectId(projectId: string): void {
+  setSetting('currentProjectId', projectId);
+}
+
+function buildProjectResponse(projectId: string) {
+  const project = getProjectById(projectId);
+  if (!project) return null;
+  const projectDir = getProjectDir(projectId);
+  const files = existsSync(projectDir)
+    ? readdirSync(projectDir, { withFileTypes: true })
+        .filter(entry => entry.isFile())
+        .map(entry => {
+          const filePath = path.join(projectDir, entry.name);
+          const stats = getFileStatSafe(filePath);
+          return {
+            name: entry.name,
+            size: stats.size,
+            updatedAt: stats.updatedAt,
+            kind: getFileKind(entry.name),
+            url: `/${projectId}/${encodeURIComponent(entry.name)}`,
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+
+  return {
+    id: project.id,
+    name: project.name,
+    rootProjectId: project.rootProjectId,
+    sourcePrompt: project.sourcePrompt,
+    chatHistory: project.chatHistory,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    files,
+    projectDir,
+  };
+}
+
+function openSystemPath(targetPath: string): void {
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd', ['/c', 'start', '', targetPath], { detached: true, stdio: 'ignore' }).unref();
+    } else if (process.platform === 'darwin') {
+      spawn('open', [targetPath], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn('xdg-open', [targetPath], { detached: true, stdio: 'ignore' }).unref();
+    }
+  } catch (error) {
+    console.warn('Failed to open path:', error);
+  }
+}
+
+function openBrowserUrl(url: string): void {
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
+    } else if (process.platform === 'darwin') {
+      spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref();
+    }
+  } catch (error) {
+    console.warn('Failed to open browser URL:', error);
+  }
+}
+
+function configStatus() {
+  const providers = getProviders();
+  const enabledModels = getAiModels(true);
+  const usableProviders = providers.filter(provider => provider.api_key && !exampleApiKeys.has(provider.api_key));
+  const usableModels = enabledModels.filter(model => usableProviders.some(provider => provider.name === model.provider));
+  const hasStubProviders = providers.some(provider => exampleApiKeys.has(provider.api_key));
+  return {
+    hasStubProviders,
+    hasEnabledModels: enabledModels.length > 0,
+    hasUsableModel: usableModels.length > 0,
+    needsAttention: hasStubProviders || usableModels.length === 0,
+    firstUsableModelId: usableModels[0]?.id ?? null,
+  };
+}
+
+syncProjectsWithFilesystem();
+
+const app = new Elysia({ adapter: node() })
   .use(cors())
-  .get('/api/health', () => ({ ok: true }))
+  .get('/api/health', () => ({ ok: true, storageRoot, projectsRoot }))
+  .get('/api/config-status', () => configStatus())
   .get('/api/providers', () => getProviders())
   .post('/api/providers', ({ body }) => {
     const payload = body as { name: string; label?: string; base_url: string; api_key: string };
-    if (getProviderByName(payload.name)) {
-      return new Response(JSON.stringify({ error: 'Provider name already exists' }), { status: 409, headers: { 'Content-Type': 'application/json' } });
-    }
+    if (getProviderByName(payload.name)) return errorResponse('Provider name already exists', 409);
     return createProvider(payload);
-  }, {
-    body: t.Object({
-      name: t.String(),
-      label: t.Optional(t.String()),
-      base_url: t.String(),
-      api_key: t.String(),
-    }),
   })
   .put('/api/providers/:name', ({ params, body }) => {
     if (!getProviderByName(params.name)) return new Response('Not found', { status: 404 });
     updateProvider(params.name, body as { name?: string; label?: string; base_url?: string; api_key?: string });
-    return getProviderByName((body as { name?: string }).name ?? params.name);
-  }, {
-    body: t.Object({
-      name: t.Optional(t.String()),
-      label: t.Optional(t.String()),
-      base_url: t.Optional(t.String()),
-      api_key: t.Optional(t.String()),
-    }),
+    return getProviderByName(((body as any).name ?? params.name) as string);
   })
   .delete('/api/providers/:name', ({ params }) => {
     deleteProvider(params.name);
     return { success: true };
   })
-  .get('/api/ai-models', ({ query }) => {
-    const enabledOnly = query.enabled === 'true';
-    return getAiModels(enabledOnly);
-  })
+  .get('/api/ai-models', ({ query }) => getAiModels(query.enabled === 'true'))
   .get('/api/ai-models/:id', ({ params }) => {
     const model = getAiModelById(Number(params.id));
-    if (!model) return new Response('Not found', { status: 404 });
-    return model;
+    return model ?? new Response('Not found', { status: 404 });
   })
-  .post('/api/ai-models', ({ body }) => createAiModel(body as any), {
-    body: t.Object({
-      model_name: t.String(),
-      display_name: t.Optional(t.String()),
-      provider: t.String(),
-      capabilities: t.Optional(t.Record(t.String(), t.Boolean())),
-      enabled: t.Optional(t.String()),
-    }),
-  })
+  .post('/api/ai-models', ({ body }) => createAiModel(body as any))
   .put('/api/ai-models/:id', ({ params, body }) => {
     updateAiModel(Number(params.id), body as any);
     return { success: true };
-  }, {
-    body: t.Object({
-      model_name: t.Optional(t.String()),
-      display_name: t.Optional(t.String()),
-      provider: t.Optional(t.String()),
-      capabilities: t.Optional(t.Record(t.String(), t.Boolean())),
-      enabled: t.Optional(t.String()),
-    }),
   })
   .delete('/api/ai-models/:id', ({ params }) => {
     deleteAiModel(Number(params.id));
     return { success: true };
   })
-  .get('/api/conversations', ({ query }) => getConversations({
-    search: query.search as string | undefined,
-    limit: query.limit ? Number(query.limit) : undefined,
-    offset: query.offset ? Number(query.offset) : undefined,
-  }))
-  .get('/api/conversations/:id', ({ params }) => {
-    const conversation = getConversation(Number(params.id));
-    if (!conversation) return new Response('Not found', { status: 404 });
-    return conversation;
+  .get('/api/projects', () => {
+    syncProjectsWithFilesystem();
+    const projects = listProjects().map(project => buildProjectResponse(project.id));
+    return { currentProjectId: getCurrentProjectId(), projects: projects.filter(Boolean) };
   })
-  .post('/api/conversations', ({ body }) => createConversation(body as { title: string; messages: string }), {
-    body: t.Object({
-      title: t.String(),
-      messages: t.String(),
-    }),
+  .post('/api/projects', async ({ body }) => {
+    const payload = body as { name?: string; requirement?: string; modelId?: number };
+    const derivedName = payload.name?.trim()
+      ? sanitizeProjectName(payload.name)
+      : payload.requirement?.trim() && payload.modelId
+        ? await generateProjectName(payload.requirement, payload.modelId)
+        : null;
+
+    if (!derivedName) return errorResponse('请填写项目名称，或提供需求和模型以自动命名');
+
+    const projectId = buildProjectId(derivedName);
+    createProjectFiles(projectId);
+    createProjectRecord({
+      id: projectId,
+      name: derivedName,
+      sourcePrompt: payload.requirement?.trim() ?? '',
+      rootProjectId: stripVersionSuffix(projectId),
+      chatHistory: [],
+    });
+    setCurrentProjectId(projectId);
+    return buildProjectResponse(projectId);
   })
-  .put('/api/conversations/:id', ({ params, body }) => {
-    updateConversation(Number(params.id), body as { title?: string; messages?: string });
+  .post('/api/projects/:id/clone', ({ params, body }) => {
+    const source = getProjectById(params.id);
+    if (!source) return new Response('Not found', { status: 404 });
+    const name = sanitizeProjectName(((body as any).name ?? source.name) as string);
+    const projectId = buildProjectId(name);
+    copyProjectDirectory(source.id, projectId);
+    createProjectRecord({
+      id: projectId,
+      name,
+      rootProjectId: source.rootProjectId,
+      sourcePrompt: source.sourcePrompt,
+      chatHistory: source.chatHistory,
+    });
+    setCurrentProjectId(projectId);
+    return buildProjectResponse(projectId);
+  })
+  .post('/api/projects/:id/create-version', ({ params }) => {
+    const source = getProjectById(params.id);
+    if (!source) return new Response('Not found', { status: 404 });
+    const projectId = nextVersionProjectId(source.id);
+    copyProjectDirectory(source.id, projectId);
+    createProjectRecord({
+      id: projectId,
+      name: source.name,
+      rootProjectId: source.rootProjectId,
+      sourcePrompt: source.sourcePrompt,
+      chatHistory: source.chatHistory,
+    });
+    setCurrentProjectId(projectId);
+    return buildProjectResponse(projectId);
+  })
+  .post('/api/projects/:id/current', ({ params }) => {
+    if (!getProjectById(params.id)) return new Response('Not found', { status: 404 });
+    setCurrentProjectId(params.id);
     return { success: true };
-  }, {
-    body: t.Object({
-      title: t.Optional(t.String()),
-      messages: t.Optional(t.String()),
-    }),
   })
-  .delete('/api/conversations/:id', ({ params }) => {
-    deleteConversation(Number(params.id));
-    return { success: true };
+  .get('/api/projects/:id', ({ params }) => {
+    const project = buildProjectResponse(params.id);
+    return project ?? new Response('Not found', { status: 404 });
   })
-  .delete('/api/conversations', () => {
-    clearConversations();
-    return { success: true };
+  .get('/api/projects/:id/chat', ({ params }) => {
+    const project = getProjectById(params.id);
+    return project ? { history: project.chatHistory } : new Response('Not found', { status: 404 });
   })
-  .get('/api/prompts/recent', ({ query }) => getRecentPrompts({
-    limit: query.limit ? Number(query.limit) : undefined,
-  }))
-  .post('/api/chat', async ({ body }) => {
-    const { messages, modelId, conversationId } = body as {
-      messages: Array<{ role?: unknown; content?: unknown }>;
-      modelId: number;
-      conversationId?: number;
-    };
-
-    const modelConfig = getAiModelById(modelId);
-    if (!modelConfig || modelConfig.enabled !== 'Y') {
-      return new Response(JSON.stringify({ error: 'Model not found or disabled' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    const providerConfig = getProviderByName(modelConfig.provider);
-    if (!providerConfig || !providerConfig.api_key || exampleApiKeys.has(providerConfig.api_key)) {
-      return new Response(JSON.stringify({ error: 'Please configure a valid API key for the selected provider first' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    const normalizedMessages = normalizeMessages(messages);
-    if (normalizedMessages.length === 0) {
-      return new Response(JSON.stringify({ error: 'At least one message is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-    }
-
+  .post('/api/projects/:id/chat', async ({ params, body }) => {
+    if (!getProjectById(params.id)) return new Response('Not found', { status: 404 });
+    const payload = body as { content: string; modelId: number };
+    if (!payload.content?.trim()) return errorResponse('消息不能为空');
     try {
-      const result = await generateText({
-        model: createModelClient(modelConfig.model_name, modelConfig.provider),
-        messages: normalizedMessages,
-        maxOutputTokens: 2000,
-      });
-
-      const assistantMessage: ChatMessage = { role: 'assistant', content: result.text.trim() };
-      const fullConversation = [...normalizedMessages, assistantMessage];
-      const title = deriveConversationTitle(normalizedMessages);
-
-      let persistedConversationId = conversationId;
-      if (conversationId && getConversation(conversationId)) {
-        updateConversation(conversationId, { title, messages: JSON.stringify(fullConversation) });
-      } else {
-        const conversation = createConversation({ title, messages: JSON.stringify(fullConversation) });
-        persistedConversationId = conversation.id;
-      }
-
-      return {
-        message: assistantMessage.content,
-        conversationId: persistedConversationId,
-        title,
-        usage: result.usage,
-      };
+      const result = await chatWithProjectAgent(params.id, payload.content.trim(), payload.modelId);
+      updateProjectRecord(params.id, { touch: true });
+      return { history: result.history, toolEvents: result.toolEvents };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      return errorResponse(error instanceof Error ? error.message : String(error), 500);
     }
-  }, {
-    body: t.Object({
-      messages: t.Array(t.Object({
-        role: t.String(),
-        content: t.Any(),
-      })),
-      modelId: t.Number(),
-      conversationId: t.Optional(t.Number()),
-    }),
+  })
+  .get('/api/projects/:id/files', ({ params }) => {
+    const project = buildProjectResponse(params.id);
+    return project ? project.files : new Response('Not found', { status: 404 });
+  })
+  .get('/api/projects/:id/files/content', ({ params, query }) => {
+    const fileName = String((query as any).fileName ?? '');
+    if (!fileName) return errorResponse('缺少 fileName 参数');
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+    const filePath = resolveProjectFile(params.id, fileName);
+    if (!existsSync(filePath)) return new Response('Not found', { status: 404 });
+    if (!isTextFile(fileName)) return errorResponse('该文件不是文本文件');
+    return { fileName, content: readFileSync(filePath, 'utf8') };
+  })
+  .put('/api/projects/:id/files/content', ({ params, body }) => {
+    const payload = body as { fileName: string; content: string };
+    if (!payload.fileName) return errorResponse('缺少 fileName');
+    const filePath = resolveProjectFile(params.id, payload.fileName);
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, payload.content ?? '', 'utf8');
+    updateProjectRecord(params.id, { touch: true });
+    return { success: true };
+  })
+  .post('/api/projects/:id/files/rename', ({ params, body }) => {
+    const payload = body as { oldName: string; newName: string };
+    if (payload.oldName === 'index.js') return errorResponse('index.js 不能重命名');
+    const sourcePath = resolveProjectFile(params.id, payload.oldName);
+    const targetPath = resolveProjectFile(params.id, payload.newName);
+    mkdirSync(path.dirname(targetPath), { recursive: true });
+    writeFileSync(targetPath, readFileSync(sourcePath));
+    unlinkSync(sourcePath);
+    updateProjectRecord(params.id, { touch: true });
+    return { success: true };
+  })
+  .delete('/api/projects/:id/files', ({ params, query }) => {
+    const fileName = String((query as any).fileName ?? '');
+    if (!fileName) return errorResponse('缺少 fileName 参数');
+    if (fileName === 'index.js') return errorResponse('index.js 不能删除');
+    const filePath = resolveProjectFile(params.id, fileName);
+    if (existsSync(filePath)) unlinkSync(filePath);
+    updateProjectRecord(params.id, { touch: true });
+    return { success: true };
+  })
+  .post('/api/projects/:id/files/upload', async ({ params, request }) => {
+    const form = await request.formData();
+    const files = form.getAll('files');
+    const uploaded: string[] = [];
+    for (const entry of files) {
+      if (!(entry instanceof File)) continue;
+      const buffer = Buffer.from(await entry.arrayBuffer());
+      const filePath = resolveProjectFile(params.id, entry.name);
+      writeFileSync(filePath, buffer);
+      uploaded.push(entry.name);
+    }
+    updateProjectRecord(params.id, { touch: true });
+    return { uploaded };
+  })
+  .post('/api/projects/:id/open-folder', ({ params }) => {
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+    openSystemPath(getProjectDir(params.id));
+    return { success: true };
+  })
+  .post('/api/projects/:id/run', async ({ params, body }) => {
+    const payload = body as { includeLogs?: boolean };
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+    const result = await runProject({ projectId: params.id, includeLogs: payload?.includeLogs });
+    return result.ok
+      ? { ok: true, slideCount: result.slideCount, logs: result.logs }
+      : errorResponse(result.error || '项目运行失败', 500);
+  })
+  .get('/api/projects/:id/export', async ({ params }) => {
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+    const result = await runProject({ projectId: params.id, includeLogs: true });
+    if (!result.ok || !result.pptx) return errorResponse(result.error || '导出失败', 500);
+    const buffer = await result.pptx.write({ outputType: 'nodebuffer' });
+    return new Response(buffer, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'Content-Disposition': `attachment; filename="${params.id}.pptx"`,
+      },
+    });
   })
   .get('/*', ({ request }) => {
     const url = new URL(request.url);
-    const reqPath = url.pathname;
+    const reqPath = decodeURIComponent(url.pathname);
+    const segments = reqPath.split('/').filter(Boolean);
+
+    if (segments.length >= 2) {
+      const [projectId, ...fileParts] = segments;
+      if (getProjectById(projectId)) {
+        try {
+          const resourcePath = resolveProjectFile(projectId, fileParts.join('/'));
+          if (existsSync(resourcePath) && statSync(resourcePath).isFile()) {
+            return new Response(readFileSync(resourcePath), {
+              headers: { 'Content-Type': getMimeType(resourcePath), 'Cache-Control': 'no-cache' },
+            });
+          }
+        } catch {
+          return new Response('Not Found', { status: 404 });
+        }
+      }
+    }
 
     if (embeddedAssets) {
       const asset = embeddedAssets.get(reqPath) || embeddedAssets.get('/index.html');
@@ -335,13 +480,13 @@ const app = new Elysia()
     if (frontendDistDir) {
       let filePath = reqPath.startsWith('/') ? reqPath.slice(1) : reqPath;
       if (!filePath) filePath = 'index.html';
-      const fullPath = pathModule.join(frontendDistDir, filePath);
-      if (existsSync(fullPath)) {
+      const fullPath = path.join(frontendDistDir, filePath);
+      if (existsSync(fullPath) && statSync(fullPath).isFile()) {
         return new Response(readFileSync(fullPath), {
           headers: { 'Content-Type': getMimeType(fullPath), 'Cache-Control': 'no-cache' },
         });
       }
-      const indexPath = pathModule.join(frontendDistDir, 'index.html');
+      const indexPath = path.join(frontendDistDir, 'index.html');
       if (existsSync(indexPath)) {
         return new Response(readFileSync(indexPath), {
           headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' },
@@ -354,18 +499,8 @@ const app = new Elysia()
   .listen(3101);
 
 console.log('Backend running on http://localhost:3101');
+console.log(`Storage root: ${storageRoot}`);
 
-if (embeddedAssets) {
-  const url = 'http://localhost:3101';
-  try {
-    if (process.platform === 'win32') {
-      Bun.spawn(['cmd', '/c', 'start', url]);
-    } else if (process.platform === 'darwin') {
-      Bun.spawn(['open', url]);
-    } else {
-      Bun.spawn(['xdg-open', url]);
-    }
-  } catch (e) {
-    console.warn('Failed to open browser:', e);
-  }
+if (process.env.NO_OPEN_BROWSER !== '1') {
+  openBrowserUrl('http://localhost:3101');
 }
