@@ -23,24 +23,24 @@ export default function Help() {
         </div>
 
         <Section icon={<BrainCircuit className="h-4 w-4" />} title="1. 先配置模型">
-          <p>从首页右上角进入模型配置页，为至少一个服务商填入真实 API Key，并启用一个支持工具调用的模型。</p>
-          <p>如果仍使用示例 stub key，首页的“模型配置”按钮会高亮提醒，项目创建与 AI 对话也会被阻止。</p>
+          <p>从首页右上角进入模型配置页，为至少一个模型服务填入可用的接口密钥，并启用一个模型。</p>
+          <p>如果仍在使用尚未配置模型服务的 API Key，首页的“模型配置”按钮会高亮提醒，创建项目和继续完善演示稿都会被阻止。</p>
         </Section>
 
         <Section icon={<LayoutTemplate className="h-4 w-4" />} title="2. 从需求直接创建项目">
-          <p>首页顶部输入你对 PPT 的需求后，系统会调用 AI 自动为项目命名，并创建形如 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">yyyyMMdd_name</code> 的项目目录。</p>
-          <p>创建完成后会自动进入项目页，并把这段需求立即提交给右侧 AI agent。</p>
+          <p>首页顶部输入你对 PPT 的需求后，系统会自动帮你命名，并创建形如 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">yyyyMMdd_name</code> 的项目目录。</p>
+          <p>创建完成后会自动进入项目页，并把这段需求立即交给右侧的智能助手开始生成与编辑 PPT。</p>
         </Section>
 
-        <Section icon={<FileCode2 className="h-4 w-4" />} title="3. 项目页的工作方式">
+        <Section icon={<FileCode2 className="h-4 w-4" />} title="3. 项目页怎么使用">
           <p>左侧有两个标签：<strong className="text-gray-200">PPT 预览</strong> 和 <strong className="text-gray-200">资源管理</strong>。</p>
-          <p>PPT 预览支持刷新与导出；资源管理支持上传、查看、编辑文本文件，默认隐藏 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">index.js</code>，勾选后可直接编辑。</p>
-          <p>右侧 AI 对话会调用项目工具、文件工具和代码补丁工具，帮助你生成或修改 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">index.js</code>。</p>
+          <p>PPT 预览支持刷新与导出；资源管理支持上传、查看、编辑文本文件。默认会隐藏 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">index.js</code>，勾选后也可以直接编辑。</p>
+          <p>右侧的智能助手会帮你生成或修改 PPT 脚本，让预览内容跟着你的需求继续变化。</p>
         </Section>
 
-        <Section icon={<FolderOpen className="h-4 w-4" />} title="4. 资源与 index.js">
-          <p>所有项目资源都保存在本地存储目录下的对应项目文件夹中，后端会通过 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">/&lt;project_id&gt;/filename</code> 暴露给浏览器使用。</p>
-          <p>在 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">index.js</code> 中，请通过 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">getResourceUrl('文件名')</code> 引用已上传的图片或媒体资源。</p>
+        <Section icon={<FolderOpen className="h-4 w-4" />} title="4. 资源和 PPT 脚本">
+          <p>所有项目资源都会保存在本地存储目录下的项目文件夹中。你上传的图片、音频、视频或文本，都会留在这个项目里。</p>
+          <p>如果你需要更细致地调整内容，也可以显示并编辑 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">index.js</code>。这个文件就是当前演示稿的制作脚本。</p>
         </Section>
       </div>
     </div>

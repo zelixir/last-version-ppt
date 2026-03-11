@@ -57,7 +57,7 @@ export default function Home() {
   const createProject = async () => {
     if (!requirement.trim() || loading) return
     if (!configStatus?.firstUsableModelId) {
-      setError('当前没有可用模型，先去模型配置页面填写真实 API Key 并启用模型。')
+      setError('当前还没有可用的模型服务，请先到模型配置页面填写可用的接口密钥，并启用至少一个模型。')
       return
     }
 
@@ -83,7 +83,7 @@ export default function Home() {
   }
 
   const cloneProject = async (project: ProjectSummary) => {
-    const name = window.prompt('请输入新项目名称', `${project.name}-copy`)
+    const name = window.prompt('请输入新项目名称', `${project.name}-副本`)
     if (!name) return
     const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/clone`, {
       method: 'POST',
@@ -119,14 +119,9 @@ export default function Home() {
               <div className="flex items-center gap-3">
                 <Sparkles className="h-8 w-8 text-blue-400" />
                 <div>
-                  <h1 className="text-2xl font-bold text-white">Last Version PPT</h1>
-                  <p className="text-sm text-gray-400">输入需求，AI 会先为项目命名，再进入项目页自动开始生成与编辑 index.js。</p>
+                  <h1 className="text-2xl font-bold text-white">最后一版PPT</h1>
+                  <p className="text-sm text-gray-400">输入需求后，系统会先帮你取一个项目名，再进入项目页自动开始生成与编辑 PPT。</p>
                 </div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs text-gray-400">
-                <span className="rounded-full border border-gray-700 px-2 py-1">项目目录：%appdata%/last-version-ppt</span>
-                <span className="rounded-full border border-gray-700 px-2 py-1">PptxGenJS</span>
-                <span className="rounded-full border border-gray-700 px-2 py-1">AI 生成 index.js</span>
               </div>
             </div>
             <Button
@@ -144,14 +139,14 @@ export default function Home() {
               <div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4" />
                 <div>
                   <div className="font-medium">需要先配置真实模型</div>
-                  <div className="mt-1 text-amber-200/80">如果服务商仍使用示例 stub API Key，或者当前没有启用可用模型，AI 创建项目与项目对话都会被阻止。</div>
+                  <div className="mt-1 text-amber-200/80">如果服务商仍在使用尚未配置模型服务的 API Key，或者当前没有启用可用模型，系统就无法帮你创建项目和继续完善 PPT。</div>
                 </div>
               </div>
             </div>
           )}
 
           <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-950/70 p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white"><BrainCircuit className="h-4 w-4 text-blue-400" />新建项目需求</div>
+            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white"><BrainCircuit className="h-4 w-4 text-blue-400" />新建演示稿需求</div>
             <Textarea
               value={requirement}
               onChange={event => setRequirement(event.target.value)}
@@ -162,7 +157,7 @@ export default function Home() {
               <Button variant="ghost" onClick={() => setPlaceholderSeed(current => current + 1)}>换一个示例</Button>
               <Button onClick={createProject} disabled={loading || !requirement.trim()}>
                 {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                创建项目并开始生成
+                  创建项目并开始制作
               </Button>
             </div>
           </div>
@@ -172,7 +167,7 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-white">项目列表</h2>
-              <p className="text-sm text-gray-400">点击项目可进入对应工作区；支持克隆和创建版本。</p>
+               <p className="text-sm text-gray-400">点击项目可继续完善内容；也支持复制一份或新建版本。</p>
             </div>
             <Button variant="outline" onClick={fetchProjects}><FolderOpen className="h-4 w-4" />刷新列表</Button>
           </div>
@@ -203,7 +198,7 @@ export default function Home() {
 
           {projects.length === 0 && (
             <div className="rounded-2xl border border-dashed border-gray-700 p-10 text-center text-sm text-gray-500">
-              还没有项目。先在顶部输入需求，AI 会自动命名并创建第一个项目。
+              还没有项目。先在顶部输入需求，系统会自动命名并创建第一个项目。
             </div>
           )}
         </section>

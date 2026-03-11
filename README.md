@@ -30,6 +30,10 @@ bun run dev
 
 前端默认通过 Vite 访问，后端运行在 `http://localhost:3101`。
 
+## 发布 Windows EXE
+
+仓库提供了一个 GitHub Actions 手动工作流：进入 Actions，运行“发布 Windows 可执行文件”，输入版本号后即可构建 exe 并发布到对应的 GitHub Release。
+
 ## 说明
 
 这次迁移的目标是“保留框架，移除终端相关工具”。因此：
