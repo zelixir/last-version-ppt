@@ -46,9 +46,9 @@ export async function createProjectDirectory(topic, now = new Date()) {
   const storageRoot = await ensureStorageRoot();
   const baseName = createProjectFolderName(topic, now);
   let candidate = path.join(storageRoot, baseName);
-  let index = 1;
+  const maxAttempts = 100;
 
-  while (true) {
+  for (let index = 1; index <= maxAttempts; index++) {
     try {
       await fs.mkdir(candidate);
       return {
@@ -58,14 +58,15 @@ export async function createProjectDirectory(topic, now = new Date()) {
       };
     } catch (error) {
       if (error && error.code === 'EEXIST') {
-        index += 1;
-        candidate = path.join(storageRoot, `${baseName}-${index}`);
+        candidate = path.join(storageRoot, `${baseName}-${index + 1}`);
         continue;
       }
 
       throw error;
     }
   }
+
+  throw new Error(`无法创建项目目录，已尝试 ${maxAttempts} 次`);
 }
 
 export function getSettingsPath(storageRoot = getStorageRoot()) {
