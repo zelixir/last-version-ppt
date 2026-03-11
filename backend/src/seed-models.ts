@@ -27,7 +27,7 @@
 import { readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { createAiModel, getAiModels } from "./db";
+import { createAiModel, getAiModels } from "./db.ts";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 

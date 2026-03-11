@@ -588,7 +588,7 @@ function mapFinishReason(finishReason: string | null | undefined): LanguageModel
   }
 }
 
-import { getProviders, getProviderByName } from './db';
+import { getProviders, getProviderByName } from './db.ts';
 
 export interface ProviderConfig {
   name: string;
