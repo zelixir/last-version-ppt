@@ -13,3 +13,17 @@ test('PPTXGENJS_GUIDE includes detailed examples and common APIs', () => {
   assert.match(PPTXGENJS_GUIDE, /defineLayout/);
   assert.match(PPTXGENJS_GUIDE, /getResourceUrl/);
 });
+
+test('PPTXGENJS_GUIDE matches the actual runtime shape of pptx and pptxgenjs', () => {
+  assert.match(PPTXGENJS_GUIDE, /pptxgenjs：PptxGenJS 构造函数本身/);
+  assert.match(PPTXGENJS_GUIDE, /pptx instanceof pptxgenjs/);
+  assert.match(PPTXGENJS_GUIDE, /pptx\.ShapeType\.roundRect/);
+  assert.match(PPTXGENJS_GUIDE, /pptx\.ChartType\.bar/);
+  assert.match(PPTXGENJS_GUIDE, /LAYOUT_16x9/);
+  assert.match(PPTXGENJS_GUIDE, /LAYOUT_4x3/);
+  assert.doesNotMatch(PPTXGENJS_GUIDE, /pptxgenjs\.ShapeType/);
+  assert.doesNotMatch(PPTXGENJS_GUIDE, /pptxgenjs\.ChartType/);
+  assert.doesNotMatch(PPTXGENJS_GUIDE, /LAYOUT_16X9/);
+  assert.doesNotMatch(PPTXGENJS_GUIDE, /LAYOUT_4X3/);
+  assert.doesNotMatch(PPTXGENJS_GUIDE, /ChartType\.column/);
+});
