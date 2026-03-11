@@ -211,11 +211,24 @@ export interface ProjectChatToolEvent {
   success: boolean;
 }
 
+export interface ProjectChatTextPart {
+  type: 'text';
+  text: string;
+}
+
+export interface ProjectChatToolPart extends ProjectChatToolEvent {
+  type: 'tool';
+  state?: 'running' | 'done';
+}
+
+export type ProjectChatMessagePart = ProjectChatTextPart | ProjectChatToolPart;
+
 export interface ProjectChatEntry {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
   toolEvents?: ProjectChatToolEvent[];
+  parts?: ProjectChatMessagePart[];
 }
 
 export interface ProjectRecord {
@@ -347,6 +360,10 @@ export function deleteProjectRecord(id: string): void {
 
 export function setSetting(key: string, value: string): void {
   db.prepare(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value);
+}
+
+export function deleteSetting(key: string): void {
+  db.prepare('DELETE FROM settings WHERE key = ?').run(key);
 }
 
 export function getSetting(key: string): string | null {

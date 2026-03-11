@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';
 
@@ -114,6 +114,10 @@ export function copyProjectDirectory(sourceProjectId: string, targetProjectId: s
 
 export function renameProjectDirectory(sourceProjectId: string, targetProjectId: string): void {
   renameSync(getProjectDir(sourceProjectId), getProjectDir(targetProjectId));
+}
+
+export function deleteProjectDirectory(projectId: string): void {
+  rmSync(getProjectDir(projectId), { recursive: true, force: true });
 }
 
 export function listProjectDirectories(): string[] {
