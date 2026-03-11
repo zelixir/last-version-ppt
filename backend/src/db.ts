@@ -1,0 +1,248 @@
+import { Database } from 'bun:sqlite';
+
+const db = new Database('last-version-ppt.db', { create: true });
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS providers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    label TEXT,
+    base_url TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS ai_models (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_name VARCHAR NOT NULL,
+    display_name VARCHAR,
+    provider VARCHAR NOT NULL,
+    capabilities TEXT NOT NULL DEFAULT '{}',
+    enabled VARCHAR(1) NOT NULL DEFAULT 'Y'
+  )
+`);
+
+try {
+  db.run(`ALTER TABLE ai_models ADD COLUMN display_name VARCHAR`);
+} catch (e: any) {
+  if (!String(e?.message || e).includes('duplicate column')) {
+    console.error('Migration error:', e);
+  }
+}
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    messages TEXT NOT NULL DEFAULT '[]',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+export { db };
+
+export interface AiModelCapabilities {
+  multimodal?: boolean;
+  deep_thinking?: boolean;
+  tool_calling?: boolean;
+  function_calling?: boolean;
+  [key: string]: boolean | undefined;
+}
+
+export interface AiModel {
+  id: number;
+  model_name: string;
+  display_name: string;
+  provider: string;
+  capabilities: AiModelCapabilities;
+  enabled: 'Y' | 'N';
+}
+
+function parseAiModel(row: any): AiModel {
+  return {
+    ...row,
+    display_name: row.display_name || row.model_name,
+    capabilities: typeof row.capabilities === 'string' ? JSON.parse(row.capabilities) : row.capabilities,
+  };
+}
+
+export function getAiModels(enabledOnly = false): AiModel[] {
+  const rows = enabledOnly
+    ? db.query("SELECT * FROM ai_models WHERE enabled = 'Y' ORDER BY id").all() as any[]
+    : db.query('SELECT * FROM ai_models ORDER BY id').all() as any[];
+  return rows.map(parseAiModel);
+}
+
+export function getAiModelById(id: number): AiModel | null {
+  const row = db.query('SELECT * FROM ai_models WHERE id = ?').get(id) as any;
+  return row ? parseAiModel(row) : null;
+}
+
+export function createAiModel(data: { model_name: string; display_name?: string; provider: string; capabilities?: AiModelCapabilities; enabled?: 'Y' | 'N' }): AiModel {
+  const display_name = data.display_name ?? data.model_name;
+  const capabilities = JSON.stringify(data.capabilities || {});
+  const enabled = data.enabled ?? 'Y';
+  const stmt = db.prepare('INSERT INTO ai_models (model_name, display_name, provider, capabilities, enabled) VALUES (?, ?, ?, ?, ?)');
+  const result = stmt.run(data.model_name, display_name, data.provider, capabilities, enabled);
+  return { id: Number(result.lastInsertRowid), model_name: data.model_name, display_name, provider: data.provider, capabilities: data.capabilities || {}, enabled };
+}
+
+export function updateAiModel(id: number, data: { model_name?: string; display_name?: string; provider?: string; capabilities?: AiModelCapabilities; enabled?: 'Y' | 'N' }): void {
+  const current = getAiModelById(id);
+  if (!current) return;
+  const model_name = data.model_name ?? current.model_name;
+  const display_name = data.display_name ?? current.display_name;
+  const provider = data.provider ?? current.provider;
+  const capabilities = JSON.stringify(data.capabilities ?? current.capabilities);
+  const enabled = data.enabled ?? current.enabled;
+  db.run('UPDATE ai_models SET model_name = ?, display_name = ?, provider = ?, capabilities = ?, enabled = ? WHERE id = ?', [model_name, display_name, provider, capabilities, enabled, id]);
+}
+
+export function deleteAiModel(id: number): void {
+  db.run('DELETE FROM ai_models WHERE id = ?', [id]);
+}
+
+export function seedModelsFromJson(jsonContentOrData: string | object): void {
+  const count = db.query('SELECT COUNT(*) as n FROM ai_models').get() as { n: number };
+  if (count?.n > 0) return;
+
+  const data = typeof jsonContentOrData === 'string' ? JSON.parse(jsonContentOrData) : jsonContentOrData;
+  const providers: Array<{ name: string; models?: any[] }> = (data as any).providers || [];
+  for (const provider of providers) {
+    for (const model of provider.models || []) {
+      createAiModel({
+        model_name: model.model_name,
+        display_name: model.display_name,
+        provider: provider.name,
+        capabilities: model.capabilities || {},
+        enabled: model.enabled ?? 'Y',
+      });
+    }
+  }
+}
+
+export interface ProviderRow {
+  id: number;
+  name: string;
+  label?: string;
+  base_url: string;
+  api_key: string;
+  created_at: string;
+}
+
+export function getProviders(): ProviderRow[] {
+  return db.query('SELECT * FROM providers ORDER BY id').all() as ProviderRow[];
+}
+
+export function getProviderByName(name: string): ProviderRow | null {
+  return db.query('SELECT * FROM providers WHERE name = ?').get(name) as ProviderRow | null;
+}
+
+export function createProvider(data: { name: string; label?: string; base_url: string; api_key: string }): ProviderRow {
+  const stmt = db.prepare('INSERT INTO providers (name, label, base_url, api_key) VALUES (?, ?, ?, ?)');
+  const result = stmt.run(data.name, data.label || null, data.base_url, data.api_key);
+  return db.query('SELECT * FROM providers WHERE id = ?').get(Number(result.lastInsertRowid)) as ProviderRow;
+}
+
+export function updateProvider(name: string, data: { name?: string; label?: string; base_url?: string; api_key?: string }): void {
+  const current = getProviderByName(name);
+  if (!current) return;
+  db.run(
+    'UPDATE providers SET name = ?, label = ?, base_url = ?, api_key = ? WHERE name = ?',
+    [data.name ?? current.name, data.label !== undefined ? data.label : (current.label ?? null), data.base_url ?? current.base_url, data.api_key ?? current.api_key, name]
+  );
+}
+
+export function deleteProvider(name: string): void {
+  db.run('DELETE FROM providers WHERE name = ?', [name]);
+}
+
+export function seedProvidersFromJson(jsonContentOrData: string | object): void {
+  const count = db.query('SELECT COUNT(*) as n FROM providers').get() as { n: number };
+  if (count?.n > 0) return;
+
+  const data = typeof jsonContentOrData === 'string' ? JSON.parse(jsonContentOrData) : jsonContentOrData;
+  for (const provider of (data as any).providers || []) {
+    createProvider({
+      name: provider.name,
+      label: provider.label,
+      base_url: provider.base_url,
+      api_key: provider.api_key,
+    });
+  }
+}
+
+export interface ConversationRow {
+  id: number;
+  title: string;
+  messages?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function getConversations(options: { search?: string; limit?: number; offset?: number } = {}): ConversationRow[] {
+  const { search, limit = 20, offset = 0 } = options;
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (search && search.trim()) {
+    conditions.push('title LIKE ?');
+    params.push(`%${search.trim()}%`);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  params.push(limit, offset);
+
+  return db.query(`SELECT id, title, created_at, updated_at FROM conversations ${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`).all(...params) as ConversationRow[];
+}
+
+export function getConversation(id: number): ConversationRow | null {
+  return db.query('SELECT * FROM conversations WHERE id = ?').get(id) as ConversationRow | null;
+}
+
+export function createConversation(data: { title: string; messages: string }): ConversationRow {
+  const stmt = db.prepare('INSERT INTO conversations (title, messages) VALUES (?, ?)');
+  const result = stmt.run(data.title, data.messages);
+  return db.query('SELECT * FROM conversations WHERE id = ?').get(Number(result.lastInsertRowid)) as ConversationRow;
+}
+
+export function updateConversation(id: number, data: { title?: string; messages?: string }): void {
+  const stmt = db.prepare('UPDATE conversations SET title = COALESCE(?, title), messages = COALESCE(?, messages), updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+  stmt.run(data.title || null, data.messages || null, id);
+}
+
+export function deleteConversation(id: number): void {
+  db.run('DELETE FROM conversations WHERE id = ?', [id]);
+}
+
+export function clearConversations(): void {
+  db.run('DELETE FROM conversations');
+}
+
+export function getRecentPrompts(options: { limit?: number } = {}): string[] {
+  const { limit = 50 } = options;
+  const rows = db.query('SELECT messages FROM conversations ORDER BY updated_at DESC LIMIT ?').all(limit) as Array<{ messages: string }>;
+
+  const prompts: string[] = [];
+  for (const row of rows) {
+    try {
+      const messages = JSON.parse(row.messages) as Array<{ role?: string; content?: unknown; parts?: Array<{ type?: string; text?: string }> }>;
+      for (const msg of messages) {
+        if (msg.role !== 'user') continue;
+        const text = typeof msg.content === 'string'
+          ? msg.content
+          : msg.parts?.filter(part => part.type === 'text').map(part => part.text || '').join('') || '';
+        if (text.trim()) {
+          prompts.push(text.trim());
+        }
+        break;
+      }
+    } catch (e) {
+      console.error('Failed to parse conversation messages:', e);
+    }
+  }
+  return prompts;
+}

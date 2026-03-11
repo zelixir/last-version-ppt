@@ -1,0 +1,86 @@
+{
+  "providers": [
+    {
+      "name": "阿里云",
+      "label": "阿里云",
+      "models": [
+        {
+          "display_name": "qwen3-max-2026-01-23",
+          "model_name": "qwen3-max-2026-01-23",
+          "capabilities": {
+            "tool_calling": true,
+            "deep_thinking": true
+          },
+          "enabled": "Y"
+        },
+        {
+          "display_name": "qwen3.5-plus",
+          "model_name": "qwen3.5-plus",
+          "capabilities": {
+            "tool_calling": true,
+            "deep_thinking": true,
+            "multimodal": true
+          },
+          "enabled": "Y"
+        },
+        {
+          "display_name": "qwen3.5-flash",
+          "model_name": "qwen3.5-flash",
+          "capabilities": {
+            "tool_calling": true,
+            "deep_thinking": true,
+            "multimodal": true
+          },
+          "enabled": "Y"
+        },
+        {
+          "display_name": "glm-5",
+          "model_name": "glm-5",
+          "capabilities": {
+            "tool_calling": true
+          },
+          "enabled": "Y"
+        },
+        {
+          "display_name": "qwen3-max",
+          "model_name": "qwen3-max",
+          "capabilities": {
+            "tool_calling": true,
+            "deep_thinking": true
+          },
+          "enabled": "Y"
+        },
+        {
+          "display_name": "kimi-k2.5",
+          "model_name": "kimi-k2.5",
+          "capabilities": {
+            "tool_calling": true
+          },
+          "enabled": "Y"
+        }
+      ]
+    },
+    {
+      "name": "modelscope",
+      "label": "ModelScope",
+      "models": [
+        {
+          "display_name": "modelscope/MiniMax-M2.5",
+          "model_name": "MiniMax/MiniMax-M2.5",
+          "capabilities": {
+            "tool_calling": true
+          },
+          "enabled": "Y"
+        },
+        {
+          "display_name": "modelscope/Step-3.5-Flash",
+          "model_name": "stepfun-ai/Step-3.5-Flash",
+          "capabilities": {
+            "tool_calling": true
+          },
+          "enabled": "Y"
+        }
+      ]
+    }
+  ]
+}
