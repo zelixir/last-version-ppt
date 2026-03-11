@@ -1,7 +1,6 @@
 import { spawn } from 'child_process';
 import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
-import { node } from '@elysiajs/node';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -245,7 +244,7 @@ function configStatus() {
 
 syncProjectsWithFilesystem();
 
-const app = new Elysia({ adapter: node() })
+const app = new Elysia()
   .use(cors())
   .get('/api/health', () => ({ ok: true, storageRoot, projectsRoot }))
   .get('/api/config-status', () => configStatus())
