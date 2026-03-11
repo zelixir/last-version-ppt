@@ -6,6 +6,7 @@ import { createModelClient } from './dashscope-model.ts';
 import { appendProjectChat, createProjectRecord, getAiModelById, getProjectById, getProviderByName, ProjectChatEntry, ProjectChatToolEvent, setSetting } from './db.ts';
 import { exampleApiKeys, summarizeModelConfigurationError } from './project-support.ts';
 import { runProject } from './project-runner.ts';
+import { APPLY_PATCH_AGENT_INSTRUCTIONS, APPLY_PATCH_TOOL_DESCRIPTION, applyLegacySearchReplace, applyProjectPatch } from './apply-patch.ts';
 import {
   buildProjectId,
   copyProjectDirectory,
@@ -246,23 +247,37 @@ export async function chatWithProjectAgent(projectId: string, content: string, m
         },
       }),
       'apply-patch': tool({
-        description: '在指定文件中执行一次精确搜索替换。',
+        description: APPLY_PATCH_TOOL_DESCRIPTION,
         inputSchema: z.object({
-          fileName: z.string(),
-          search: z.string(),
-          replace: z.string(),
+          input: z.string().optional(),
+          fileName: z.string().optional(),
+          search: z.string().optional(),
+          replace: z.string().optional(),
           replaceAll: z.boolean().optional(),
+        }).superRefine((value, ctx) => {
+          if (value.input) return;
+          if (value.fileName && typeof value.search === 'string' && typeof value.replace === 'string') return;
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: '请提供 input，或提供 fileName + search + replace。' });
         }),
-        execute: async ({ fileName, search, replace, replaceAll }) => {
-          const filePath = resolveProjectFile(projectId, fileName);
-          const original = readFileSync(filePath, 'utf8');
-          if (!original.includes(search)) {
-            throw new Error(`在 ${fileName} 中找不到需要替换的内容`);
+        execute: async ({ input, fileName, search, replace, replaceAll }) => {
+          if (input) {
+            const summary = applyProjectPatch(getProjectDir(projectId), input);
+            const details = summary.changedFiles.length > 0
+              ? `修改 ${summary.changedFiles.join(', ')}`
+              : '补丁未产生文件变更';
+            toolEvents.push(summarizeToolEvent('apply-patch', details));
+            return { changed: summary.changedFiles, created: summary.createdFiles, deleted: summary.deletedFiles, moved: summary.movedFiles, fuzz: summary.fuzz };
           }
-          const updated = replaceAll ? original.split(search).join(replace) : original.replace(search, replace);
-          writeFileSync(filePath, updated, 'utf8');
+
+          if (!fileName || typeof search !== 'string' || typeof replace !== 'string') {
+            throw new Error('apply-patch 缺少必要的 legacy 参数');
+          }
+          const targetPath = resolveProjectFile(projectId, fileName);
+          const original = readFileSync(targetPath, 'utf8');
+          const updated = applyLegacySearchReplace(original, search, replace, replaceAll);
+          writeFileSync(targetPath, updated, 'utf8');
           toolEvents.push(summarizeToolEvent('apply-patch', `修改 ${fileName}`));
-          return { fileName, changed: true };
+          return { changed: [fileName], legacy: true };
         },
       }),
     },
