@@ -582,7 +582,7 @@ export default function Project() {
                 </div>
               </div>
               <div className="border-t border-gray-800 px-4 py-4">
-                <Textarea value={chatInput} onChange={event => setChatInput(event.target.value)} placeholder={selectedModelId ? '例如：做一个三页的产品发布会 PPT，强调问题、方案和优势。' : '请先在模型配置中启用模型'} className="min-h-28 bg-gray-900" />
+                <Textarea value={chatInput} onChange={event => setChatInput(event.target.value)} placeholder={selectedModelId ? '例如：做一个三页的产品发布会 PPT，强调问题、方案和优势。也可以先问我：你可以帮我做什么？' : '请先在模型配置中启用模型'} className="min-h-28 bg-gray-900" />
                 <div className="mt-3 flex justify-end">
                   <Button onClick={() => sendChat()} disabled={chatLoading || !selectedModelId || !chatInput.trim()}><Send className="h-4 w-4" />发送</Button>
                 </div>

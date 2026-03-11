@@ -19,6 +19,14 @@ import {
   resolveProjectFile,
   sanitizeProjectName,
 } from './storage.ts';
+import { renderPptPageAsImage } from './slide-render.ts';
+import {
+  buildImageToolModelOutput,
+  getImageMediaType,
+  isImageFile,
+  readProjectTextFile,
+  readProjectTextFileRange,
+} from './project-tool-helpers.ts';
 
 function summarizeToolEvent(toolName: string, details: string, success = true): ProjectChatToolEvent {
   return { toolName, summary: details, success };
@@ -97,7 +105,11 @@ function summarizeToolIntent(toolName: string, input: Record<string, unknown>): 
     case 'run-project':
       return '正在检查这份 PPT 能否正常生成';
     case 'list-file':
-      return '正在查看当前文件';
+      return '正在查看项目文件列表';
+    case 'read-file':
+      return `正在读取 ${(input.fileName as string) || ''}`.trim();
+    case 'read-range':
+      return `正在分段读取 ${(input.fileName as string) || ''}`.trim();
     case 'create-file':
       return `准备写入 ${(input.fileName as string) || ''}`.trim();
     case 'rename-file':
@@ -106,6 +118,10 @@ function summarizeToolIntent(toolName: string, input: Record<string, unknown>): 
       return `准备删除 ${(input.fileName as string) || ''}`.trim();
     case 'grep':
       return `正在查找 ${(input.pattern as string) || ''}`.trim();
+    case 'read-image-file':
+      return `正在查看图片 ${(input.fileName as string) || ''}`.trim();
+    case 'read-ppt-page':
+      return `正在查看第 ${(input.pageNumber as number) || ''} 页`.trim();
     case 'apply-patch':
       return input.fileName ? `准备修改 ${(input.fileName as string) || ''}`.trim() : '准备批量修改文件';
     default:
@@ -134,6 +150,7 @@ function buildProjectTools(options: {
   getProjectId: () => string;
   setProjectId: (projectId: string) => void;
   toolEvents: ProjectChatToolEvent[];
+  supportsMultimodal?: boolean;
   onEvent?: (event: ProjectAgentStreamEvent) => void;
 }) {
   const emitter = createToolEventEmitter(options.toolEvents, options.onEvent);
@@ -261,6 +278,26 @@ function buildProjectTools(options: {
         return files;
       },
     }),
+    'read-file': tool({
+      description: '读取当前项目中的文本文件，如果文件过大，会提示改用按行读取。',
+      inputSchema: z.object({ fileName: z.string() }),
+      execute: async ({ fileName }) => {
+        emitter.start('read-file', { fileName });
+        const result = readProjectTextFile(options.getProjectId(), fileName);
+        emitter.finish('read-file', `读取 ${fileName}`);
+        return result;
+      },
+    }),
+    'read-range': tool({
+      description: '按行范围读取当前项目中的文本文件，适合查看较大的文件。',
+      inputSchema: z.object({ fileName: z.string(), startLine: z.number().int().min(1), endLine: z.number().int().min(1) }),
+      execute: async ({ fileName, startLine, endLine }) => {
+        emitter.start('read-range', { fileName, startLine, endLine });
+        const result = await readProjectTextFileRange(options.getProjectId(), fileName, startLine, endLine);
+        emitter.finish('read-range', `读取 ${fileName} 的第 ${result.startLine}-${result.endLine} 行`);
+        return result;
+      },
+    }),
     'create-file': tool({
       description: '创建或覆盖当前项目中的文本文件。',
       inputSchema: z.object({ fileName: z.string(), content: z.string() }),
@@ -344,6 +381,50 @@ function buildProjectTools(options: {
         return { changed: [fileName], legacy: true };
       },
     }),
+    ...(options.supportsMultimodal ? {
+      'read-image-file': tool({
+        description: '读取当前项目中的图片，供支持看图的模型直接查看。',
+        inputSchema: z.object({ fileName: z.string() }),
+        execute: async ({ fileName }) => {
+          emitter.start('read-image-file', { fileName });
+          if (!isImageFile(fileName)) throw new Error('该文件不是图片');
+          const filePath = resolveProjectFile(options.getProjectId(), fileName);
+          if (!existsSync(filePath) || statSync(filePath).isDirectory()) throw new Error(`文件 ${fileName} 不存在`);
+          const buffer = readFileSync(filePath);
+          emitter.finish('read-image-file', `读取图片 ${fileName}`);
+          return {
+            fileName,
+            mediaType: getImageMediaType(fileName),
+            data: buffer.toString('base64'),
+          };
+        },
+        toModelOutput: ({ output }) => ({
+          ...buildImageToolModelOutput(`图片 ${output.fileName}`, output.fileName, output.mediaType, output.data),
+        }),
+      }),
+      'read-ppt-page': tool({
+        description: '运行当前 PPT 脚本并读取指定页的预览图，便于检查排版和视觉内容。',
+        inputSchema: z.object({ pageNumber: z.number().int().min(1) }),
+        execute: async ({ pageNumber }) => {
+          emitter.start('read-ppt-page', { pageNumber });
+          const runResult = await runProject({ projectId: options.getProjectId() });
+          if (!runResult.ok || !runResult.pptx) {
+            throw new Error(runResult.error || '当前 PPT 运行失败，无法查看页面');
+          }
+          const rendered = renderPptPageAsImage(runResult.pptx, pageNumber);
+          emitter.finish('read-ppt-page', `读取第 ${pageNumber} 页预览图`);
+          return {
+            pageNumber,
+            slideCount: rendered.slideCount,
+            mediaType: rendered.mediaType,
+            data: rendered.data,
+          };
+        },
+        toModelOutput: ({ output }) => ({
+          ...buildImageToolModelOutput(`当前 PPT 第 ${output.pageNumber} 页预览，共 ${output.slideCount} 页`, `slide-${output.pageNumber}.svg`, output.mediaType, output.data),
+        }),
+      }),
+    } : {}),
   };
 }
 
@@ -377,7 +458,14 @@ export async function chatWithProjectAgent(
       '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
       '必须尽量完整实现用户要的 PPT 内容，不能只给最小骨架或占位内容。',
       '在你认为已经完成时，必须先调用 run-project 检查脚本是否能运行；如果失败，要继续修复直到成功或明确说明阻塞原因。',
+      '如果用户问你「你能做什么」或「怎么用」，请用自然中文简要说明你的能力。',
+      '你可以帮用户生成整份演示稿、修改现有内容、检查是否能正常生成、查看项目文件。',
+      '如果当前模型支持看图，也可以查看上传的图片和某一页的预览图。',
+      '读取文本文件时，优先使用 read-file；如果文件较大或只需要局部内容，要改用 read-range 工具按行查看。',
       '最终回复面向不懂技术的普通用户，尽量使用自然中文，避免技术术语和英文缩写。',
+      model.capabilities.multimodal
+        ? '当前模型支持看图：必要时可以读取上传的图片，也可以查看当前 PPT 某一页的预览图来判断版式是否合适。'
+        : '当前模型暂时不支持看图，请主要依靠文本文件和运行结果来完成任务。',
       PPTXGENJS_GUIDE,
       `当前项目：${project.id}`,
       `当前资源：${listProjectFiles(projectId).map(file => file.name).join(', ') || '（空）'}`,
@@ -391,6 +479,7 @@ export async function chatWithProjectAgent(
         setSetting('currentProjectId', nextProjectId);
       },
       toolEvents,
+      supportsMultimodal: model.capabilities.multimodal === true,
       onEvent: options?.onEvent,
     }),
     stopWhen: stepCountIs(8),
