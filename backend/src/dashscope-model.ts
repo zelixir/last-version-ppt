@@ -20,6 +20,7 @@ import {
   postJsonToApi,
 } from '@ai-sdk/provider-utils';
 import { z } from 'zod';
+import { toDashscopeToolContent } from './dashscope-message-content.ts';
 
 type DashscopeMessage =
   | { role: 'system'; content: string }
@@ -41,7 +42,16 @@ type DashscopeMessage =
       function: { name: string; arguments: string };
     }>;
   }
-  | { role: 'tool'; tool_call_id: string; content: string };
+  | {
+    role: 'tool';
+    tool_call_id: string;
+    content:
+    | string
+    | Array<
+      | { type: 'text'; text: string }
+      | { type: 'image_url'; image_url: { url: string } }
+    >;
+  };
 
 type DashscopeTool = {
   type: 'function';
@@ -106,6 +116,9 @@ const dashscopeChatResponseSchema = z.object({
 export class DashscopeChatLanguageModel implements LanguageModelV3 {
   readonly specificationVersion = 'v3';
   readonly provider = 'dashscope';
+  readonly modelId: string;
+  readonly apiKey: string;
+  readonly baseUrl: string;
 
   readonly #usage = {
     promptTokens: 0,
@@ -118,7 +131,11 @@ export class DashscopeChatLanguageModel implements LanguageModelV3 {
     return usage;
   }
 
-  constructor(readonly modelId: string, readonly apiKey: string, readonly baseUrl: string) { }
+  constructor(modelId: string, apiKey: string, baseUrl: string) {
+    this.modelId = modelId;
+    this.apiKey = apiKey;
+    this.baseUrl = baseUrl;
+  }
 
   readonly supportedUrls = {
     'image/*': [/^https?:\/\//, /^data:image\//],
@@ -510,16 +527,7 @@ function toDashscopeMessages(prompt: LanguageModelV3Prompt): DashscopeMessage[] 
     } else if (message.role === 'tool') {
       for (const part of message.content) {
         if (part.type === 'tool-result') {
-          let content = '';
-          if (part.output.type === 'text' || part.output.type === 'error-text') {
-            content = part.output.value;
-          } else if (part.output.type === 'json' || part.output.type === 'error-json') {
-            content = JSON.stringify(part.output.value);
-          } else if (part.output.type === 'content') {
-            content = JSON.stringify(part.output.value);
-          } else if (part.output.type === 'execution-denied') {
-            content = `Execution denied: ${part.output.reason}`;
-          }
+          const content = toDashscopeToolContent(part.output);
 
           messages.push({
             role: 'tool',

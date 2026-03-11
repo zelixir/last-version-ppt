@@ -28,7 +28,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     fontSize: 16,
     color: '334155'
   });
-  slide.addText('如果需要插图，请先上传资源，再通过 getResourceUrl(文件名) 引用。', {
+  slide.addText('如果需要插图，请先上传资源，再告诉智能助手放到哪一页、哪个位置。', {
     x: 0.8,
     y: 2.5,
     w: 11,
