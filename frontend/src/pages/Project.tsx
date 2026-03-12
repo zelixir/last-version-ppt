@@ -393,7 +393,7 @@ export default function Project() {
       }
     }
     const handleError = () => {
-      setPageError(current => current ?? '项目文件变更监听已断开，请刷新页面后重试。')
+      setPageError('项目文件变更监听已断开，请刷新页面后重试。')
     }
 
     eventSource.addEventListener('change', handleChange as EventListener)

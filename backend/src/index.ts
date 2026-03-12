@@ -383,6 +383,7 @@ function ensureProjectWatcher(projectId: string): ProjectWatchState {
   const existing = projectWatchers.get(projectId);
   if (existing) return existing;
 
+  mkdirSync(getProjectDir(projectId), { recursive: true });
   const listeners = new Set<(event: ProjectFileWatchEvent) => void>();
   const watcher = watch(getProjectDir(projectId), { persistent: false }, (change, fileName) => {
     const normalizedFileName = typeof fileName === 'string' && fileName.trim()

@@ -26,7 +26,11 @@ const DEFAULT_STUB_API_KEYS = new Set([
 ])
 
 function isStubApiKey(apiKey: string) {
-  return DEFAULT_STUB_API_KEYS.has(apiKey.trim())
+  const normalized = apiKey.trim()
+  if (!normalized) return false
+  const lowered = normalized.toLowerCase()
+  return DEFAULT_STUB_API_KEYS.has(normalized)
+    || /^(your[_-]|example[_-]?key|placeholder|demo[_-]?key|test[_-]?key)/.test(lowered)
 }
 
 function getFieldClass(hasError: boolean) {
