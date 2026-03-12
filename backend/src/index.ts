@@ -37,6 +37,7 @@ import {
 import { createProjectChatResponse, generateProjectName, type ProjectChatUiMessage } from './project-agent.ts';
 import { runProject } from './project-runner.ts';
 import { exampleApiKeys } from './project-support.ts';
+import { buildAttachmentDisposition } from './http-headers.ts';
 import {
   buildRenamedProjectId,
   buildProjectId,
@@ -620,7 +621,7 @@ const app = new Elysia()
     return new Response(buffer, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'Content-Disposition': `attachment; filename="${params.id}.pptx"`,
+        'Content-Disposition': buildAttachmentDisposition(`${params.id}.pptx`),
       },
     });
   })

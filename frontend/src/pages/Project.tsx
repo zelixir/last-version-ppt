@@ -36,10 +36,11 @@ const TOOL_LABELS: Record<string, string> = {
   grep: '查找内容',
   'read-image-file': '查看图片',
   'read-ppt-page': '查看页面预览',
-  'apply-patch': '批量修改',
+  'apply-patch': '应用补丁',
 }
 
 type ConversationMessage = UIMessage<ProjectChatMessageMetadata>
+type NavigationState = { autoPrompt?: string; suggestedModelId?: number }
 
 const SHOW_SCRIPT_STORAGE_KEY = 'last-version-ppt:show-script'
 const CHAT_WIDTH_STORAGE_KEY = 'last-version-ppt:chat-width'
@@ -53,6 +54,18 @@ const PREVIEW_WHEEL_THROTTLE_MS = 160
 
 function buildMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function toSlideHeightUnit(value: number, presentation: PreviewPresentation) {
+  return `${(value / presentation.height) * 100}cqh`
+}
+
+function toSlideWidthUnit(value: number, presentation: PreviewPresentation) {
+  return `${(value / presentation.width) * 100}cqw`
+}
+
+function toPreviewFontSize(fontSize: number, presentation: PreviewPresentation) {
+  return toSlideHeightUnit(fontSize / 72, presentation)
 }
 
 function getProjectTabStorageKey(projectKey: string) {
@@ -85,6 +98,16 @@ function readStoredSelectedModelId() {
   return Number.isInteger(value) && value > 0 ? value : null
 }
 
+function readNavigationState(locationState: unknown): NavigationState | null {
+  if (locationState && typeof locationState === 'object') {
+    return locationState as NavigationState
+  }
+  const historyUserState = window.history.state?.usr
+  return historyUserState && typeof historyUserState === 'object'
+    ? historyUserState as NavigationState
+    : null
+}
+
 function buildProjectPageTitle(project: ProjectSummary | null, projectId?: string) {
   const baseName = project?.name?.trim()
   const effectiveProjectId = project?.id ?? projectId ?? ''
@@ -95,7 +118,7 @@ function buildProjectPageTitle(project: ProjectSummary | null, projectId?: strin
 
 function SlideCanvas({ slide, presentation, compact = false }: { slide: PreviewSlide; presentation: PreviewPresentation; compact?: boolean }) {
   return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-gray-700 bg-white shadow-lg" style={{ aspectRatio: `${presentation.width}/${presentation.height}` }}>
+    <div className="relative w-full overflow-hidden rounded-xl border border-gray-700 bg-white shadow-lg" style={{ aspectRatio: `${presentation.width}/${presentation.height}`, containerType: 'size' }}>
       <div className="absolute inset-0" style={{ background: slide.backgroundColor ? `#${slide.backgroundColor}` : '#ffffff' }} />
       {slide.elements.map((element, index) => {
         const style = {
@@ -105,8 +128,9 @@ function SlideCanvas({ slide, presentation, compact = false }: { slide: PreviewS
           height: `${(element.h / presentation.height) * 100}%`,
         }
         if (element.kind === 'text') {
+          const effectiveFontSize = element.fontSize ?? 28
           return (
-            <div key={index} className="absolute overflow-hidden rounded-sm px-1 text-slate-900" style={{ ...style, color: element.color ? `#${element.color}` : '#0f172a', background: element.fillColor ? `#${element.fillColor}` : 'transparent', border: element.borderColor ? `1px solid #${element.borderColor}` : undefined, fontWeight: element.bold ? 700 : 400, fontSize: `${Math.max((element.fontSize ?? (compact ? 8 : 14)) * (compact ? 0.4 : 0.7), compact ? 6 : 10)}px`, textAlign: (element.align as any) || 'left', display: 'flex', alignItems: 'center' } as React.CSSProperties}>
+            <div key={index} className="absolute overflow-hidden rounded-sm text-slate-900" style={{ ...style, color: element.color ? `#${element.color}` : '#0f172a', background: element.fillColor ? `#${element.fillColor}` : 'transparent', border: element.borderColor ? `1px solid #${element.borderColor}` : undefined, fontWeight: element.bold ? 700 : 400, fontSize: toPreviewFontSize(effectiveFontSize, presentation), lineHeight: 1.25, padding: `${toSlideHeightUnit(compact ? 0.03 : 0.05, presentation)} ${toSlideWidthUnit(compact ? 0.03 : 0.05, presentation)}`, textAlign: (element.align as any) || 'left', display: 'flex', alignItems: 'center' } as React.CSSProperties}>
               <span className="line-clamp-6 whitespace-pre-wrap">{element.text}</span>
             </div>
           )
@@ -117,13 +141,14 @@ function SlideCanvas({ slide, presentation, compact = false }: { slide: PreviewS
         if (element.kind === 'image') {
           return <img key={index} src={element.src} alt="slide" className="absolute rounded-sm object-cover" style={style} />
         }
+        const tableFontSize = toPreviewFontSize(element.fontSize ?? 32, presentation)
         return (
           <div key={index} className="absolute overflow-hidden rounded border border-slate-300 bg-white" style={style}>
-            <table className="h-full w-full text-[8px] text-slate-700 md:text-[10px]">
+            <table className="h-full w-full text-slate-700" style={{ fontSize: tableFontSize, lineHeight: 1.2 }}>
               <tbody>
                 {element.rows.map((row, rowIndex) => (
                   <tr key={rowIndex}>
-                    {row.map((cell, cellIndex) => <td key={cellIndex} className="border border-slate-200 px-1 align-top">{cell}</td>)}
+                    {row.map((cell, cellIndex) => <td key={cellIndex} className="border border-slate-200 align-top" style={{ padding: `${toSlideHeightUnit(compact ? 0.02 : 0.04, presentation)} ${toSlideWidthUnit(compact ? 0.02 : 0.04, presentation)}` }}>{cell}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -141,8 +166,9 @@ export default function Project() {
   const projectKey = projectId ?? ''
   const navigate = useNavigate()
   const location = useLocation()
-  const autoPromptRef = useRef<string | null>((location.state as { autoPrompt?: string } | null)?.autoPrompt ?? null)
-  const autoModelRef = useRef<number | null>((location.state as { suggestedModelId?: number } | null)?.suggestedModelId ?? null)
+  const initialNavigationStateRef = useRef<NavigationState | null>(readNavigationState(location.state))
+  const autoPromptRef = useRef<string | null>(initialNavigationStateRef.current?.autoPrompt ?? null)
+  const autoModelRef = useRef<number | null>(initialNavigationStateRef.current?.suggestedModelId ?? null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const chatBottomRef = useRef<HTMLDivElement | null>(null)
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -186,6 +212,13 @@ export default function Project() {
   useEffect(() => {
     projectKeyRef.current = projectKey
   }, [projectKey])
+
+  useEffect(() => {
+    const initialNavigationState = initialNavigationStateRef.current
+    if (!initialNavigationState?.autoPrompt && !initialNavigationState?.suggestedModelId) return
+    initialNavigationStateRef.current = null
+    window.history.replaceState({ ...(window.history.state ?? {}), usr: null }, '', `${location.pathname}${location.search}${location.hash}`)
+  }, [location.hash, location.pathname, location.search])
 
   const visibleFiles = useMemo(() => {
     if (!project) return []
@@ -596,8 +629,7 @@ export default function Project() {
                 )}
               </div>
 
-              {activeTab === 'preview' ? (
-                <div className="grid min-h-0 flex-1 grid-cols-[170px_minmax(0,1fr)] gap-4 p-4">
+              <div className={`${activeTab === 'preview' ? 'grid' : 'hidden'} min-h-0 flex-1 grid-cols-[170px_minmax(0,1fr)] gap-4 p-4`} aria-hidden={activeTab !== 'preview'}>
                   <div className="space-y-3 overflow-y-auto pr-1">
                     {preview?.slides.map((slide, index) => (
                       <button key={slide.id} onClick={() => setSelectedSlideIndex(index)} className={`block w-full rounded-2xl border p-2 ${selectedSlideIndex === index ? 'border-blue-500 bg-blue-500/10' : 'border-gray-800 bg-gray-900/60'}`}>
@@ -631,9 +663,9 @@ export default function Project() {
                     )}
                   </div>
                 </div>
-              ) : (
-                <div
-                  className={`grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-4 p-4 ${isDraggingFiles ? 'rounded-2xl border-2 border-dashed border-blue-500/70 bg-blue-500/5' : ''}`}
+              <div
+                  className={`${activeTab === 'resources' ? 'grid' : 'hidden'} min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-4 p-4 ${isDraggingFiles ? 'rounded-2xl border-2 border-dashed border-blue-500/70 bg-blue-500/5' : ''}`}
+                  aria-hidden={activeTab !== 'resources'}
                   onDragOver={event => {
                     event.preventDefault()
                     setIsDraggingFiles(true)
@@ -697,7 +729,6 @@ export default function Project() {
                     )}
                   </div>
                 </div>
-              )}
             </div>
           </section>
 

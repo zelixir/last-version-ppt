@@ -36,7 +36,7 @@ const TOOL_INPUT_LABELS: Record<string, (input: Record<string, unknown>) => stri
   grep: input => `正在查找 ${(input.pattern as string) || ''}`.trim(),
   'read-image-file': input => `正在查看图片 ${(input.fileName as string) || ''}`.trim(),
   'read-ppt-page': input => `正在查看第 ${(input.pageNumber as number) || ''} 页`.trim(),
-  'apply-patch': input => input.fileName ? `准备修改 ${(input.fileName as string) || ''}`.trim() : '准备批量修改文件',
+  'apply-patch': input => input.fileName ? `准备给 ${(input.fileName as string) || ''} 应用补丁`.trim() : '准备应用补丁',
 }
 
 function appendTextPart(parts: ChatMessagePart[], text: string): ChatMessagePart[] {

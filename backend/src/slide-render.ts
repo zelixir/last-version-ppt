@@ -52,7 +52,7 @@ function textRunsToString(textRuns: any[]): string {
 }
 
 function renderTextBlock(text: string, x: number, y: number, w: number, h: number, options: any): string {
-  const fontSize = Math.max(12, Math.round((typeof options.fontSize === 'number' ? options.fontSize : 18) * (PX_PER_INCH / 72)));
+  const fontSize = Math.max(12, Math.round((typeof options.fontSize === 'number' ? options.fontSize : 36) * (PX_PER_INCH / 72)));
   const paddingX = 12;
   const paddingY = 12;
   const fillColor = options.fill?.color ? normalizeColor(options.fill.color, '') : '';
@@ -103,7 +103,7 @@ function renderTable(item: any): string {
   const rowHeight = h / rows.length;
   const colCount = Math.max(...rows.map((row: string[]) => row.length), 1);
   const colWidth = w / colCount;
-  const fontSize = 16;
+  const fontSize = Math.max(12, Math.round((typeof options.fontSize === 'number' ? options.fontSize : 32) * (PX_PER_INCH / 72)));
 
   const cells = rows.flatMap((row: string[], rowIndex: number) => row.map((cell: string, colIndex: number) => {
     const cellX = x + colIndex * colWidth;

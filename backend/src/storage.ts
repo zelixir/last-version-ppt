@@ -16,7 +16,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     y: 0.75,
     w: 11,
     h: 1.05,
-    fontSize: 44,
+    fontSize: 88,
     bold: true,
     color: '0F172A'
   });
@@ -25,7 +25,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     y: 1.95,
     w: 11,
     h: 0.8,
-    fontSize: 28,
+    fontSize: 56,
     color: '334155'
   });
   slide.addText('如果需要插图，请先上传资源，再告诉智能助手放到哪一页、哪个位置。', {
@@ -33,7 +33,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     y: 3.0,
     w: 11,
     h: 1.0,
-    fontSize: 24,
+    fontSize: 48,
     color: '475569'
   });
   log('模板已创建，等待继续完善这份 PPT');
