@@ -11,7 +11,7 @@ test('buildRenamedProjectId keeps version suffix', () => {
 });
 
 test('DEFAULT_INDEX_JS uses larger default text sizes', () => {
-  assert.match(DEFAULT_INDEX_JS, /fontSize: 30/);
-  assert.match(DEFAULT_INDEX_JS, /fontSize: 20/);
-  assert.match(DEFAULT_INDEX_JS, /fontSize: 18/);
+  assert.match(DEFAULT_INDEX_JS, /fontSize: 44/);
+  assert.match(DEFAULT_INDEX_JS, /fontSize: 28/);
+  assert.match(DEFAULT_INDEX_JS, /fontSize: 24/);
 });

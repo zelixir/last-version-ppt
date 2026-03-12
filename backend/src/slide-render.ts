@@ -43,6 +43,14 @@ function toDataUrl(input: string): string {
   return `data:${getImageMediaType(input)};base64,${buffer.toString('base64')}`;
 }
 
+function textRunsToString(textRuns: any[]): string {
+  return textRuns.reduce((result: string, run: any, index: number) => {
+    const segment = typeof run?.text === 'string' ? run.text : String(run?.text ?? '');
+    const shouldBreak = Boolean(run?.options?.breakLine) && index < textRuns.length - 1;
+    return result + segment + (shouldBreak ? '\n' : '');
+  }, '');
+}
+
 function renderTextBlock(text: string, x: number, y: number, w: number, h: number, options: any): string {
   const fontSize = Math.max(12, Math.round((typeof options.fontSize === 'number' ? options.fontSize : 18) * (PX_PER_INCH / 72)));
   const paddingX = 12;
@@ -142,7 +150,7 @@ export function renderPptPageAsImage(
 
     const textRuns = Array.isArray(item?.text) ? item.text : [];
     if (textRuns.length > 0) {
-      const text = textRuns.map((run: any) => run?.text ?? '').join('');
+      const text = textRunsToString(textRuns);
       const options = item.options ?? textRuns[0]?.options ?? {};
       return renderTextBlock(
         text,

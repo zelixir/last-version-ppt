@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { rmSync, writeFileSync } from 'fs';
+import PptxGenJS from 'pptxgenjs';
 import { toDashscopeToolContent } from './dashscope-message-content.ts';
 import { buildImageToolModelOutput, readProjectTextFile, readProjectTextFileRange } from './project-tool-helpers.ts';
 import { renderPptPageAsImage } from './slide-render.ts';
@@ -63,4 +64,21 @@ test('可以把指定页面渲染成预览图片', async () => {
     assert.equal(preview.mediaType, 'image/svg+xml');
     assert.match(Buffer.from(preview.data, 'base64').toString('utf8'), /<svg/);
   });
+});
+
+test('预览渲染会保留富文本 breakLine 和字符串换行', () => {
+  const pptx = new PptxGenJS();
+  const slide = pptx.addSlide();
+
+  slide.addText([
+    { text: '第一行', options: { breakLine: true } },
+    { text: '第二行', options: { breakLine: true } },
+    { text: '第三行' },
+  ], { x: 1, y: 1, w: 4, h: 2, fontSize: 24, color: '000000' });
+
+  slide.addText('甲\n乙\n丙', { x: 1, y: 3.5, w: 4, h: 2, fontSize: 24, color: '000000' });
+
+  const svg = Buffer.from(renderPptPageAsImage(pptx, 1).data, 'base64').toString('utf8');
+  assert.match(svg, /第一行<\/tspan><tspan[^>]*>第二行<\/tspan><tspan[^>]*>第三行/);
+  assert.match(svg, /甲<\/tspan><tspan[^>]*>乙<\/tspan><tspan[^>]*>丙/);
 });
