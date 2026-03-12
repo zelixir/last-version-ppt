@@ -4,12 +4,14 @@ import Editor from '@monaco-editor/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Trash2 } from 'lucide-react'
-import type { AiModel, PreviewPresentation, PreviewSlide, ProjectChatMessageMetadata, ProjectConversationDetail, ProjectConversationSummary, ProjectFile, ProjectSummary } from '../types'
+import type { AiModel, PreviewPresentation, ProjectChatMessageMetadata, ProjectConversationDetail, ProjectConversationSummary, ProjectFile, ProjectSummary } from '../types'
 import { PromptInput } from '../components/ai-elements/prompt-input'
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
+import SlideCanvas from '../components/SlideCanvas'
+import { capturePreviewImages } from '../lib/preview-image-generator'
 import { runProjectPreview } from '../lib/project-preview'
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
@@ -54,18 +56,6 @@ const PREVIEW_WHEEL_THROTTLE_MS = 160
 
 function buildMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function toSlideHeightUnit(value: number, presentation: PreviewPresentation) {
-  return `${(value / presentation.height) * 100}cqh`
-}
-
-function toSlideWidthUnit(value: number, presentation: PreviewPresentation) {
-  return `${(value / presentation.width) * 100}cqw`
-}
-
-function toPreviewFontSize(fontSize: number, presentation: PreviewPresentation) {
-  return toSlideHeightUnit(fontSize / 72, presentation)
 }
 
 function getProjectTabStorageKey(projectKey: string) {
@@ -116,50 +106,6 @@ function buildProjectPageTitle(project: ProjectSummary | null, projectId?: strin
   return `${baseName}${versionSuffix} - 最后一版PPT`
 }
 
-function SlideCanvas({ slide, presentation, compact = false }: { slide: PreviewSlide; presentation: PreviewPresentation; compact?: boolean }) {
-  return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-gray-700 bg-white shadow-lg" style={{ aspectRatio: `${presentation.width}/${presentation.height}`, containerType: 'size' }}>
-      <div className="absolute inset-0" style={{ background: slide.backgroundColor ? `#${slide.backgroundColor}` : '#ffffff' }} />
-      {slide.elements.map((element, index) => {
-        const style = {
-          left: `${(element.x / presentation.width) * 100}%`,
-          top: `${(element.y / presentation.height) * 100}%`,
-          width: `${(element.w / presentation.width) * 100}%`,
-          height: `${(element.h / presentation.height) * 100}%`,
-        }
-        if (element.kind === 'text') {
-          const effectiveFontSize = element.fontSize ?? 28
-          return (
-            <div key={index} className="absolute overflow-hidden rounded-sm text-slate-900" style={{ ...style, color: element.color ? `#${element.color}` : '#0f172a', background: element.fillColor ? `#${element.fillColor}` : 'transparent', border: element.borderColor ? `1px solid #${element.borderColor}` : undefined, fontWeight: element.bold ? 700 : 400, fontSize: toPreviewFontSize(effectiveFontSize, presentation), lineHeight: 1.25, padding: `${toSlideHeightUnit(compact ? 0.03 : 0.05, presentation)} ${toSlideWidthUnit(compact ? 0.03 : 0.05, presentation)}`, textAlign: (element.align as any) || 'left', display: 'flex', alignItems: 'center' } as React.CSSProperties}>
-              <span className="line-clamp-6 whitespace-pre-wrap">{element.text}</span>
-            </div>
-          )
-        }
-        if (element.kind === 'shape') {
-          return <div key={index} className="absolute rounded-sm" style={{ ...style, background: element.fillColor ? `#${element.fillColor}` : 'transparent', border: element.borderColor ? `1px solid #${element.borderColor}` : '1px solid rgba(15,23,42,0.15)' }} />
-        }
-        if (element.kind === 'image') {
-          return <img key={index} src={element.src} alt="slide" className="absolute rounded-sm object-cover" style={style} />
-        }
-        const tableFontSize = toPreviewFontSize(element.fontSize ?? 32, presentation)
-        return (
-          <div key={index} className="absolute overflow-hidden rounded border border-slate-300 bg-white" style={style}>
-            <table className="h-full w-full text-slate-700" style={{ fontSize: tableFontSize, lineHeight: 1.2 }}>
-              <tbody>
-                {element.rows.map((row, rowIndex) => (
-                  <tr key={rowIndex}>
-                    {row.map((cell, cellIndex) => <td key={cellIndex} className="border border-slate-200 align-top" style={{ padding: `${toSlideHeightUnit(compact ? 0.02 : 0.04, presentation)} ${toSlideWidthUnit(compact ? 0.02 : 0.04, presentation)}` }}>{cell}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 export default function Project() {
   const params = useParams()
   const projectId = params.projectId
@@ -181,8 +127,11 @@ export default function Project() {
   const [activeTab, setActiveTab] = useState<'preview' | 'resources'>(() => readStoredProjectTab(projectKey))
   const [selectedSlideIndex, setSelectedSlideIndex] = useState(0)
   const [preview, setPreview] = useState<PreviewPresentation | null>(null)
+  const [previewImages, setPreviewImages] = useState<string[]>([])
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewImageLoading, setPreviewImageLoading] = useState(false)
+  const [previewImageError, setPreviewImageError] = useState<string | null>(null)
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
   const [showIndexSource, setShowIndexSource] = useState(() => window.localStorage.getItem(SHOW_SCRIPT_STORAGE_KEY) === 'true')
   const [editorValue, setEditorValue] = useState('')
@@ -312,15 +261,27 @@ export default function Project() {
     try {
       setPreviewLoading(true)
       setPreviewError(null)
+      setPreviewImageError(null)
+      setPreviewImages([])
       const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/content?fileName=${encodeURIComponent('index.js')}`)
       if (!response.ok) throw new Error('加载 PPT 脚本失败')
       const data = await response.json() as { content: string }
       const rendered = await runProjectPreview(projectKey, data.content)
       setPreview(rendered)
       setSelectedSlideIndex(0)
+      setPreviewImageLoading(true)
+      try {
+        setPreviewImages(await capturePreviewImages(rendered))
+      } catch (error) {
+        setPreviewImageError(error instanceof Error ? error.message : String(error))
+      } finally {
+        setPreviewImageLoading(false)
+      }
     } catch (err) {
       setPreview(null)
+      setPreviewImages([])
       setPreviewError(err instanceof Error ? err.message : String(err))
+      setPreviewImageLoading(false)
     } finally {
       setPreviewLoading(false)
     }
@@ -625,6 +586,7 @@ export default function Project() {
   }
 
   const currentSlide = preview?.slides[selectedSlideIndex] ?? preview?.slides[0] ?? null
+  const currentPreviewImage = previewImages[selectedSlideIndex] ?? null
 
   if (!projectId) {
     return (
@@ -683,7 +645,13 @@ export default function Project() {
                     {preview?.slides.map((slide, index) => (
                       <button key={slide.id} onClick={() => setSelectedSlideIndex(index)} className={`block w-full rounded-2xl border p-2 ${selectedSlideIndex === index ? 'border-blue-500 bg-blue-500/10' : 'border-gray-800 bg-gray-900/60'}`}>
                         <div className="mb-2 text-left text-xs text-gray-400">第 {index + 1} 页</div>
-                        <SlideCanvas slide={slide} presentation={preview} compact />
+                        {previewImages[index]
+                          ? (
+                            <div className="overflow-hidden rounded-xl border border-gray-700 bg-white shadow-lg" style={{ aspectRatio: `${preview.width}/${preview.height}` }}>
+                              <img src={previewImages[index]} alt={`第 ${index + 1} 页预览图`} className="block h-full w-full object-cover" />
+                            </div>
+                          )
+                          : <SlideCanvas slide={slide} presentation={preview} compact />}
                       </button>
                     ))}
                     {!previewLoading && !previewError && preview?.slides.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-500">当前没有生成任何幻灯片。</div>}
@@ -699,9 +667,20 @@ export default function Project() {
                     {!previewLoading && !previewError && currentSlide && preview && (
                       <div className="space-y-4">
                         <div onWheel={handlePreviewWheel}>
-                          <SlideCanvas slide={currentSlide} presentation={preview} />
+                          {currentPreviewImage
+                            ? (
+                              <div className="overflow-hidden rounded-xl border border-gray-700 bg-white shadow-lg" style={{ aspectRatio: `${preview.width}/${preview.height}` }}>
+                                <img src={currentPreviewImage} alt={`第 ${selectedSlideIndex + 1} 页预览图`} className="block h-full w-full object-cover" />
+                              </div>
+                            )
+                            : <SlideCanvas slide={currentSlide} presentation={preview} />}
                         </div>
-                        <div className="text-xs text-gray-500">把鼠标放在预览页上，向上或向下滑动鼠标中间的小轮子，就能切换上一页或下一页。</div>
+                        <div className="space-y-2 text-xs text-gray-500">
+                          <div>把鼠标放在预览页上，向上或向下滑动鼠标中间的小轮子，就能切换上一页或下一页。</div>
+                          <div>当前预览会先在页面里排版，再自动截成图片，这样更接近你实际看到的效果。</div>
+                          {previewImageLoading && <div className="text-blue-300">正在把页面里的排版转成预览图，请稍等…</div>}
+                          {previewImageError && <div className="text-amber-300">预览图这次没截成功，先显示页面排版给你继续看。原因：{previewImageError}</div>}
+                        </div>
                         {preview.logs.length > 0 && (
                           <div className="rounded-xl border border-gray-800 bg-gray-950/70 p-4">
                             <div className="mb-2 text-sm font-medium text-white">生成记录</div>
