@@ -9,6 +9,7 @@ import exampleProviderData from '../model-provider.example.json';
 import exampleModelData from '../models.example.json';
 import {
   createAiModel,
+  copyProjectConversations,
   createProjectRecord,
   createProvider,
   deleteAiModel,
@@ -17,20 +18,23 @@ import {
   deleteSetting,
   getAiModelById,
   getAiModels,
+  getProjectConversation,
   getProjectById,
   getProviderByName,
   getProviders,
   getSetting,
+  listProjectConversations,
   listProjects,
   renameProjectRecord,
   seedModelsFromJson,
   seedProvidersFromJson,
   setSetting,
+  upsertProjectConversation,
   updateAiModel,
   updateProjectRecord,
   updateProvider,
 } from './db.ts';
-import { chatWithProjectAgent, generateProjectName, ProjectAgentStreamEvent } from './project-agent.ts';
+import { createProjectChatResponse, generateProjectName, type ProjectChatUiMessage } from './project-agent.ts';
 import { runProject } from './project-runner.ts';
 import { exampleApiKeys } from './project-support.ts';
 import {
@@ -173,6 +177,85 @@ function createSseResponse(run: (push: (event: string, payload: unknown) => void
   });
 }
 
+function getProjectFileUrl(projectId: string, fileName: string): string {
+  return `/api/projects/${encodeURIComponent(projectId)}/files/raw?fileName=${encodeURIComponent(fileName)}`;
+}
+
+function extractMessageText(message: ProjectChatUiMessage): string {
+  return (message.parts ?? [])
+    .filter((part): part is Extract<ProjectChatUiMessage['parts'][number], { type: 'text' }> => part.type === 'text')
+    .map(part => part.text)
+    .join('')
+    .trim();
+}
+
+function buildConversationTitle(messages: ProjectChatUiMessage[]): string {
+  const firstUserMessage = messages.find(message => message.role === 'user' && extractMessageText(message));
+  const firstUserText = firstUserMessage ? extractMessageText(firstUserMessage) : '';
+  if (!firstUserText) return '新对话';
+  return firstUserText.slice(0, 40);
+}
+
+function buildConversationSummary(messages: ProjectChatUiMessage[]) {
+  const lastMessage = [...messages].reverse().find(message => extractMessageText(message));
+  return {
+    title: buildConversationTitle(messages),
+    preview: lastMessage ? extractMessageText(lastMessage).slice(0, 80) : '',
+    messageCount: messages.length,
+  };
+}
+
+function buildLegacyConversationId(projectId: string): string {
+  return `legacy:${projectId}`;
+}
+
+function buildLegacyConversationMessages(projectId: string) {
+  const project = getProjectById(projectId);
+  if (!project?.chatHistory.length) return [];
+  return project.chatHistory.map((message, index) => ({
+    id: `${buildLegacyConversationId(projectId)}:${index}`,
+    role: message.role,
+    metadata: { projectId },
+    parts: message.content ? [{ type: 'text' as const, text: message.content }] : [],
+  } satisfies ProjectChatUiMessage));
+}
+
+function convertUiMessagesToProjectChatHistory(messages: ProjectChatUiMessage[]) {
+  return messages
+    .filter((message): message is ProjectChatUiMessage & { role: 'user' | 'assistant' } => message.role === 'user' || message.role === 'assistant')
+    .map(message => ({
+      role: message.role,
+      content: extractMessageText(message),
+      createdAt: new Date().toISOString(),
+    }));
+}
+
+async function handleProjectChatRequest(projectId: string, payload: { id?: string; messages?: ProjectChatUiMessage[]; modelId?: number }) {
+  if (!getProjectById(projectId)) return new Response('Not found', { status: 404 });
+  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  const lastUserMessage = [...messages].reverse().find(message => message.role === 'user' && extractMessageText(message));
+  if (!payload.modelId) return errorResponse('请先选择模型');
+  if (!lastUserMessage) return errorResponse('消息不能为空');
+  try {
+    return await createProjectChatResponse(projectId, messages, payload.modelId, {
+      onFinish: async ({ messages: nextMessages, activeProjectId }) => {
+        upsertProjectConversation({
+          id: payload.id,
+          projectId: activeProjectId,
+          title: buildConversationTitle(nextMessages),
+          messages: nextMessages,
+        });
+        updateProjectRecord(activeProjectId, {
+          chatHistory: convertUiMessagesToProjectChatHistory(nextMessages),
+          touch: true,
+        });
+      },
+    });
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : String(error), 500);
+  }
+}
+
 function syncProjectsWithFilesystem(): void {
   for (const projectId of listProjectDirectories()) {
     if (!getProjectById(projectId)) {
@@ -210,7 +293,7 @@ function buildProjectResponse(projectId: string) {
             size: stats.size,
             updatedAt: stats.updatedAt,
             kind: getFileKind(entry.name),
-            url: `/${projectId}/${encodeURIComponent(entry.name)}`,
+            url: getProjectFileUrl(projectId, entry.name),
           };
         })
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -347,6 +430,7 @@ const app = new Elysia()
       sourcePrompt: source.sourcePrompt,
       chatHistory: source.chatHistory,
     });
+    copyProjectConversations(source.id, projectId);
     setCurrentProjectId(projectId);
     return buildProjectResponse(projectId);
   })
@@ -362,6 +446,7 @@ const app = new Elysia()
       sourcePrompt: source.sourcePrompt,
       chatHistory: source.chatHistory,
     });
+    copyProjectConversations(source.id, projectId);
     setCurrentProjectId(projectId);
     return buildProjectResponse(projectId);
   })
@@ -397,35 +482,52 @@ const app = new Elysia()
     const project = buildProjectResponse(params.id);
     return project ?? new Response('Not found', { status: 404 });
   })
-  .get('/api/projects/:id/chat', ({ params }) => {
+  .get('/api/projects/:id/chat', ({ params, query }) => {
     const project = getProjectById(params.id);
-    return project ? { history: project.chatHistory } : new Response('Not found', { status: 404 });
+    if (!project) return new Response('Not found', { status: 404 });
+
+    const chatId = String((query as any).chatId ?? '').trim();
+    if (chatId) {
+      const conversation = getProjectConversation(params.id, chatId);
+      if (conversation) return conversation;
+      if (chatId === buildLegacyConversationId(params.id)) {
+        return {
+          id: chatId,
+          projectId: params.id,
+          title: buildConversationTitle(buildLegacyConversationMessages(params.id)),
+          messages: buildLegacyConversationMessages(params.id),
+          createdAt: project.createdAt,
+          updatedAt: project.updatedAt,
+        };
+      }
+      return new Response('Not found', { status: 404 });
+    }
+
+    const conversations = listProjectConversations(params.id).map(conversation => ({
+      id: conversation.id,
+      ...buildConversationSummary(conversation.messages),
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+    }));
+
+    if (!conversations.length && project.chatHistory.length) {
+      const legacyMessages = buildLegacyConversationMessages(params.id);
+      return {
+        conversations: [{
+          id: buildLegacyConversationId(params.id),
+          ...buildConversationSummary(legacyMessages),
+          createdAt: project.createdAt,
+          updatedAt: project.updatedAt,
+        }],
+      };
+    }
+
+    return { conversations };
   })
   .post('/api/projects/:id/chat', async ({ params, body }) => {
-    if (!getProjectById(params.id)) return new Response('Not found', { status: 404 });
-    const payload = body as { content: string; modelId: number; includeHistory?: boolean };
-    if (!payload.content?.trim()) return errorResponse('消息不能为空');
-    try {
-      const result = await chatWithProjectAgent(params.id, payload.content.trim(), payload.modelId, { includeHistory: payload.includeHistory === true });
-      updateProjectRecord(result.activeProjectId, { touch: true });
-      return { history: result.history, toolEvents: result.toolEvents, projectId: result.activeProjectId };
-    } catch (error) {
-      return errorResponse(error instanceof Error ? error.message : String(error), 500);
-    }
+    return handleProjectChatRequest(params.id, body as { id?: string; messages?: ProjectChatUiMessage[]; modelId?: number })
   })
-  .post('/api/projects/:id/chat/stream', ({ params, body }) => {
-    if (!getProjectById(params.id)) return new Response('Not found', { status: 404 });
-    const payload = body as { content: string; modelId: number; includeHistory?: boolean };
-    if (!payload.content?.trim()) return errorResponse('消息不能为空');
-    return createSseResponse(async push => {
-      const result = await chatWithProjectAgent(params.id, payload.content.trim(), payload.modelId, {
-        includeHistory: payload.includeHistory === true,
-        onEvent: (event: ProjectAgentStreamEvent) => push('message', event),
-      });
-      updateProjectRecord(result.activeProjectId, { touch: true });
-      push('done', { projectId: result.activeProjectId });
-    });
-  })
+  .post('/api/projects/:id/chat/stream', ({ params, body }) => handleProjectChatRequest(params.id, body as { id?: string; messages?: ProjectChatUiMessage[]; modelId?: number }))
   .get('/api/projects/:id/files', ({ params }) => {
     const project = buildProjectResponse(params.id);
     return project ? project.files : new Response('Not found', { status: 404 });
@@ -439,6 +541,17 @@ const app = new Elysia()
     if (!existsSync(filePath)) return new Response('Not found', { status: 404 });
     if (!isTextFile(fileName)) return errorResponse('该文件不是文本文件');
     return { fileName, content: readFileSync(filePath, 'utf8') };
+  })
+  .get('/api/projects/:id/files/raw', ({ params, query }) => {
+    const fileName = String((query as any).fileName ?? '');
+    if (!fileName) return errorResponse('缺少 fileName 参数');
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+    const filePath = resolveProjectFile(params.id, fileName);
+    if (!existsSync(filePath)) return new Response('Not found', { status: 404 });
+    return new Response(readFileSync(filePath), {
+      headers: { 'Content-Type': getMimeType(filePath), 'Cache-Control': 'no-cache' },
+    });
   })
   .put('/api/projects/:id/files/content', ({ params, body }) => {
     const payload = body as { fileName: string; content: string };
