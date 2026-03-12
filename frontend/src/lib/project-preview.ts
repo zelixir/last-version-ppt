@@ -64,6 +64,14 @@ function normalizePreviewImageSrc(projectId: string, rawSrc: unknown): string {
   return buildProjectResourceUrl(projectId, src.replace(/^\.\//, ''))
 }
 
+function textRunsToString(textRuns: any[]): string {
+  return textRuns.reduce((result: string, run: any, index: number) => {
+    const segment = typeof run?.text === 'string' ? run.text : String(run?.text ?? '')
+    const shouldBreak = Boolean(run?.options?.breakLine) && index < textRuns.length - 1
+    return result + segment + (shouldBreak ? '\n' : '')
+  }, '')
+}
+
 function serializeSlide(projectId: string, slide: any): PreviewSlide {
   const relsMedia = Array.isArray(slide?._relsMedia) ? slide._relsMedia : []
   const elements: PreviewElement[] = (Array.isArray(slide?._slideObjects) ? slide._slideObjects : []).flatMap((item: any, index: number) => {
@@ -91,7 +99,7 @@ function serializeSlide(projectId: string, slide: any): PreviewSlide {
 
     const textRuns = Array.isArray(item?.text) ? item.text : []
     if (textRuns.length > 0) {
-      const text = textRuns.map((run: any) => run?.text ?? '').join('')
+      const text = textRunsToString(textRuns)
       const options = item.options ?? textRuns[0]?.options ?? {}
       return [{
         kind: 'text',

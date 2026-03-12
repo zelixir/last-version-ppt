@@ -13,27 +13,27 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
   slide.background = { color: 'F8FAFC' };
   slide.addText('新的演示文稿', {
     x: 0.8,
-    y: 0.8,
+    y: 0.75,
     w: 11,
-    h: 0.9,
-    fontSize: 30,
+    h: 1.05,
+    fontSize: 44,
     bold: true,
     color: '0F172A'
   });
   slide.addText('请在右侧告诉智能助手，你想做什么样的演示稿。', {
     x: 0.8,
-    y: 1.9,
+    y: 1.95,
     w: 11,
-    h: 0.7,
-    fontSize: 20,
+    h: 0.8,
+    fontSize: 28,
     color: '334155'
   });
   slide.addText('如果需要插图，请先上传资源，再告诉智能助手放到哪一页、哪个位置。', {
     x: 0.8,
-    y: 2.8,
+    y: 3.0,
     w: 11,
-    h: 0.9,
-    fontSize: 18,
+    h: 1.0,
+    fontSize: 24,
     color: '475569'
   });
   log('模板已创建，等待继续完善这份 PPT');
