@@ -8,6 +8,14 @@ const EMU_PER_INCH = 914400;
 const PX_PER_INCH = 96;
 const MAX_EMBED_IMAGE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_FONT_FAMILY = '\'Noto Sans CJK SC\', \'Microsoft YaHei\', \'PingFang SC\', \'Hiragino Sans GB\', Arial, Helvetica, sans-serif';
+const CHAR_WIDTH_FACTORS = {
+  whitespace: 0.32,
+  cjk: 0.98,
+  uppercaseOrDigit: 0.62,
+  lowercase: 0.54,
+  punctuation: 0.3,
+  fallback: 0.56,
+} as const;
 
 function toInches(value: unknown): number {
   if (typeof value !== 'number' || Number.isNaN(value)) return 0;
@@ -55,12 +63,12 @@ function textRunsToString(textRuns: any[]): string {
 
 function estimateCharacterWidth(char: string, fontSize: number): number {
   if (!char) return 0;
-  if (/\s/.test(char)) return fontSize * 0.32;
-  if (/[\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/u.test(char)) return fontSize * 0.98;
-  if (/[A-Z0-9]/.test(char)) return fontSize * 0.62;
-  if (/[a-z]/.test(char)) return fontSize * 0.54;
-  if (/[.,;:!?'"，。；：！？、】【（）()《》“”‘’]/u.test(char)) return fontSize * 0.3;
-  return fontSize * 0.56;
+  if (/\s/.test(char)) return fontSize * CHAR_WIDTH_FACTORS.whitespace;
+  if (/[\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/u.test(char)) return fontSize * CHAR_WIDTH_FACTORS.cjk;
+  if (/[A-Z0-9]/.test(char)) return fontSize * CHAR_WIDTH_FACTORS.uppercaseOrDigit;
+  if (/[a-z]/.test(char)) return fontSize * CHAR_WIDTH_FACTORS.lowercase;
+  if (/[.,;:!?'"，。；：！？、】【（）()《》“”‘’]/u.test(char)) return fontSize * CHAR_WIDTH_FACTORS.punctuation;
+  return fontSize * CHAR_WIDTH_FACTORS.fallback;
 }
 
 function wrapParagraph(paragraph: string, maxWidth: number, fontSize: number): string[] {
@@ -227,7 +235,7 @@ export async function renderPptPageAsImage(
   pageNumber: number,
 ): Promise<{ slideCount: number; mediaType: 'image/png'; data: string }> {
   const { slideCount, svg } = renderPptPageAsSvg(pptx, pageNumber);
-  const pngData = new Resvg(svg, { fitTo: { mode: 'original' } }).render().asPng();
+  const pngData = new Resvg(svg).render().asPng();
   return {
     slideCount,
     mediaType: 'image/png',
