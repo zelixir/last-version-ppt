@@ -367,11 +367,8 @@ export default function Project() {
   }, [chatPanelWidth])
 
   useEffect(() => {
-    if (selectedModelId) {
-      window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, String(selectedModelId))
-      return
-    }
-    window.localStorage.removeItem(SELECTED_MODEL_STORAGE_KEY)
+    if (selectedModelId === null) return
+    window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, String(selectedModelId))
   }, [selectedModelId])
 
   useEffect(() => {
