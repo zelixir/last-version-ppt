@@ -3,6 +3,10 @@ import type { PreviewElement, PreviewPresentation, PreviewSlide } from '../types
 
 const EMU_PER_INCH = 914400
 
+function buildProjectResourceUrl(projectId: string, fileName: string) {
+  return `/api/projects/${encodeURIComponent(projectId)}/files/raw?fileName=${encodeURIComponent(fileName)}`
+}
+
 function toInches(value: unknown): number {
   if (typeof value !== 'number' || Number.isNaN(value)) return 0
   return Math.abs(value) > 1000 ? value / EMU_PER_INCH : value
@@ -19,12 +23,47 @@ function findBuildFunction(moduleExports: unknown): ((context: any) => Promise<u
   return null
 }
 
-function serializeSlide(slide: any): PreviewSlide {
+function normalizePreviewImageSrc(projectId: string, rawSrc: unknown): string {
+  if (typeof rawSrc !== 'string') return ''
+  const src = rawSrc.trim()
+  if (!src) return ''
+  if (src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('/api/projects/')) {
+    return src
+  }
+
+  const legacyPrefix = `/${projectId}/`
+  if (src.startsWith(legacyPrefix)) {
+    return buildProjectResourceUrl(projectId, decodeURIComponent(src.slice(legacyPrefix.length)))
+  }
+
+  const localhostPrefix = `http://localhost:3101/${projectId}/`
+  if (src.startsWith(localhostPrefix)) {
+    return buildProjectResourceUrl(projectId, decodeURIComponent(src.slice(localhostPrefix.length)))
+  }
+
+  const localhostSecurePrefix = `https://localhost:3101/${projectId}/`
+  if (src.startsWith(localhostSecurePrefix)) {
+    return buildProjectResourceUrl(projectId, decodeURIComponent(src.slice(localhostSecurePrefix.length)))
+  }
+
+  if (src.startsWith('http://') || src.startsWith('https://')) {
+    return src
+  }
+
+  if (/^(\/|[A-Za-z]:[\\/])/.test(src)) {
+    const fileName = src.split(/[\\/]/).filter(Boolean).at(-1) ?? ''
+    return fileName ? buildProjectResourceUrl(projectId, fileName) : ''
+  }
+
+  return buildProjectResourceUrl(projectId, src.replace(/^\.\//, ''))
+}
+
+function serializeSlide(projectId: string, slide: any): PreviewSlide {
   const relsMedia = Array.isArray(slide?._relsMedia) ? slide._relsMedia : []
   const elements: PreviewElement[] = (Array.isArray(slide?._slideObjects) ? slide._slideObjects : []).flatMap((item: any, index: number) => {
     if (item?._type === 'image') {
       const media = relsMedia.find((entry: any) => entry?.rId === item.imageRid)
-      const src = media?.data || media?.path || item.image || ''
+      const src = normalizePreviewImageSrc(projectId, media?.data || media?.path || item.image || '')
       return src
         ? [{ kind: 'image', x: toInches(item.options?.x), y: toInches(item.options?.y), w: toInches(item.options?.w), h: toInches(item.options?.h), src }]
         : []
@@ -107,7 +146,7 @@ export async function runProjectPreview(projectId: string, code: string): Promis
   const context = {
     pptx,
     pptxgenjs: PptxGenJS,
-    getResourceUrl: (fileName: string) => `/${projectId}/${encodeURIComponent(fileName)}`,
+    getResourceUrl: (fileName: string) => buildProjectResourceUrl(projectId, fileName),
     log: (...args: unknown[]) => logs.push(args.map(arg => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ')),
   }
 
@@ -118,7 +157,7 @@ export async function runProjectPreview(projectId: string, code: string): Promis
   return {
     width: toInches(layout?.width) || 13.333,
     height: toInches(layout?.height) || 7.5,
-    slides: ((finalPptx as any)._slides ?? []).map((slide: any) => serializeSlide(slide)),
+    slides: ((finalPptx as any)._slides ?? []).map((slide: any) => serializeSlide(projectId, slide)),
     logs,
   }
 }
