@@ -89,14 +89,14 @@ export const APPLY_PATCH_TOOL_DESCRIPTION = [
   'A full patch can combine several operations:',
   '',
   '*** Begin Patch',
-  '*** Add File: /absolute/path/hello.txt',
+  '*** Add File: /hello.txt',
   '+Hello world',
-  '*** Update File: /absolute/path/src/app.py',
-  '*** Move to: /absolute/path/src/main.py',
+  '*** Update File: /src/app.py',
+  '*** Move to: /src/main.py',
   '@@ def greet():',
   '-print("Hi")',
   '+print("Hello, world!")',
-  '*** Delete File: /absolute/path/obsolete.txt',
+  '*** Delete File: /obsolete.txt',
   '*** End Patch',
   '',
   'It is important to remember:',
@@ -104,7 +104,8 @@ export const APPLY_PATCH_TOOL_DESCRIPTION = [
   '- You must include a header with your intended action (Add/Delete/Update)',
   '- You must prefix new lines with `+` even when creating a new file',
   '- Put the full patch text into the `input` field',
-  '- File references should be absolute paths inside the current project root',
+  '- File references should stay inside the current project root',
+  '- Paths starting with `/` are treated as paths relative to the current project root, for example `/index.js` means the project file `index.js`',
 ].join('\n');
 
 export const APPLY_PATCH_AGENT_INSTRUCTIONS = [
@@ -113,8 +114,9 @@ export const APPLY_PATCH_AGENT_INSTRUCTIONS = [
   'When you are changing an existing file, prefer `apply-patch` over `create-file`.',
   'Use `create-file` only when creating a brand-new file or when the user explicitly needs a full-file overwrite.',
   'Prefer `apply-patch` over ad-hoc search/replace because it is safer and supports add / update / delete / move in one tool call.',
+  'When you write file paths, prefer project-relative paths such as `/index.js` or `/docs/outline.md`; a leading `/` still means “inside the current project”.',
   'Example tool call payload:',
-  '{"input":"*** Begin Patch\\n*** Update File: /absolute/path/to/file.js\\n@@ function example() {\\n-  return 1;\\n+  return 2;\\n*** End Patch"}',
+  '{"input":"*** Begin Patch\\n*** Update File: /index.js\\n@@ function example() {\\n-  return 1;\\n+  return 2;\\n*** End Patch"}',
 ].join('\n');
 
 export type ApplyPatchCreateFileOp = {
@@ -772,10 +774,11 @@ export function patchToCommit(patch: Patch, originalFiles: Record<string, string
 
 function resolvePatchPath(projectRoot: string, filePath: string): string {
   const trimmed = filePath.trim();
-  const absolutePath = path.isAbsolute(trimmed)
-    ? path.resolve(trimmed)
-    : path.resolve(projectRoot, trimmed.replace(/^\/+/, ''));
   const normalizedRoot = path.resolve(projectRoot);
+  const normalizedPath = trimmed.replace(/\\/g, '/');
+  const absolutePath = path.isAbsolute(trimmed) && path.resolve(trimmed).startsWith(`${normalizedRoot}${path.sep}`)
+    ? path.resolve(trimmed)
+    : path.resolve(normalizedRoot, normalizedPath.replace(/^\/+/, ''));
   if (absolutePath !== normalizedRoot && !absolutePath.startsWith(`${normalizedRoot}${path.sep}`)) {
     throw new InvalidPatchFormatError(`Patch path is outside of the current project: ${filePath}`, 'patchPathOutsideProject');
   }

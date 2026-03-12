@@ -14,4 +14,7 @@ test('DEFAULT_INDEX_JS uses larger default text sizes', () => {
   assert.match(DEFAULT_INDEX_JS, /fontSize: 88/);
   assert.match(DEFAULT_INDEX_JS, /fontSize: 56/);
   assert.match(DEFAULT_INDEX_JS, /fontSize: 48/);
+  assert.match(DEFAULT_INDEX_JS, /h: 1\.28/);
+  assert.match(DEFAULT_INDEX_JS, /y: 2\.18/);
+  assert.match(DEFAULT_INDEX_JS, /y: 3\.56/);
 });

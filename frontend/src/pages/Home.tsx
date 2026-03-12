@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowRight, BrainCircuit, CopyPlus, FolderOpen, LoaderCircle, Plus, Search, Settings2, Sparkles, Trash2 } from 'lucide-react'
-import type { ConfigStatus, ProjectSummary } from '../types'
+import type { AiModel, ConfigStatus, ProjectSummary } from '../types'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
+import { Select } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
 
 const PLACEHOLDERS = [
@@ -17,6 +18,8 @@ export default function Home() {
   const navigate = useNavigate()
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null)
+  const [models, setModels] = useState<AiModel[]>([])
+  const [selectedModelId, setSelectedModelId] = useState<number | null>(null)
   const [placeholderSeed, setPlaceholderSeed] = useState(() => Math.floor(Math.random() * PLACEHOLDERS.length))
   const [requirement, setRequirement] = useState(() => PLACEHOLDERS[placeholderSeed % PLACEHOLDERS.length])
   const [loading, setLoading] = useState(false)
@@ -57,14 +60,34 @@ export default function Home() {
       })
   }
 
+  const fetchModels = () => {
+    fetch('/api/ai-models?enabled=true&usable=true')
+      .then(async response => {
+        if (!response.ok) throw new Error('加载模型列表失败')
+        return response.json()
+      })
+      .then((data: AiModel[]) => {
+        setModels(data)
+        setSelectedModelId(current => {
+          if (current !== null && data.some(model => model.id === current)) return current
+          return data[0]?.id ?? null
+        })
+      })
+      .catch(err => {
+        console.error(err)
+        setError('加载模型列表失败，请刷新页面后重试。')
+      })
+  }
+
   useEffect(() => {
     fetchProjects()
     fetchStatus()
+    fetchModels()
   }, [])
 
   const createProject = async () => {
     if (!requirement.trim() || loading) return
-    if (!configStatus?.firstUsableModelId) {
+    if (!selectedModelId) {
       setError('当前还没有可用的模型服务，请先到模型配置页面填写可用的接口密钥，并启用至少一个模型。')
       return
     }
@@ -75,7 +98,7 @@ export default function Home() {
       const response = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requirement: requirement.trim(), modelId: configStatus.firstUsableModelId }),
+        body: JSON.stringify({ requirement: requirement.trim(), modelId: selectedModelId }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || '创建项目失败')
@@ -83,7 +106,7 @@ export default function Home() {
       const nextSeed = placeholderSeed + 1
       setPlaceholderSeed(nextSeed)
       setRequirement(PLACEHOLDERS[nextSeed % PLACEHOLDERS.length])
-      navigate(`/projects/${data.id}`, { state: { autoPrompt: prompt, suggestedModelId: configStatus.firstUsableModelId } })
+      navigate(`/projects/${data.id}`, { state: { autoPrompt: prompt, suggestedModelId: selectedModelId } })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -169,27 +192,45 @@ export default function Home() {
 
           <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-950/70 p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white"><BrainCircuit className="h-4 w-4 text-blue-400" />新建演示稿需求</div>
+            <label className="mb-2 block text-sm font-medium text-gray-200">
+              需求说明<span className="ml-1 text-red-400">*</span>
+            </label>
             <Textarea
               value={requirement}
               onChange={event => setRequirement(event.target.value)}
               placeholder="请直接写下你想做的演示稿要求"
               className="min-h-32 bg-gray-900"
             />
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  const nextSeed = placeholderSeed + 1
-                  setPlaceholderSeed(nextSeed)
-                  setRequirement(PLACEHOLDERS[nextSeed % PLACEHOLDERS.length])
-                }}
-              >
-                换一个示例
-              </Button>
-              <Button onClick={createProject} disabled={loading || !requirement.trim()}>
-                {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  创建项目并开始制作
-              </Button>
+            <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-200">
+                  选择模型<span className="ml-1 text-red-400">*</span>
+                </label>
+                <Select
+                  value={selectedModelId?.toString() || ''}
+                  onChange={event => setSelectedModelId(event.target.value ? Number(event.target.value) : null)}
+                  disabled={models.length === 0}
+                >
+                  <option value="">{models.length === 0 ? '还没有可用模型' : '请选择模型'}</option>
+                  {models.map(model => <option key={model.id} value={model.id}>{model.display_name || model.model_name}</option>)}
+                </Select>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    const nextSeed = placeholderSeed + 1
+                    setPlaceholderSeed(nextSeed)
+                    setRequirement(PLACEHOLDERS[nextSeed % PLACEHOLDERS.length])
+                  }}
+                >
+                  换一个示例
+                </Button>
+                <Button onClick={createProject} disabled={loading || !requirement.trim() || !selectedModelId}>
+                  {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    创建项目并开始制作
+                </Button>
+              </div>
             </div>
           </div>
         </section>

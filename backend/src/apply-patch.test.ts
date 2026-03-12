@@ -116,10 +116,38 @@ test('applyProjectPatch refuses to delete index.js', () => {
   });
 });
 
+test('applyProjectPatch treats leading-slash paths as project-relative paths', () => {
+  withTempProject(projectRoot => {
+    mkdirSync(path.join(projectRoot, 'docs'), { recursive: true });
+    writeFileSync(path.join(projectRoot, 'index.js'), 'module.exports = 1;\n', 'utf8');
+
+    const patch = [
+      '*** Begin Patch',
+      '*** Add File: /docs/guide.txt',
+      '+第一行',
+      '+第二行',
+      '*** Update File: /index.js',
+      '@@',
+      '-module.exports = 1;',
+      '+module.exports = 2;',
+      '*** End Patch',
+    ].join('\n');
+
+    const summary = applyProjectPatch(projectRoot, patch);
+
+    assert.deepEqual(summary.createdFiles, ['docs/guide.txt']);
+    assert.deepEqual(summary.updatedFiles, ['index.js']);
+    assert.equal(readFileSync(path.join(projectRoot, 'docs', 'guide.txt'), 'utf8'), '第一行\n第二行');
+    assert.equal(readFileSync(path.join(projectRoot, 'index.js'), 'utf8'), 'module.exports = 2;\n');
+  });
+});
+
 test('apply-patch prompt strings expose the complete patch format', () => {
   assert.match(APPLY_PATCH_TOOL_DESCRIPTION, /\*\*\* Begin Patch/);
   assert.match(APPLY_PATCH_TOOL_DESCRIPTION, /Patch := Begin \{ FileOp \} End/);
+  assert.match(APPLY_PATCH_TOOL_DESCRIPTION, /\/index\.js/);
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /apply-patch/);
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /prefer `apply-patch` over `create-file`/);
+  assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /leading `\/` still means “inside the current project”/);
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /input/);
 });

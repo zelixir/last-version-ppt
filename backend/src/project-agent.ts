@@ -33,6 +33,11 @@ function summarizeToolEvent(toolName: string, details: string, success = true): 
   return { toolName, summary: details, success };
 }
 
+function countTextLines(value: string): number {
+  if (!value) return 0;
+  return value.split(/\r?\n/).length;
+}
+
 export type ProjectAgentStreamEvent =
   | { type: 'text-delta'; text: string }
   | { type: 'tool'; toolName: string; summary: string; state: 'running' | 'done'; success?: boolean };
@@ -391,7 +396,7 @@ function buildProjectTools(options: {
         mkdirSync(path.dirname(filePath), { recursive: true });
         writeFileSync(filePath, content, 'utf8');
         emitter.finish('create-file', `写入 ${fileName}`);
-        return { fileName, size: Buffer.byteLength(content, 'utf8') };
+        return { fileName, size: Buffer.byteLength(content, 'utf8'), lineCount: countTextLines(content) };
       },
     }),
     'rename-file': tool({
@@ -451,7 +456,14 @@ function buildProjectTools(options: {
             ? `修改 ${summary.changedFiles.join(', ')}`
             : '补丁未产生文件变更';
           emitter.finish('apply-patch', details);
-          return { changed: summary.changedFiles, created: summary.createdFiles, deleted: summary.deletedFiles, moved: summary.movedFiles, fuzz: summary.fuzz };
+          return {
+            changed: summary.changedFiles,
+            created: summary.createdFiles,
+            deleted: summary.deletedFiles,
+            moved: summary.movedFiles,
+            fuzz: summary.fuzz,
+            lineCount: countTextLines(input),
+          };
         }
 
         if (!fileName || typeof search !== 'string' || typeof replace !== 'string') {
@@ -462,7 +474,7 @@ function buildProjectTools(options: {
         const updated = applyLegacySearchReplace(original, search, replace, replaceAll);
         writeFileSync(targetPath, updated, 'utf8');
         emitter.finish('apply-patch', `修改 ${fileName}`);
-        return { changed: [fileName], legacy: true };
+        return { changed: [fileName], legacy: true, lineCount: countTextLines(updated) };
       },
     }),
     ...(options.supportsMultimodal ? {
