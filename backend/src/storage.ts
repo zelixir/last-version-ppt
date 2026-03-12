@@ -22,17 +22,17 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
   });
   slide.addText('请在右侧告诉智能助手，你想做什么样的演示稿。', {
     x: 0.8,
-    y: 2.18,
+    y: 1.96,
     w: 11,
-    h: 1.02,
+    h: 1.72,
     fontSize: 56,
     color: '334155'
   });
   slide.addText('如果需要插图，请先上传资源，再告诉智能助手放到哪一页、哪个位置。', {
     x: 0.8,
-    y: 3.56,
+    y: 4.08,
     w: 11,
-    h: 1.12,
+    h: 1.6,
     fontSize: 48,
     color: '475569'
   });

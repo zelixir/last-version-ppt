@@ -1,11 +1,21 @@
 import { existsSync, readFileSync, statSync } from 'fs';
 import path from 'path';
+import { Resvg } from '@resvg/resvg-js';
 import PptxGenJS from 'pptxgenjs';
 import { getImageMediaType } from './project-tool-helpers.ts';
 
 const EMU_PER_INCH = 914400;
 const PX_PER_INCH = 96;
 const MAX_EMBED_IMAGE_BYTES = 10 * 1024 * 1024;
+const DEFAULT_FONT_FAMILY = '\'Noto Sans CJK SC\', \'Microsoft YaHei\', \'PingFang SC\', \'Hiragino Sans GB\', Arial, Helvetica, sans-serif';
+const CHAR_WIDTH_FACTORS = {
+  whitespace: 0.32,
+  cjk: 0.98,
+  uppercaseOrDigit: 0.62,
+  lowercase: 0.54,
+  punctuation: 0.3,
+  fallback: 0.56,
+} as const;
 
 function toInches(value: unknown): number {
   if (typeof value !== 'number' || Number.isNaN(value)) return 0;
@@ -51,19 +61,62 @@ function textRunsToString(textRuns: any[]): string {
   }, '');
 }
 
+function estimateCharacterWidth(char: string, fontSize: number): number {
+  if (!char) return 0;
+  if (/\s/.test(char)) return fontSize * CHAR_WIDTH_FACTORS.whitespace;
+  if (/[\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/u.test(char)) return fontSize * CHAR_WIDTH_FACTORS.cjk;
+  if (/[A-Z0-9]/.test(char)) return fontSize * CHAR_WIDTH_FACTORS.uppercaseOrDigit;
+  if (/[a-z]/.test(char)) return fontSize * CHAR_WIDTH_FACTORS.lowercase;
+  if (/[.,;:!?'"，。；：！？、】【（）()《》“”‘’]/u.test(char)) return fontSize * CHAR_WIDTH_FACTORS.punctuation;
+  return fontSize * CHAR_WIDTH_FACTORS.fallback;
+}
+
+function wrapParagraph(paragraph: string, maxWidth: number, fontSize: number): string[] {
+  if (!paragraph) return [''];
+  if (maxWidth <= 0) return [paragraph];
+
+  const lines: string[] = [];
+  let currentLine = '';
+  let currentWidth = 0;
+
+  for (const char of Array.from(paragraph)) {
+    const charWidth = estimateCharacterWidth(char, fontSize);
+    if (currentLine && currentWidth + charWidth > maxWidth) {
+      lines.push(currentLine.trimEnd());
+      currentLine = /\s/.test(char) ? '' : char;
+      currentWidth = /\s/.test(char) ? 0 : charWidth;
+      continue;
+    }
+    currentLine += char;
+    currentWidth += charWidth;
+  }
+
+  if (currentLine || lines.length === 0) {
+    lines.push(currentLine.trimEnd());
+  }
+
+  return lines;
+}
+
+function wrapTextToLines(text: string, maxWidth: number, fontSize: number): string[] {
+  return text
+    .split(/\r?\n/)
+    .flatMap(paragraph => wrapParagraph(paragraph, maxWidth, fontSize));
+}
+
 function renderTextBlock(text: string, x: number, y: number, w: number, h: number, options: any): string {
   const fontSize = Math.max(12, Math.round((typeof options.fontSize === 'number' ? options.fontSize : 36) * (PX_PER_INCH / 72)));
   const paddingX = 12;
   const paddingY = 12;
   const fillColor = options.fill?.color ? normalizeColor(options.fill.color, '') : '';
   const borderColor = options.line?.color ? normalizeColor(options.line.color, '') : '';
-  const lines = text.split(/\r?\n/);
+  const lines = wrapTextToLines(text, Math.max(0, w - paddingX * 2), fontSize);
   const lineHeight = Math.round(fontSize * 1.35);
 
   return [
     fillColor ? `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fillColor}" rx="10" ry="10" />` : '',
     borderColor ? `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${borderColor}" stroke-width="1" rx="10" ry="10" />` : '',
-    `<text x="${x + paddingX}" y="${y + paddingY + fontSize}" fill="${normalizeColor(options.color, '#0F172A')}" font-size="${fontSize}" font-family="Arial, Helvetica, sans-serif" font-weight="${options.bold ? '700' : '400'}">`,
+    `<text x="${x + paddingX}" y="${y + paddingY + fontSize}" fill="${normalizeColor(options.color, '#0F172A')}" font-size="${fontSize}" font-family="${DEFAULT_FONT_FAMILY}" font-weight="${options.bold ? '700' : '400'}">`,
     lines.map((line, index) => `<tspan x="${x + paddingX}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line || ' ')}</tspan>`).join(''),
     '</text>',
   ].filter(Boolean).join('');
@@ -111,17 +164,17 @@ function renderTable(item: any): string {
     const isHeader = rowIndex === 0;
     return [
       `<rect x="${cellX}" y="${cellY}" width="${colWidth}" height="${rowHeight}" fill="${isHeader ? '#E2E8F0' : '#FFFFFF'}" stroke="#CBD5E1" stroke-width="1" />`,
-      `<text x="${cellX + 10}" y="${cellY + fontSize + 8}" fill="#334155" font-size="${fontSize}" font-family="Arial, Helvetica, sans-serif" font-weight="${isHeader ? '700' : '400'}">${escapeXml(cell || ' ')}</text>`,
+      `<text x="${cellX + 10}" y="${cellY + fontSize + 8}" fill="#334155" font-size="${fontSize}" font-family="${DEFAULT_FONT_FAMILY}" font-weight="${isHeader ? '700' : '400'}">${escapeXml(cell || ' ')}</text>`,
     ].join('');
   }));
 
   return cells.join('');
 }
 
-export function renderPptPageAsImage(
+export function renderPptPageAsSvg(
   pptx: PptxGenJS,
   pageNumber: number,
-): { slideCount: number; mediaType: 'image/svg+xml'; data: string } {
+): { slideCount: number; svg: string } {
   const slides = Array.isArray((pptx as any)._slides) ? (pptx as any)._slides : [];
   const slideCount = slides.length;
   if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > slideCount) {
@@ -173,7 +226,19 @@ export function renderPptPageAsImage(
 
   return {
     slideCount,
-    mediaType: 'image/svg+xml',
-    data: Buffer.from(svg, 'utf8').toString('base64'),
+    svg,
+  };
+}
+
+export async function renderPptPageAsImage(
+  pptx: PptxGenJS,
+  pageNumber: number,
+): Promise<{ slideCount: number; mediaType: 'image/png'; data: string }> {
+  const { slideCount, svg } = renderPptPageAsSvg(pptx, pageNumber);
+  const pngData = new Resvg(svg).render().asPng();
+  return {
+    slideCount,
+    mediaType: 'image/png',
+    data: Buffer.from(pngData).toString('base64'),
   };
 }

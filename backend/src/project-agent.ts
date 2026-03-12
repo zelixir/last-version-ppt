@@ -507,7 +507,7 @@ function buildProjectTools(options: {
           if (!runResult.ok || !runResult.pptx) {
             throw new Error(runResult.error || '当前 PPT 运行失败，无法查看页面');
           }
-          const rendered = renderPptPageAsImage(runResult.pptx, pageNumber);
+          const rendered = await renderPptPageAsImage(runResult.pptx, pageNumber);
           emitter.finish('read-ppt-page', `读取第 ${pageNumber} 页预览图`);
           return {
             pageNumber,
@@ -517,7 +517,7 @@ function buildProjectTools(options: {
           };
         },
         toModelOutput: ({ output }) => ({
-          ...buildImageToolModelOutput(`当前 PPT 第 ${output.pageNumber} 页预览，共 ${output.slideCount} 页`, `slide-${output.pageNumber}.svg`, output.mediaType, output.data),
+          ...buildImageToolModelOutput(`当前 PPT 第 ${output.pageNumber} 页预览，共 ${output.slideCount} 页`, `slide-${output.pageNumber}.png`, output.mediaType, output.data),
         }),
       }),
     } : {}),
