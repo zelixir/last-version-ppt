@@ -4,7 +4,7 @@ import { rmSync, writeFileSync } from 'fs';
 import PptxGenJS from 'pptxgenjs';
 import { toDashscopeToolContent } from './dashscope-message-content.ts';
 import { buildImageToolModelOutput, readProjectTextFile, readProjectTextFileRange } from './project-tool-helpers.ts';
-import { renderPptPageAsImage } from './slide-render.ts';
+import { renderPptPageAsImage, renderPptPageAsSvg } from './slide-render.ts';
 import { createProjectFiles, getProjectDir, resolveProjectFile } from './storage.ts';
 
 async function withTestProject(run: (projectId: string) => Promise<void> | void) {
@@ -59,10 +59,10 @@ test('可以把指定页面渲染成预览图片', async () => {
     assert.equal(result.ok, true);
     assert.ok(result.pptx);
 
-    const preview = renderPptPageAsImage(result.pptx!, 1);
+    const preview = await renderPptPageAsImage(result.pptx!, 1);
     assert.equal(preview.slideCount, 1);
-    assert.equal(preview.mediaType, 'image/svg+xml');
-    assert.match(Buffer.from(preview.data, 'base64').toString('utf8'), /<svg/);
+    assert.equal(preview.mediaType, 'image/png');
+    assert.ok(Buffer.from(preview.data, 'base64').length > 1000);
   });
 });
 
@@ -78,7 +78,26 @@ test('预览渲染会保留富文本 breakLine 和字符串换行', () => {
 
   slide.addText('甲\n乙\n丙', { x: 1, y: 3.5, w: 4, h: 2, fontSize: 24, color: '000000' });
 
-  const svg = Buffer.from(renderPptPageAsImage(pptx, 1).data, 'base64').toString('utf8');
+  const { svg } = renderPptPageAsSvg(pptx, 1);
   assert.match(svg, /第一行<\/tspan><tspan[^>]*>第二行<\/tspan><tspan[^>]*>第三行/);
   assert.match(svg, /甲<\/tspan><tspan[^>]*>乙<\/tspan><tspan[^>]*>丙/);
+});
+
+test('预览渲染会按文本框宽度自动换行中文正文', () => {
+  const pptx = new PptxGenJS();
+  const slide = pptx.addSlide();
+
+  slide.addText('请在右侧告诉智能助手，你想做什么样的演示稿。', {
+    x: 0.8,
+    y: 1.96,
+    w: 11,
+    h: 1.72,
+    fontSize: 56,
+    color: '334155',
+  });
+
+  const { svg } = renderPptPageAsSvg(pptx, 1);
+  assert.match(svg, /请在右侧告诉智能助手，你想做/);
+  assert.match(svg, /什么样的演示稿。/);
+  assert.match(svg, /<\/tspan><tspan[^>]*>/);
 });

@@ -192,24 +192,20 @@ export default function Home() {
 
           <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-950/70 p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white"><BrainCircuit className="h-4 w-4 text-blue-400" />新建演示稿需求</div>
-            <label className="mb-2 block text-sm font-medium text-gray-200">
-              需求说明<span className="ml-1 text-red-400">*</span>
-            </label>
             <Textarea
               value={requirement}
               onChange={event => setRequirement(event.target.value)}
               placeholder="请直接写下你想做的演示稿要求"
+              aria-label="演示稿需求"
               className="min-h-32 bg-gray-900"
             />
             <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-200">
-                  选择模型<span className="ml-1 text-red-400">*</span>
-                </label>
+              <div>
                 <Select
                   value={selectedModelId?.toString() || ''}
                   onChange={event => setSelectedModelId(event.target.value ? Number(event.target.value) : null)}
                   disabled={models.length === 0}
+                  aria-label="选择模型"
                 >
                   <option value="">{models.length === 0 ? '还没有可用模型' : '请选择模型'}</option>
                   {models.map(model => <option key={model.id} value={model.id}>{model.display_name || model.model_name}</option>)}
