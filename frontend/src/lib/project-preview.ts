@@ -2,9 +2,10 @@ import PptxGenJS from 'pptxgenjs'
 import type { PreviewElement, PreviewPresentation, PreviewSlide } from '../types'
 
 const EMU_PER_INCH = 914400
+const PROJECT_FILE_API_PREFIX = '/api/projects'
 
 function buildProjectResourceUrl(projectId: string, fileName: string) {
-  return `/api/projects/${encodeURIComponent(projectId)}/files/raw?fileName=${encodeURIComponent(fileName)}`
+  return `${PROJECT_FILE_API_PREFIX}/${encodeURIComponent(projectId)}/files/raw?fileName=${encodeURIComponent(fileName)}`
 }
 
 function toInches(value: unknown): number {
@@ -27,7 +28,7 @@ function normalizePreviewImageSrc(projectId: string, rawSrc: unknown): string {
   if (typeof rawSrc !== 'string') return ''
   const src = rawSrc.trim()
   if (!src) return ''
-  if (src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('/api/projects/')) {
+  if (src.startsWith('data:') || src.startsWith('blob:') || src.startsWith(`${PROJECT_FILE_API_PREFIX}/`)) {
     return src
   }
 
@@ -51,7 +52,12 @@ function normalizePreviewImageSrc(projectId: string, rawSrc: unknown): string {
   }
 
   if (/^(\/|[A-Za-z]:[\\/])/.test(src)) {
-    const fileName = src.split(/[\\/]/).filter(Boolean).at(-1) ?? ''
+    const normalizedPath = src.replace(/\\/g, '/')
+    const projectPathMarker = `/${projectId}/`
+    const projectPathIndex = normalizedPath.lastIndexOf(projectPathMarker)
+    const fileName = projectPathIndex >= 0
+      ? normalizedPath.slice(projectPathIndex + projectPathMarker.length)
+      : normalizedPath.split('/').filter(Boolean).slice(-1)[0] ?? ''
     return fileName ? buildProjectResourceUrl(projectId, fileName) : ''
   }
 

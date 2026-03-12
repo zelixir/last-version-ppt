@@ -80,7 +80,8 @@ function readStoredPromptHistory(projectKey: string): string[] {
 
 function readStoredSelectedModelId() {
   const rawValue = window.localStorage.getItem(SELECTED_MODEL_STORAGE_KEY)
-  const value = Number(rawValue || '')
+  if (!rawValue) return null
+  const value = Number(rawValue)
   return Number.isInteger(value) && value > 0 ? value : null
 }
 
@@ -252,6 +253,7 @@ export default function Project() {
     const data = await response.json() as AiModel[]
     setModels(data)
     setSelectedModelId(current => {
+      if (current !== null && data.some(model => model.id === current)) return current
       const preferredIds = [current, autoModelRef.current, readStoredSelectedModelId()]
       const rememberedModelId = preferredIds.find(id => id !== null && data.some(model => model.id === id))
       return rememberedModelId ?? data[0]?.id ?? null

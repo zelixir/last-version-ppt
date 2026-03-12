@@ -40,6 +40,7 @@ export type ProjectAgentStreamEvent =
 export type ProjectChatUiMessage = UIMessage<{ projectId?: string }>;
 
 const generateMessageId = createIdGenerator({ prefix: 'msg', size: 16 });
+const MAX_TOOL_LOOP_STEPS = 20;
 
 const TOOL_CAPABILITY_GROUPS = [
   {
@@ -175,7 +176,7 @@ export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimo
     '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
     '必须尽量完整实现用户要的 PPT 内容，不能只给最小骨架或占位内容。',
     '在你认为已经完成时，必须先调用 run-project 检查脚本是否能运行；如果失败，要继续修复直到成功或明确说明阻塞原因。',
-    '如果你要在代码、文案或文本内容里表达换行，必须直接写真正的换行，不要把换行写成两个字符的“\\\\n”。',
+    '如果你要在代码、文案或文本内容里表达换行，必须直接写真正的换行，不要把换行写成两个字符的“\\n”。',
     '如果用户问你“你能做什么”或“怎么用”，请按下面的能力清单，用自然中文做简短介绍，不要展开成长文：',
     buildToolCapabilitySummary(enabledToolNames),
     '读取文本文件时，优先使用 read-file；如果文件较大或只需要局部内容，要改用 read-range 工具按行查看。',
@@ -222,7 +223,7 @@ function createProjectToolLoopAgent(options: {
     model: createModelClient(options.modelName, options.providerName),
     instructions: buildProjectAgentSystemPrompt(options.projectId, options.supportsMultimodal, Object.keys(options.tools)),
     tools: options.tools,
-    stopWhen: [step => (step.steps?.length ?? 0) >= 20],
+    stopWhen: [step => (step.steps?.length ?? 0) >= MAX_TOOL_LOOP_STEPS],
   });
 }
 
@@ -618,7 +619,6 @@ export async function createProjectChatResponse(
   return createAgentUIStreamResponse<never, typeof tools, never, { projectId?: string }>({
     agent,
     uiMessages: messages,
-    originalMessages: messages as any,
     generateMessageId,
     messageMetadata: ({ part }) => part.type === 'finish' ? { projectId: activeProjectId } : undefined,
     onFinish: async ({ messages: nextMessages }) => {
