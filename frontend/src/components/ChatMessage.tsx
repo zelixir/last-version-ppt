@@ -213,10 +213,10 @@ export default function ChatMessage({
   })
   flushTextGroup(parts.length)
 
-  if (rendered.length === 0) {
+  if (rendered.length === 0 && 'pending' in message && message.pending) {
     rendered.push(
       <div key="empty" className="rounded-2xl border border-gray-800 bg-gray-900 px-4 py-3 text-sm text-gray-400">
-        {'pending' in message && message.pending ? '正在整理中…' : '这次没有补充文字说明。'}
+        正在整理中…
       </div>,
     )
   }

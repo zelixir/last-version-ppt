@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRenamedProjectId } from './storage.ts';
+import { buildRenamedProjectId, DEFAULT_INDEX_JS } from './storage.ts';
 
 test('buildRenamedProjectId keeps date prefix', () => {
   assert.equal(buildRenamedProjectId('20260311_old-name', '新的名字'), '20260311_新的名字');
@@ -8,4 +8,10 @@ test('buildRenamedProjectId keeps date prefix', () => {
 
 test('buildRenamedProjectId keeps version suffix', () => {
   assert.equal(buildRenamedProjectId('20260311_old-name_v02', '品牌介绍'), '20260311_品牌介绍_v02');
+});
+
+test('DEFAULT_INDEX_JS uses larger default text sizes', () => {
+  assert.match(DEFAULT_INDEX_JS, /fontSize: 30/);
+  assert.match(DEFAULT_INDEX_JS, /fontSize: 20/);
+  assert.match(DEFAULT_INDEX_JS, /fontSize: 18/);
 });

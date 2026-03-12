@@ -759,7 +759,6 @@ export default function Project() {
                     <Send className="h-4 w-4" />发送
                   </Button>
                 </PromptInput>
-                <div className="mt-2 text-xs text-gray-500">直接按回车会发送；按住上档再按回车可以换行；按键盘上下键可找回之前输入过的内容。</div>
               </div>
             </div>
           </aside>

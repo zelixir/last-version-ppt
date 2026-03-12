@@ -27,3 +27,10 @@ test('PPTXGENJS_GUIDE matches the actual runtime shape of pptx and pptxgenjs', (
   assert.doesNotMatch(PPTXGENJS_GUIDE, /LAYOUT_4X3/);
   assert.doesNotMatch(PPTXGENJS_GUIDE, /ChartType\.column/);
 });
+
+test('PPTXGENJS_GUIDE recommends the updated default text sizes', () => {
+  assert.match(PPTXGENJS_GUIDE, /主标题 30、副标题 20、正文 18/);
+  assert.match(PPTXGENJS_GUIDE, /fontSize: 30/);
+  assert.match(PPTXGENJS_GUIDE, /fontSize: 20/);
+  assert.match(PPTXGENJS_GUIDE, /fontSize: 18/);
+});
