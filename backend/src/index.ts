@@ -1,7 +1,7 @@
 import { spawn } from 'child_process';
 import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, type FSWatcher, unlinkSync, watch, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { frontendAssets } from './frontend-assets.ts';
@@ -210,6 +210,20 @@ function buildLegacyConversationId(projectId: string): string {
   return `legacy:${projectId}`;
 }
 
+type ProjectFileWatchEvent = {
+  projectId: string;
+  fileName?: string;
+  change: 'change' | 'rename';
+  updatedAt: string;
+};
+
+type ProjectWatchState = {
+  watcher: FSWatcher;
+  listeners: Set<(event: ProjectFileWatchEvent) => void>;
+};
+
+const projectWatchers = new Map<string, ProjectWatchState>();
+
 function buildLegacyConversationMessages(projectId: string) {
   const project = getProjectById(projectId);
   if (!project?.chatHistory.length) return [];
@@ -356,6 +370,112 @@ function configStatus() {
   };
 }
 
+function filterUsableModels(models: ReturnType<typeof getAiModels>) {
+  const usableProviderNames = new Set(
+    getProviders()
+      .filter(provider => provider.api_key && !exampleApiKeys.has(provider.api_key))
+      .map(provider => provider.name),
+  );
+  return models.filter(model => usableProviderNames.has(model.provider));
+}
+
+function ensureProjectWatcher(projectId: string): ProjectWatchState {
+  const existing = projectWatchers.get(projectId);
+  if (existing) return existing;
+
+  mkdirSync(getProjectDir(projectId), { recursive: true });
+  const listeners = new Set<(event: ProjectFileWatchEvent) => void>();
+  const watcher = watch(getProjectDir(projectId), { persistent: false }, (change, fileName) => {
+    const normalizedFileName = typeof fileName === 'string' && fileName.trim()
+      ? fileName.replace(/\\/g, '/')
+      : undefined;
+    const event: ProjectFileWatchEvent = {
+      projectId,
+      fileName: normalizedFileName,
+      change: change === 'rename' ? 'rename' : 'change',
+      updatedAt: new Date().toISOString(),
+    };
+    for (const listener of listeners) {
+      listener(event);
+    }
+  });
+  watcher.on('error', error => {
+    console.warn(`Project watcher failed for ${projectId}:`, error);
+  });
+
+  const state = { watcher, listeners };
+  projectWatchers.set(projectId, state);
+  return state;
+}
+
+function subscribeProjectWatcher(projectId: string, listener: (event: ProjectFileWatchEvent) => void): () => void {
+  const state = ensureProjectWatcher(projectId);
+  state.listeners.add(listener);
+  return () => {
+    state.listeners.delete(listener);
+    if (state.listeners.size > 0) return;
+    state.watcher.close();
+    projectWatchers.delete(projectId);
+  };
+}
+
+function createProjectWatchResponse(projectId: string, signal: AbortSignal): Response {
+  const encoder = new TextEncoder();
+  let dispose: (() => void) | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let abortHandler: (() => void) | null = null;
+  let closed = false;
+
+  const close = (controller?: ReadableStreamDefaultController<Uint8Array>) => {
+    if (closed) return;
+    closed = true;
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+    if (dispose) {
+      dispose();
+      dispose = null;
+    }
+    if (abortHandler) {
+      signal.removeEventListener('abort', abortHandler);
+      abortHandler = null;
+    }
+    if (controller) {
+      try {
+        controller.close();
+      } catch {
+        // ignore repeated close
+      }
+    }
+  };
+
+  return new Response(new ReadableStream({
+    start(controller) {
+      const push = (event: string, payload: unknown) => {
+        if (closed) return;
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`));
+      };
+      dispose = subscribeProjectWatcher(projectId, payload => push('change', payload));
+      heartbeat = setInterval(() => {
+        push('ping', { projectId, updatedAt: new Date().toISOString() });
+      }, 15000);
+      abortHandler = () => close(controller);
+      signal.addEventListener('abort', abortHandler, { once: true });
+      push('ready', { projectId, updatedAt: new Date().toISOString() });
+    },
+    cancel() {
+      close();
+    },
+  }), {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+    },
+  });
+}
+
 syncProjectsWithFilesystem();
 
 const app = new Elysia()
@@ -377,7 +497,10 @@ const app = new Elysia()
     deleteProvider(params.name);
     return { success: true };
   })
-  .get('/api/ai-models', ({ query }) => getAiModels(query.enabled === 'true'))
+  .get('/api/ai-models', ({ query }) => {
+    const models = getAiModels(query.enabled === 'true');
+    return query.usable === 'true' ? filterUsableModels(models) : models;
+  })
   .get('/api/ai-models/:id', ({ params }) => {
     const model = getAiModelById(Number(params.id));
     return model ?? new Response('Not found', { status: 404 });
@@ -532,6 +655,11 @@ const app = new Elysia()
   .get('/api/projects/:id/files', ({ params }) => {
     const project = buildProjectResponse(params.id);
     return project ? project.files : new Response('Not found', { status: 404 });
+  })
+  .get('/api/projects/:id/files/watch', ({ params, request }) => {
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+    return createProjectWatchResponse(params.id, request.signal);
   })
   .get('/api/projects/:id/files/content', ({ params, query }) => {
     const fileName = String((query as any).fileName ?? '');

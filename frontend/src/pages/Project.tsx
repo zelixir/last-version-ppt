@@ -204,6 +204,9 @@ export default function Project() {
   })
   const selectedModelIdRef = useRef<number | null>(selectedModelId)
   const projectKeyRef = useRef(projectKey)
+  const projectRef = useRef<ProjectSummary | null>(null)
+  const selectedFileNameRef = useRef<string | null>(selectedFileName)
+  const editorDirtyRef = useRef(editorDirty)
 
   useEffect(() => {
     selectedModelIdRef.current = selectedModelId
@@ -212,6 +215,18 @@ export default function Project() {
   useEffect(() => {
     projectKeyRef.current = projectKey
   }, [projectKey])
+
+  useEffect(() => {
+    projectRef.current = project
+  }, [project])
+
+  useEffect(() => {
+    selectedFileNameRef.current = selectedFileName
+  }, [selectedFileName])
+
+  useEffect(() => {
+    editorDirtyRef.current = editorDirty
+  }, [editorDirty])
 
   useEffect(() => {
     const initialNavigationState = initialNavigationStateRef.current
@@ -281,7 +296,7 @@ export default function Project() {
   }
 
   const fetchModels = async () => {
-    const response = await fetch('/api/ai-models?enabled=true')
+    const response = await fetch('/api/ai-models?enabled=true&usable=true')
     if (!response.ok) throw new Error('加载模型失败')
     const data = await response.json() as AiModel[]
     setModels(data)
@@ -311,11 +326,10 @@ export default function Project() {
     }
   }
 
-  const loadTextFile = async (file: ProjectFile) => {
-    if (file.kind !== 'text') return
+  const loadTextFileByName = async (fileName: string) => {
     setEditorLoading(true)
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/content?fileName=${encodeURIComponent(file.name)}`)
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/content?fileName=${encodeURIComponent(fileName)}`)
       if (!response.ok) throw new Error('读取文件失败')
       const data = await response.json() as { content: string }
       setEditorValue(data.content)
@@ -325,6 +339,11 @@ export default function Project() {
     } finally {
       setEditorLoading(false)
     }
+  }
+
+  const loadTextFile = async (file: ProjectFile) => {
+    if (file.kind !== 'text') return
+    await loadTextFileByName(file.name)
   }
 
   const fetchConversationSummaries = async () => {
@@ -355,6 +374,36 @@ export default function Project() {
         setPageError(err instanceof Error ? err.message : String(err))
       })
   }, [projectId])
+
+  useEffect(() => {
+    if (!projectKey) return
+    const eventSource = new EventSource(`/api/projects/${encodeURIComponent(projectKey)}/files/watch`)
+    const handleChange = (event: MessageEvent<string>) => {
+      const payload = JSON.parse(event.data || '{}') as { fileName?: string }
+      fetchProject().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+      refreshPreview().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+
+      const currentFileName = selectedFileNameRef.current
+      if (!currentFileName || editorDirtyRef.current) return
+      const changedFileName = typeof payload.fileName === 'string' && payload.fileName.trim() ? payload.fileName : null
+      if (changedFileName && changedFileName !== currentFileName) return
+      const currentFile = projectRef.current?.files.find(file => file.name === currentFileName)
+      if (currentFile?.kind === 'text') {
+        loadTextFileByName(currentFileName).catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+      }
+    }
+    const handleError = () => {
+      setPageError('项目文件变更监听已断开，请刷新页面后重试。')
+    }
+
+    eventSource.addEventListener('change', handleChange as EventListener)
+    eventSource.onerror = handleError
+
+    return () => {
+      eventSource.removeEventListener('change', handleChange as EventListener)
+      eventSource.close()
+    }
+  }, [projectKey])
 
   useEffect(() => {
     setActiveTab(readStoredProjectTab(projectKey))

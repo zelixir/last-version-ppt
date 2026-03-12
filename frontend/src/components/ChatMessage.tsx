@@ -87,7 +87,9 @@ function summarizeToolOutput(toolName: string, output: ToolLikePart['output']) {
     case 'read-range':
       return typeof value.fileName === 'string' ? `已读取 ${value.fileName}` : '已读取文件'
     case 'create-file':
-      return typeof value.fileName === 'string' ? `已写入 ${value.fileName}` : '已写入文件'
+      return typeof value.fileName === 'string'
+        ? `已写入 ${value.fileName}${typeof value.lineCount === 'number' ? `（${value.lineCount}行）` : ''}`
+        : '已写入文件'
     case 'rename-file':
       return value.oldName && value.newName ? `${value.oldName} → ${value.newName}` : '已完成改名'
     case 'delete-file':
@@ -99,10 +101,23 @@ function summarizeToolOutput(toolName: string, output: ToolLikePart['output']) {
     case 'read-ppt-page':
       return typeof value.pageNumber === 'number' ? `已查看第 ${value.pageNumber} 页` : '已查看页面'
     case 'apply-patch':
-      return Array.isArray(value.changed) && value.changed.length ? `已修改 ${value.changed.join('、')}` : '已完成修改'
+      return Array.isArray(value.changed) && value.changed.length
+        ? `已修改 ${value.changed.join('、')}${typeof value.lineCount === 'number' ? `（${value.lineCount}行）` : ''}`
+        : '已完成修改'
     default:
       return '已处理完成'
   }
+}
+
+function countLines(text: string) {
+  if (!text) return 0
+  return text.split(/\r?\n/).length
+}
+
+function getToolProgressLineCount(toolName: string, input: Record<string, unknown>) {
+  if (toolName === 'create-file' && typeof input.content === 'string') return countLines(input.content)
+  if (toolName === 'apply-patch' && typeof input.input === 'string') return countLines(input.input)
+  return null
 }
 
 function normalizeMessageParts(message: ConversationMessage): Array<ChatMessagePart | ToolLikePart> {
@@ -139,10 +154,15 @@ function ToolCard({ part, labels }: { part: ToolLikePart | LegacyToolPart; label
       ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
       : 'border-red-500/20 bg-red-500/10 text-red-100'
   let summary = '正在处理中'
+  let toolLabel = labels[toolName] || toolName
   if (isLegacyToolPart(part)) {
     summary = part.summary
   } else if (running) {
     const toolInput = part.input && typeof part.input === 'object' ? part.input as Record<string, unknown> : {}
+    const lineCount = getToolProgressLineCount(toolName, toolInput)
+    if (lineCount !== null) {
+      toolLabel = `${toolLabel}（${lineCount}行）`
+    }
     summary = TOOL_INPUT_LABELS[toolName]?.(toolInput) || '正在处理中'
   } else if (part.state === 'output-error') {
     summary = part.errorText || '处理失败'
@@ -155,7 +175,7 @@ function ToolCard({ part, labels }: { part: ToolLikePart | LegacyToolPart; label
       <div className="flex items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2">
           {running ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
-          <span className="font-medium">{labels[toolName] || toolName}</span>
+          <span className="font-medium">{toolLabel}</span>
         </div>
         <span className="text-[11px] opacity-80">{running ? '处理中' : success ? '已完成' : '未完成'}</span>
       </div>
