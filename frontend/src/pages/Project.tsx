@@ -40,6 +40,7 @@ const TOOL_LABELS: Record<string, string> = {
 }
 
 type ConversationMessage = UIMessage<ProjectChatMessageMetadata>
+type NavigationState = { autoPrompt?: string; suggestedModelId?: number }
 
 const SHOW_SCRIPT_STORAGE_KEY = 'last-version-ppt:show-script'
 const CHAT_WIDTH_STORAGE_KEY = 'last-version-ppt:chat-width'
@@ -95,6 +96,16 @@ function readStoredSelectedModelId() {
   if (!rawValue) return null
   const value = Number(rawValue)
   return Number.isInteger(value) && value > 0 ? value : null
+}
+
+function readNavigationState(locationState: unknown): NavigationState | null {
+  if (locationState && typeof locationState === 'object') {
+    return locationState as NavigationState
+  }
+  const historyUserState = window.history.state?.usr
+  return historyUserState && typeof historyUserState === 'object'
+    ? historyUserState as NavigationState
+    : null
 }
 
 function buildProjectPageTitle(project: ProjectSummary | null, projectId?: string) {
@@ -155,7 +166,7 @@ export default function Project() {
   const projectKey = projectId ?? ''
   const navigate = useNavigate()
   const location = useLocation()
-  const initialNavigationStateRef = useRef((location.state as { autoPrompt?: string; suggestedModelId?: number } | null) ?? null)
+  const initialNavigationStateRef = useRef<NavigationState | null>(readNavigationState(location.state))
   const autoPromptRef = useRef<string | null>(initialNavigationStateRef.current?.autoPrompt ?? null)
   const autoModelRef = useRef<number | null>(initialNavigationStateRef.current?.suggestedModelId ?? null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -206,8 +217,8 @@ export default function Project() {
     const initialNavigationState = initialNavigationStateRef.current
     if (!initialNavigationState?.autoPrompt && !initialNavigationState?.suggestedModelId) return
     initialNavigationStateRef.current = null
-    navigate(`${location.pathname}${location.search}${location.hash}`, { replace: true, state: null })
-  }, [location.hash, location.pathname, location.search, navigate])
+    window.history.replaceState({ ...(window.history.state ?? {}), usr: null }, '', `${location.pathname}${location.search}${location.hash}`)
+  }, [location.hash, location.pathname, location.search])
 
   const visibleFiles = useMemo(() => {
     if (!project) return []
@@ -618,7 +629,7 @@ export default function Project() {
                 )}
               </div>
 
-              <div className={activeTab === 'preview' ? 'grid min-h-0 flex-1 grid-cols-[170px_minmax(0,1fr)] gap-4 p-4' : 'hidden min-h-0 flex-1 grid-cols-[170px_minmax(0,1fr)] gap-4 p-4'} aria-hidden={activeTab !== 'preview'}>
+              <div className={`${activeTab === 'preview' ? 'grid' : 'hidden'} min-h-0 flex-1 grid-cols-[170px_minmax(0,1fr)] gap-4 p-4`} aria-hidden={activeTab !== 'preview'}>
                   <div className="space-y-3 overflow-y-auto pr-1">
                     {preview?.slides.map((slide, index) => (
                       <button key={slide.id} onClick={() => setSelectedSlideIndex(index)} className={`block w-full rounded-2xl border p-2 ${selectedSlideIndex === index ? 'border-blue-500 bg-blue-500/10' : 'border-gray-800 bg-gray-900/60'}`}>
