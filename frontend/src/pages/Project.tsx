@@ -43,6 +43,7 @@ type ConversationMessage = UIMessage<ProjectChatMessageMetadata>
 
 const SHOW_SCRIPT_STORAGE_KEY = 'last-version-ppt:show-script'
 const CHAT_WIDTH_STORAGE_KEY = 'last-version-ppt:chat-width'
+const SELECTED_MODEL_STORAGE_KEY = 'last-version-ppt:selected-model-id'
 const PROJECT_TAB_STORAGE_KEY_PREFIX = 'last-version-ppt:project-tab:'
 const PROMPT_HISTORY_STORAGE_KEY_PREFIX = 'last-version-ppt:prompt-history:'
 const MIN_CHAT_PANEL_WIDTH = 320
@@ -75,6 +76,13 @@ function readStoredPromptHistory(projectKey: string): string[] {
   } catch {
     return []
   }
+}
+
+function readStoredSelectedModelId() {
+  const rawValue = window.localStorage.getItem(SELECTED_MODEL_STORAGE_KEY)
+  if (!rawValue) return null
+  const value = Number(rawValue)
+  return Number.isInteger(value) && value > 0 ? value : null
 }
 
 function buildProjectPageTitle(project: ProjectSummary | null, projectId?: string) {
@@ -244,7 +252,12 @@ export default function Project() {
     if (!response.ok) throw new Error('加载模型失败')
     const data = await response.json() as AiModel[]
     setModels(data)
-    setSelectedModelId(current => current ?? autoModelRef.current ?? data[0]?.id ?? null)
+    setSelectedModelId(current => {
+      if (current !== null && data.some(model => model.id === current)) return current
+      const preferredIds = [current, autoModelRef.current, readStoredSelectedModelId()]
+      const rememberedModelId = preferredIds.find(id => id !== null && data.some(model => model.id === id))
+      return rememberedModelId ?? data[0]?.id ?? null
+    })
   }
 
   const refreshPreview = async () => {
@@ -354,6 +367,11 @@ export default function Project() {
   useEffect(() => {
     window.localStorage.setItem(CHAT_WIDTH_STORAGE_KEY, String(chatPanelWidth))
   }, [chatPanelWidth])
+
+  useEffect(() => {
+    if (selectedModelId === null) return
+    window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, String(selectedModelId))
+  }, [selectedModelId])
 
   useEffect(() => {
     window.localStorage.setItem(getProjectTabStorageKey(projectKey), activeTab)

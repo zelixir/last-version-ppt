@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'fs';
 import path from 'path';
-import { convertToModelMessages, streamText, tool, type UIMessage } from 'ai';
+import { createAgentUIStreamResponse, createIdGenerator, streamText, ToolLoopAgent, tool, type UIMessage } from 'ai';
 import { z } from 'zod';
 import { createModelClient } from './dashscope-model.ts';
 import { appendProjectChat, createProjectRecord, getAiModelById, getProjectById, getProviderByName, ProjectChatEntry, ProjectChatMessagePart, ProjectChatToolEvent, renameProjectRecord, setSetting } from './db.ts';
@@ -38,6 +38,9 @@ export type ProjectAgentStreamEvent =
   | { type: 'tool'; toolName: string; summary: string; state: 'running' | 'done'; success?: boolean };
 
 export type ProjectChatUiMessage = UIMessage<{ projectId?: string }>;
+
+const generateMessageId = createIdGenerator({ prefix: 'msg', size: 16 });
+const MAX_TOOL_LOOP_STEPS = 20;
 
 const TOOL_CAPABILITY_GROUPS = [
   {
@@ -173,6 +176,7 @@ export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimo
     '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
     '必须尽量完整实现用户要的 PPT 内容，不能只给最小骨架或占位内容。',
     '在你认为已经完成时，必须先调用 run-project 检查脚本是否能运行；如果失败，要继续修复直到成功或明确说明阻塞原因。',
+    '如果你要在代码、文案或文本内容里表达换行，必须直接写真正的换行，不要把换行写成两个字符的“\\n”。',
     '如果用户问你“你能做什么”或“怎么用”，请按下面的能力清单，用自然中文做简短介绍，不要展开成长文：',
     buildToolCapabilitySummary(enabledToolNames),
     '读取文本文件时，优先使用 read-file；如果文件较大或只需要局部内容，要改用 read-range 工具按行查看。',
@@ -206,6 +210,21 @@ function createToolEventEmitter(
       return event;
     },
   };
+}
+
+function createProjectToolLoopAgent(options: {
+  projectId: string;
+  modelName: string;
+  providerName: string;
+  supportsMultimodal: boolean;
+  tools: ReturnType<typeof buildProjectTools>;
+}) {
+  return new ToolLoopAgent({
+    model: createModelClient(options.modelName, options.providerName),
+    instructions: buildProjectAgentSystemPrompt(options.projectId, options.supportsMultimodal, Object.keys(options.tools)),
+    tools: options.tools,
+    stopWhen: [step => (step.steps?.length ?? 0) >= MAX_TOOL_LOOP_STEPS],
+  });
 }
 
 function buildProjectTools(options: {
@@ -574,6 +593,7 @@ export async function createProjectChatResponse(
   if (!provider || !provider.api_key || exampleApiKeys.has(provider.api_key)) {
     throw new Error(summarizeModelConfigurationError());
   }
+  setSetting('currentModelId', String(modelId));
 
   const toolEvents: ProjectChatToolEvent[] = [];
   const assistantParts: ProjectChatMessagePart[] = [];
@@ -588,16 +608,18 @@ export async function createProjectChatResponse(
     messageParts: assistantParts,
     supportsMultimodal: model.capabilities.multimodal === true,
   });
-
-  const result = streamText({
-    model: createModelClient(model.model_name, model.provider),
-    system: buildProjectAgentSystemPrompt(project.id, model.capabilities.multimodal === true, Object.keys(tools)),
-    messages: await convertToModelMessages(messages, { tools }),
+  const agent = createProjectToolLoopAgent({
+    projectId: project.id,
+    modelName: model.model_name,
+    providerName: model.provider,
+    supportsMultimodal: model.capabilities.multimodal === true,
     tools,
   });
 
-  return result.toUIMessageStreamResponse<ProjectChatUiMessage>({
-    originalMessages: messages,
+  return createAgentUIStreamResponse<never, typeof tools, never, { projectId?: string }>({
+    agent,
+    uiMessages: messages,
+    generateMessageId,
     messageMetadata: ({ part }) => part.type === 'finish' ? { projectId: activeProjectId } : undefined,
     onFinish: async ({ messages: nextMessages }) => {
       await options?.onFinish?.({ messages: nextMessages, activeProjectId });
