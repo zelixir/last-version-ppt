@@ -150,6 +150,7 @@ export interface PreviewTableElement {
   y: number
   w: number
   h: number
+  fontSize?: number
   rows: string[][]
 }
 

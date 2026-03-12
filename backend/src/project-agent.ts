@@ -152,7 +152,7 @@ function summarizeToolIntent(toolName: string, input: Record<string, unknown>): 
     case 'read-ppt-page':
       return `正在查看第 ${(input.pageNumber as number) || ''} 页`.trim();
     case 'apply-patch':
-      return input.fileName ? `准备修改 ${(input.fileName as string) || ''}`.trim() : '准备批量修改文件';
+      return input.fileName ? `准备给 ${(input.fileName as string) || ''} 应用补丁`.trim() : '准备应用补丁';
     default:
       return '正在处理';
   }
@@ -180,6 +180,8 @@ export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimo
     '如果用户问你“你能做什么”或“怎么用”，请按下面的能力清单，用自然中文做简短介绍，不要展开成长文：',
     buildToolCapabilitySummary(enabledToolNames),
     '读取文本文件时，优先使用 read-file；如果文件较大或只需要局部内容，要改用 read-range 工具按行查看。',
+    '修改已有文件时，优先使用 apply-patch（应用补丁）；只有在新建文件或确实需要整份重写时，才使用 create-file。',
+    APPLY_PATCH_AGENT_INSTRUCTIONS,
     '最终回复面向不懂技术的普通用户，尽量使用自然中文，避免技术术语和英文缩写。',
     supportsMultimodal
       ? '当前模型支持看图：必要时可以读取上传的图片，也可以查看当前 PPT 某一页的预览图来判断版式是否合适。'
@@ -381,7 +383,7 @@ function buildProjectTools(options: {
       },
     }),
     'create-file': tool({
-      description: '创建或覆盖当前项目中的文本文件。',
+      description: '仅在新建文本文件，或确实需要整份覆盖文件内容时使用。',
       inputSchema: z.object({ fileName: z.string(), content: z.string() }),
       execute: async ({ fileName, content }) => {
         emitter.start('create-file', { fileName });

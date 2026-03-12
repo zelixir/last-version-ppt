@@ -93,6 +93,7 @@ function serializeSlide(projectId: string, slide: any): PreviewSlide {
         y: toInches(item.options?.y),
         w: toInches(item.options?.w),
         h: toInches(item.options?.h),
+        fontSize: typeof item.options?.fontSize === 'number' ? item.options.fontSize : undefined,
         rows,
       }]
     }

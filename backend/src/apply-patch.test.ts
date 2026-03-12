@@ -120,5 +120,6 @@ test('apply-patch prompt strings expose the complete patch format', () => {
   assert.match(APPLY_PATCH_TOOL_DESCRIPTION, /\*\*\* Begin Patch/);
   assert.match(APPLY_PATCH_TOOL_DESCRIPTION, /Patch := Begin \{ FileOp \} End/);
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /apply-patch/);
+  assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /prefer `apply-patch` over `create-file`/);
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /input/);
 });
