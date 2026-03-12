@@ -69,7 +69,7 @@ export default function SlideCanvas({ slide, presentation, compact = false }: { 
         }
 
         if (element.kind === 'image') {
-          return <img key={index} src={element.src} alt="幻灯片图片" className="absolute rounded-sm object-cover" style={style} />
+          return <img key={index} src={element.src} alt="" aria-hidden="true" className="absolute rounded-sm object-cover" style={style} />
         }
 
         const tableFontSize = toPreviewFontSize(element.fontSize ?? 32, presentation)

@@ -1,7 +1,8 @@
 import { createRoot } from 'react-dom/client'
+import { flushSync } from 'react-dom'
 import SlideCanvas from '../components/SlideCanvas'
 import type { PreviewPresentation } from '../types'
-import { captureElementAsPngDataUrl } from './dom-to-png'
+import { captureElementAsImageDataUrl } from './dom-to-png'
 
 function waitForRenderedSlide() {
   return new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
@@ -26,15 +27,17 @@ export async function capturePreviewImages(presentation: PreviewPresentation) {
   try {
     const images: string[] = []
     for (const slide of presentation.slides) {
-      root.render(
-        <div style={{ width: '1280px' }}>
-          <SlideCanvas slide={slide} presentation={presentation} />
-        </div>,
-      )
+      flushSync(() => {
+        root.render(
+          <div style={{ width: '1280px' }}>
+            <SlideCanvas slide={slide} presentation={presentation} />
+          </div>,
+        )
+      })
       await waitForRenderedSlide()
       const element = host.querySelector<HTMLElement>('[data-slide-canvas="true"]')
       if (!element) throw new Error('预览页面还没准备好，暂时不能生成预览图')
-      images.push(await captureElementAsPngDataUrl(element))
+      images.push(await captureElementAsImageDataUrl(element))
     }
     return images
   } finally {

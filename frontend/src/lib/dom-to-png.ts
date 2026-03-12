@@ -5,7 +5,10 @@ function nextFrame() {
 function blobToDataUrl(blob: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(reader.error ?? new Error('读取图片内容失败'))
+    reader.onerror = () => {
+      const details = reader.error ? `${reader.error.name}: ${reader.error.message}` : '浏览器没有返回更多信息'
+      reject(reader.error ?? new Error(`读取图片内容失败：${details}`))
+    }
     reader.onload = () => resolve(String(reader.result ?? ''))
     reader.readAsDataURL(blob)
   })
@@ -51,7 +54,7 @@ async function inlineImages(sourceRoot: HTMLElement, targetRoot: HTMLElement) {
     }
 
     const response = await fetch(effectiveSrc)
-    if (!response.ok) throw new Error('加载幻灯片里的图片失败')
+    if (!response.ok) throw new Error(`加载幻灯片里的图片失败：${effectiveSrc}（HTTP ${response.status}）`)
     const dataUrl = await blobToDataUrl(await response.blob())
     targetImage.setAttribute('src', dataUrl)
   }))
@@ -73,7 +76,11 @@ async function waitForImages(root: HTMLElement) {
   }))
 }
 
-export async function captureElementAsPngDataUrl(element: HTMLElement, pixelRatio = 2) {
+function buildSvgDataUrl(svg: string) {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
+export async function captureElementAsImageDataUrl(element: HTMLElement, pixelRatio = 2) {
   await nextFrame()
   await waitForImages(element)
 
@@ -96,6 +103,7 @@ export async function captureElementAsPngDataUrl(element: HTMLElement, pixelRati
   <foreignObject x="0" y="0" width="100%" height="100%">${markup}</foreignObject>
 </svg>`
 
+  const svgDataUrl = buildSvgDataUrl(svg)
   const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
   const objectUrl = URL.createObjectURL(blob)
 
@@ -110,7 +118,11 @@ export async function captureElementAsPngDataUrl(element: HTMLElement, pixelRati
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, width, height)
     context.drawImage(image, 0, 0, width, height)
-    return canvas.toDataURL('image/png')
+    try {
+      return canvas.toDataURL('image/png')
+    } catch {
+      return svgDataUrl
+    }
   } finally {
     URL.revokeObjectURL(objectUrl)
   }

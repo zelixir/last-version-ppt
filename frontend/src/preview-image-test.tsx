@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { capturePreviewImages } from './lib/preview-image-generator'
@@ -7,6 +7,10 @@ import type { PreviewPresentation } from './types'
 
 function readInitialProjectId() {
   return new URLSearchParams(window.location.search).get('projectId')?.trim() ?? ''
+}
+
+function buildDownloadName(projectId: string, index: number, image: string) {
+  return `${projectId || 'project'}-slide-${index + 1}.${image.startsWith('data:image/svg+xml') ? 'svg' : 'png'}`
 }
 
 function PreviewImageTestPage() {
@@ -18,7 +22,7 @@ function PreviewImageTestPage() {
   const canRun = projectId.trim().length > 0 && !loading
   const pageCountText = useMemo(() => preview ? `共生成 ${preview.slides.length} 页，已经转成 ${images.length} 张预览图。` : '', [images.length, preview])
 
-  const generateImages = async (targetProjectId = projectId) => {
+  const generateImages = useCallback(async (targetProjectId = projectId) => {
     const nextProjectId = targetProjectId.trim()
     if (!nextProjectId) {
       setStatus('请先填写项目编号。')
@@ -48,12 +52,12 @@ function PreviewImageTestPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [projectId])
 
   useEffect(() => {
     if (!projectId) return
-    generateImages(projectId).catch(() => undefined)
-  }, [])
+    void generateImages(projectId)
+  }, [generateImages, projectId])
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100">
@@ -78,7 +82,7 @@ function PreviewImageTestPage() {
             </label>
             <button
               type="button"
-              onClick={() => generateImages().catch(() => undefined)}
+              onClick={() => void generateImages()}
               disabled={!canRun}
               className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-700"
             >
@@ -99,7 +103,7 @@ function PreviewImageTestPage() {
                     <div className="text-sm font-medium text-white">第 {index + 1} 页</div>
                     <a
                       href={image}
-                      download={`${projectId || 'project'}-slide-${index + 1}.png`}
+                      download={buildDownloadName(projectId, index, image)}
                       className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-200 hover:border-slate-500"
                     >
                       下载这一页
