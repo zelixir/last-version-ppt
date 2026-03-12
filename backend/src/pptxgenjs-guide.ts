@@ -54,7 +54,7 @@ export const PPTXGENJS_GUIDE = [
   '   - 对齐：align, valign；富文本分段换行时可用 breakLine',
   '   - 背景与边框：fill: { color }, line: { color, pt }',
   '   - 项目符号：bullet: { indent }',
-  '   - 段落：paraSpaceAfterPt, paraSpaceBeforePt, breakLine',
+  '   - 段落：paraSpaceAfterPt, paraSpaceBeforePt',
   '   - 参考常见 16:9 商务模板：封面大标题常见 44~60、副标题 28~32、页标题 32~40、正文 20~24、备注 16~18。',
   '   - 本项目默认建议：封面主标题 44、页标题 36、副标题 28、正文 24；三栏卡片或表格较密时正文可降到 20。',
   '4. 标题示例：',
