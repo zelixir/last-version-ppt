@@ -320,7 +320,7 @@ export default function Project() {
     const eventSource = new EventSource(`/api/projects/${encodeURIComponent(projectKey)}/files/watch`)
     const handleChange = (event: MessageEvent<string>) => {
       const payload = JSON.parse(event.data || '{}') as { fileName?: string }
-      // 预览图片由后端自动生成，不需要因为 preview 目录变化再次触发刷新。
+      // preview 目录本身和其中自动生成的图片文件都不需要再次触发刷新，否则会形成重复刷新。
       if (payload.fileName === 'preview' || payload.fileName?.startsWith('preview/')) return
       fetchProject().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
       refreshPreview().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
