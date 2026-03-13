@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { rmSync, writeFileSync } from 'fs';
+import test, { after } from 'node:test';
+import { existsSync, rmSync, statSync, writeFileSync } from 'fs';
 import PptxGenJS from 'pptxgenjs';
 import { toDashscopeToolContent } from './dashscope-message-content.ts';
+import { disposePreviewConverter, generateProjectPreviewImages } from './project-preview.ts';
 import { buildImageToolModelOutput, readProjectTextFile, readProjectTextFileRange } from './project-tool-helpers.ts';
 import { renderPptPageAsImage, renderPptPageAsSvg } from './slide-render.ts';
 import { createProjectFiles, getProjectDir, resolveProjectFile } from './storage.ts';
@@ -16,6 +17,10 @@ async function withTestProject(run: (projectId: string) => Promise<void> | void)
     rmSync(getProjectDir(projectId), { recursive: true, force: true });
   }
 }
+
+after(async () => {
+  await disposePreviewConverter();
+});
 
 test('大文件会提示改用按行读取工具', async () => {
   await withTestProject(async projectId => {
@@ -63,6 +68,22 @@ test('可以把指定页面渲染成预览图片', async () => {
     assert.equal(preview.slideCount, 1);
     assert.equal(preview.mediaType, 'image/png');
     assert.ok(Buffer.from(preview.data, 'base64').length > 1000);
+  });
+});
+
+test('会把预览图写入项目 preview 文件夹', async () => {
+  await withTestProject(async projectId => {
+    const { runProject } = await import('./project-runner.ts');
+    const result = await runProject({ projectId });
+    assert.equal(result.ok, true);
+    assert.ok(result.pptx);
+
+    const preview = await generateProjectPreviewImages(projectId, result.pptx!);
+    assert.equal(preview.slideCount, 1);
+    assert.deepEqual(preview.files, ['preview/slide-1.png']);
+    const outputPath = resolveProjectFile(projectId, preview.files[0]!);
+    assert.ok(existsSync(outputPath));
+    assert.ok(statSync(outputPath).size > 1000);
   });
 });
 

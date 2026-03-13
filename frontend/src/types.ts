@@ -168,3 +168,11 @@ export interface PreviewPresentation {
   slides: PreviewSlide[]
   logs: string[]
 }
+
+export interface ProjectPreviewResult {
+  width: number
+  height: number
+  slideCount: number
+  images: string[]
+  logs: string[]
+}

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, statSync } from 'fs';
 import path from 'path';
-import { Resvg } from '@resvg/resvg-js';
 import PptxGenJS from 'pptxgenjs';
 import { getImageMediaType } from './project-tool-helpers.ts';
+import { renderPptPageAsImage as renderPptPageAsImageWithWasm } from './project-preview.ts';
 
 const EMU_PER_INCH = 914400;
 const PX_PER_INCH = 96;
@@ -234,11 +234,5 @@ export async function renderPptPageAsImage(
   pptx: PptxGenJS,
   pageNumber: number,
 ): Promise<{ slideCount: number; mediaType: 'image/png'; data: string }> {
-  const { slideCount, svg } = renderPptPageAsSvg(pptx, pageNumber);
-  const pngData = new Resvg(svg).render().asPng();
-  return {
-    slideCount,
-    mediaType: 'image/png',
-    data: Buffer.from(pngData).toString('base64'),
-  };
+  return renderPptPageAsImageWithWasm(pptx, pageNumber);
 }
