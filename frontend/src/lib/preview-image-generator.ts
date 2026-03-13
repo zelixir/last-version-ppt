@@ -2,6 +2,7 @@ import { WorkerBrowserConverter, createWasmPaths, type WasmLoadProgress } from '
 
 const LIBREOFFICE_WORKER_PATH = '/libreoffice/browser.worker.global.js'
 const PREVIEW_WIDTH = 1600
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 
 export interface PreviewProgressStatus {
   message: string
@@ -68,6 +69,14 @@ async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus
 }
 
 async function imageDataToPngBlob(data: Uint8Array, width: number, height: number) {
+  if (isPngData(data)) {
+    return new Blob([Uint8Array.from(data)], { type: 'image/png' })
+  }
+
+  if (data.length % 4 !== 0) {
+    throw new Error('高保真预览返回了无法识别的图片数据，请稍后再试')
+  }
+
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
@@ -81,6 +90,10 @@ async function imageDataToPngBlob(data: Uint8Array, width: number, height: numbe
   const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
   if (!blob) throw new Error('预览图片生成失败，请稍后再试')
   return blob
+}
+
+function isPngData(data: Uint8Array) {
+  return data.length >= PNG_SIGNATURE.length && PNG_SIGNATURE.every((byte, index) => data[index] === byte)
 }
 
 export async function capturePreviewImages(
@@ -98,7 +111,9 @@ export async function capturePreviewImages(
       percent: Math.round((currentPage / Math.max(pageCount, 1)) * 100),
     })
     const preview = await converter.renderPageViaConvert(pptxData, { inputFormat: 'pptx' }, index, PREVIEW_WIDTH)
-    images.push(preview.isPng ? new Blob([Uint8Array.from(preview.data)], { type: 'image/png' }) : await imageDataToPngBlob(preview.data, preview.width, preview.height))
+    images.push(preview.isPng || isPngData(preview.data)
+      ? new Blob([Uint8Array.from(preview.data)], { type: 'image/png' })
+      : await imageDataToPngBlob(preview.data, preview.width, preview.height))
   }
 
   return images

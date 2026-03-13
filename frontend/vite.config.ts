@@ -20,6 +20,11 @@ const LIBREOFFICE_MIME_TYPES: Record<string, string> = {
   '.data': 'application/octet-stream',
 }
 
+const CROSS_ORIGIN_ISOLATION_HEADERS = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+} as const
+
 function getLibreOfficeAssetMimeType(filePath: string) {
   return LIBREOFFICE_MIME_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
 }
@@ -44,6 +49,9 @@ function libreOfficeAssetsPlugin(): Plugin {
         res.statusCode = 200
         res.setHeader('Content-Type', getLibreOfficeAssetMimeType(asset.source))
         res.setHeader('Cache-Control', 'no-cache')
+        for (const [header, value] of Object.entries(CROSS_ORIGIN_ISOLATION_HEADERS)) {
+          res.setHeader(header, value)
+        }
         res.end(readFileSync(asset.source))
       })
     },
@@ -61,10 +69,7 @@ export default defineConfig({
     libreOfficeAssetsPlugin(),
   ],
   server: {
-    headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
+    headers: CROSS_ORIGIN_ISOLATION_HEADERS,
     proxy: {
       '/api': 'http://localhost:3101',
       '/ws': {
