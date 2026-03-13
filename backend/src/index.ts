@@ -36,6 +36,7 @@ import {
 } from './db.ts';
 import { createProjectChatResponse, generateProjectName, type ProjectChatUiMessage } from './project-agent.ts';
 import { runProject } from './project-runner.ts';
+import { generateProjectPreviewImages, listPreviewImages } from './pptx-preview.ts';
 import { exampleApiKeys } from './project-support.ts';
 import { buildAttachmentDisposition } from './http-headers.ts';
 import {
@@ -752,6 +753,19 @@ const app = new Elysia()
         'Content-Disposition': buildAttachmentDisposition(`${params.id}.pptx`),
       },
     });
+  })
+  .post('/api/projects/:id/preview/generate', async ({ params }) => {
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+    const result = await runProject({ projectId: params.id, includeLogs: true });
+    if (!result.ok || !result.pptx) return errorResponse(result.error || '项目运行失败', 500);
+    const files = await generateProjectPreviewImages(params.id, result.pptx);
+    return { ok: true, files, logs: result.logs, slideCount: result.slideCount };
+  })
+  .get('/api/projects/:id/preview', ({ params }) => {
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+    return { files: listPreviewImages(params.id) };
   })
   .get('/*', ({ request }) => {
     const url = new URL(request.url);

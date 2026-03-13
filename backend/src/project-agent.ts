@@ -20,7 +20,7 @@ import {
   resolveProjectFile,
   sanitizeProjectName,
 } from './storage.ts';
-import { renderPptPageAsImage } from './slide-render.ts';
+import { generateProjectPreviewImages } from './pptx-preview.ts';
 import {
   buildImageToolModelOutput,
   getImageMediaType,
@@ -503,17 +503,27 @@ function buildProjectTools(options: {
         inputSchema: z.object({ pageNumber: z.number().int().min(1) }),
         execute: async ({ pageNumber }) => {
           emitter.start('read-ppt-page', { pageNumber });
-          const runResult = await runProject({ projectId: options.getProjectId() });
+          const projectId = options.getProjectId();
+          const runResult = await runProject({ projectId });
           if (!runResult.ok || !runResult.pptx) {
             throw new Error(runResult.error || '当前 PPT 运行失败，无法查看页面');
           }
-          const rendered = await renderPptPageAsImage(runResult.pptx, pageNumber);
+          const slideCount = (runResult.pptx as any)._slides?.length ?? 0;
+          if (pageNumber > slideCount) {
+            throw new Error(`页码超出范围，当前共有 ${slideCount} 页`);
+          }
+          const { readFileSync } = await import('fs');
+          const pathModule = await import('path');
+          await generateProjectPreviewImages(projectId, runResult.pptx);
+          const { getPreviewDir } = await import('./pptx-preview.ts');
+          const imgPath = pathModule.join(getPreviewDir(projectId), `slide-${pageNumber}.png`);
+          const data = readFileSync(imgPath).toString('base64');
           emitter.finish('read-ppt-page', `读取第 ${pageNumber} 页预览图`);
           return {
             pageNumber,
-            slideCount: rendered.slideCount,
-            mediaType: rendered.mediaType,
-            data: rendered.data,
+            slideCount,
+            mediaType: 'image/png' as const,
+            data,
           };
         },
         toModelOutput: ({ output }) => ({

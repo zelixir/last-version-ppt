@@ -4,15 +4,13 @@ import Editor from '@monaco-editor/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Trash2 } from 'lucide-react'
-import type { AiModel, PreviewPresentation, ProjectChatMessageMetadata, ProjectConversationDetail, ProjectConversationSummary, ProjectFile, ProjectSummary } from '../types'
+import type { AiModel, ProjectChatMessageMetadata, ProjectConversationDetail, ProjectConversationSummary, ProjectFile, ProjectSummary } from '../types'
 import { PromptInput } from '../components/ai-elements/prompt-input'
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
-import SlideCanvas from '../components/SlideCanvas'
-import { capturePreviewImages } from '../lib/preview-image-generator'
-import { runProjectPreview } from '../lib/project-preview'
+
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
   text: '文本',
@@ -126,12 +124,10 @@ export default function Project() {
   const [selectedModelId, setSelectedModelId] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<'preview' | 'resources'>(() => readStoredProjectTab(projectKey))
   const [selectedSlideIndex, setSelectedSlideIndex] = useState(0)
-  const [preview, setPreview] = useState<PreviewPresentation | null>(null)
   const [previewImages, setPreviewImages] = useState<string[]>([])
+  const [previewLogs, setPreviewLogs] = useState<string[]>([])
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
-  const [previewImageLoading, setPreviewImageLoading] = useState(false)
-  const [previewImageError, setPreviewImageError] = useState<string | null>(null)
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
   const [showIndexSource, setShowIndexSource] = useState(() => window.localStorage.getItem(SHOW_SCRIPT_STORAGE_KEY) === 'true')
   const [editorValue, setEditorValue] = useState('')
@@ -261,27 +257,24 @@ export default function Project() {
     try {
       setPreviewLoading(true)
       setPreviewError(null)
-      setPreviewImageError(null)
       setPreviewImages([])
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/content?fileName=${encodeURIComponent('index.js')}`)
-      if (!response.ok) throw new Error('加载 PPT 脚本失败')
-      const data = await response.json() as { content: string }
-      const rendered = await runProjectPreview(projectKey, data.content)
-      setPreview(rendered)
-      setSelectedSlideIndex(0)
-      setPreviewImageLoading(true)
-      try {
-        setPreviewImages(await capturePreviewImages(rendered))
-      } catch (error) {
-        setPreviewImageError(error instanceof Error ? error.message : String(error))
-      } finally {
-        setPreviewImageLoading(false)
+      setPreviewLogs([])
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/preview/generate`, { method: 'POST' })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({})) as { error?: string }
+        throw new Error(err.error || '生成预览失败')
       }
+      const data = await response.json() as { ok: boolean; files: string[]; logs: string[]; slideCount: number }
+      const imageUrls = data.files.map(
+        f => `/api/projects/${encodeURIComponent(projectKey)}/files/raw?fileName=${encodeURIComponent(f)}`
+      )
+      setPreviewImages(imageUrls)
+      setPreviewLogs(data.logs ?? [])
+      setSelectedSlideIndex(0)
     } catch (err) {
-      setPreview(null)
       setPreviewImages([])
+      setPreviewLogs([])
       setPreviewError(err instanceof Error ? err.message : String(err))
-      setPreviewImageLoading(false)
     } finally {
       setPreviewLoading(false)
     }
@@ -571,7 +564,7 @@ export default function Project() {
   }
 
   const handlePreviewWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    if (!preview?.slides.length || Math.abs(event.deltaY) < PREVIEW_WHEEL_DELTA_THRESHOLD) return
+    if (!previewImages.length || Math.abs(event.deltaY) < PREVIEW_WHEEL_DELTA_THRESHOLD) return
     const now = Date.now()
     if (now - previewWheelAtRef.current < PREVIEW_WHEEL_THROTTLE_MS) {
       event.preventDefault()
@@ -581,11 +574,10 @@ export default function Project() {
     event.preventDefault()
     setSelectedSlideIndex(current => {
       const nextIndex = current + (event.deltaY > 0 ? 1 : -1)
-      return Math.min(preview.slides.length - 1, Math.max(0, nextIndex))
+      return Math.min(previewImages.length - 1, Math.max(0, nextIndex))
     })
   }
 
-  const currentSlide = preview?.slides[selectedSlideIndex] ?? preview?.slides[0] ?? null
   const currentPreviewImage = previewImages[selectedSlideIndex] ?? null
 
   if (!projectId) {
@@ -642,49 +634,46 @@ export default function Project() {
 
               <div className={`${activeTab === 'preview' ? 'grid' : 'hidden'} min-h-0 flex-1 grid-cols-[170px_minmax(0,1fr)] gap-4 p-4`} aria-hidden={activeTab !== 'preview'}>
                   <div className="space-y-3 overflow-y-auto pr-1">
-                    {preview?.slides.map((slide, index) => (
-                      <button key={slide.id} onClick={() => setSelectedSlideIndex(index)} className={`block w-full rounded-2xl border p-2 ${selectedSlideIndex === index ? 'border-blue-500 bg-blue-500/10' : 'border-gray-800 bg-gray-900/60'}`}>
+                    {previewImages.map((src, index) => (
+                      <button key={index} onClick={() => setSelectedSlideIndex(index)} className={`block w-full rounded-2xl border p-2 ${selectedSlideIndex === index ? 'border-blue-500 bg-blue-500/10' : 'border-gray-800 bg-gray-900/60'}`}>
                         <div className="mb-2 text-left text-xs text-gray-400">第 {index + 1} 页</div>
-                        {previewImages[index]
-                          ? (
-                            <div className="overflow-hidden rounded-xl border border-gray-700 bg-white shadow-lg" style={{ aspectRatio: `${preview.width}/${preview.height}` }}>
-                              <img src={previewImages[index]} alt={`第 ${index + 1} 页预览图`} className="block h-full w-full object-cover" />
-                            </div>
-                          )
-                          : <SlideCanvas slide={slide} presentation={preview} compact />}
+                        <div className="overflow-hidden rounded-xl border border-gray-700 bg-white shadow-lg" style={{ aspectRatio: '16/9' }}>
+                          <img src={src} alt={`第 ${index + 1} 页预览图`} className="block h-full w-full object-cover" />
+                        </div>
                       </button>
                     ))}
-                    {!previewLoading && !previewError && preview?.slides.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-500">当前没有生成任何幻灯片。</div>}
+                    {!previewLoading && !previewError && previewImages.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-500">当前没有生成任何幻灯片。</div>}
                   </div>
                   <div className="min-h-0 overflow-y-auto rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
-                    {previewLoading && <div className="flex h-full items-center justify-center gap-2 text-sm text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />正在生成预览…</div>}
+                    {previewLoading && (
+                      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-gray-400">
+                        <LoaderCircle className="h-8 w-8 animate-spin text-blue-400" />
+                        <div className="text-center">
+                          <div className="font-medium text-gray-300">正在生成预览…</div>
+                          <div className="mt-1 text-xs text-gray-500">正在使用 LibreOffice 将 PPT 转换为图片，请稍候</div>
+                        </div>
+                      </div>
+                    )}
                     {!previewLoading && previewError && (
                       <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-red-900/40 bg-red-950/20 p-6 text-center">
                         <div className="text-3xl font-bold text-red-200">出错啦</div>
                         <pre className="mt-4 max-w-full overflow-auto whitespace-pre-wrap text-left text-sm text-red-100">{previewError}</pre>
                       </div>
                     )}
-                    {!previewLoading && !previewError && currentSlide && preview && (
+                    {!previewLoading && !previewError && currentPreviewImage && (
                       <div className="space-y-4">
                         <div onWheel={handlePreviewWheel}>
-                          {currentPreviewImage
-                            ? (
-                              <div className="overflow-hidden rounded-xl border border-gray-700 bg-white shadow-lg" style={{ aspectRatio: `${preview.width}/${preview.height}` }}>
-                                <img src={currentPreviewImage} alt={`第 ${selectedSlideIndex + 1} 页预览图`} className="block h-full w-full object-cover" />
-                              </div>
-                            )
-                            : <SlideCanvas slide={currentSlide} presentation={preview} />}
+                          <div className="overflow-hidden rounded-xl border border-gray-700 bg-white shadow-lg" style={{ aspectRatio: '16/9' }}>
+                            <img src={currentPreviewImage} alt={`第 ${selectedSlideIndex + 1} 页预览图`} className="block h-full w-full object-cover" />
+                          </div>
                         </div>
-                        <div className="space-y-2 text-xs text-gray-500">
+                        <div className="text-xs text-gray-500">
                           <div>把鼠标放在预览页上，向上或向下滑动鼠标中间的小轮子，就能切换上一页或下一页。</div>
-                          <div>当前预览会先在页面里排版，再自动截成图片，这样更接近你实际看到的效果。</div>
-                          {previewImageLoading && <div className="text-blue-300">正在把页面里的排版转成预览图，请稍等…</div>}
-                          {previewImageError && <div className="text-amber-300">预览图这次没截成功，先显示页面排版给你继续看。原因：{previewImageError}</div>}
                         </div>
-                        {preview.logs.length > 0 && (
+                        {previewLogs.length > 0 && (
                           <div className="rounded-xl border border-gray-800 bg-gray-950/70 p-4">
                             <div className="mb-2 text-sm font-medium text-white">生成记录</div>
-                            <div className="space-y-1 text-xs text-gray-400">{preview.logs.map((log, index) => <div key={index}>{log}</div>)}</div>
+                            <div className="space-y-1 text-xs text-gray-400">{previewLogs.map((log, index) => <div key={index}>{log}</div>)}</div>
                           </div>
                         )}
                       </div>
