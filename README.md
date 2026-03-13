@@ -30,6 +30,14 @@ bun run dev
 
 前端默认通过 Vite 访问，后端运行在 `http://localhost:3101`。
 
+如果你想单独检查“预览页转图片”这条链路，可以在开发环境里打开：
+
+```text
+http://localhost:5173/preview-image-test.html?projectId=你的项目编号
+```
+
+页面会直接读取项目脚本，先在浏览器里排版，再把每一页转成预览图，方便确认预览功能是否正常。
+
 ## 发布 Windows EXE
 
 仓库提供了一个 GitHub Actions 手动工作流：进入 Actions，运行“发布 Windows 可执行文件”，输入版本号后即可构建 exe 并发布到对应的 GitHub Release。
