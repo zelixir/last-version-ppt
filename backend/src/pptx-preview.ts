@@ -1,10 +1,12 @@
-import { createRequire } from 'module';
 import { existsSync, mkdirSync, readdirSync } from 'fs';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import type PptxGenJS from 'pptxgenjs';
 import { getProjectDir } from './storage.ts';
+
+const MAX_STDERR_LENGTH = 500;
+const MAX_STDOUT_TRUNCATION = 200;
 
 const require = createRequire(import.meta.url);
 
@@ -19,7 +21,7 @@ function findNodeBinary(): string {
     return process.env.NODE_BINARY;
   }
   // Try to find node via PATH
-  const pathDirs = (process.env.PATH || '').split(':');
+  const pathDirs = (process.env.PATH || '').split(path.delimiter);
   for (const dir of pathDirs) {
     if (!dir) continue;
     const candidate = path.join(dir, 'node');
@@ -86,7 +88,7 @@ export async function generateProjectPreviewImages(projectId: string, pptx: Pptx
 
     child.on('close', (code: number | null) => {
       if (!stdout) {
-        reject(new Error(`预览生成子进程异常退出 (code ${code})${stderr ? ': ' + stderr.slice(0, 500) : ''}`));
+        reject(new Error(`预览生成子进程异常退出 (code ${code})${stderr ? ': ' + stderr.slice(0, MAX_STDERR_LENGTH) : ''}`));
         return;
       }
       try {

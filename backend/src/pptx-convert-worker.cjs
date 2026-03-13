@@ -1,7 +1,6 @@
-#!/usr/bin/env node
 /**
  * Standalone Node.js script for converting PPTX to PNG images using LibreOffice WASM.
- * Invoked as a subprocess by the Bun backend.
+ * Invoked as a subprocess by the Bun backend (Bun's WASM worker support is incompatible).
  *
  * Input (stdin): JSON { pptxBase64: string, slideCount: number, previewDir: string }
  * Output (stdout): JSON { ok: true, files: string[] } or { ok: false, error: string }
