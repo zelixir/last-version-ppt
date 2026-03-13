@@ -8,8 +8,8 @@ function readInitialProjectId() {
   return new URLSearchParams(window.location.search).get('projectId')?.trim() ?? ''
 }
 
-function buildDownloadName(projectId: string, index: number) {
-  return `${projectId || 'project'}-slide-${index + 1}.png`
+function buildDownloadName(projectId: string, slideIndex: number) {
+  return `${projectId || 'project'}-slide-${slideIndex + 1}.png`
 }
 
 function PreviewImageTestPage() {
