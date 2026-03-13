@@ -69,6 +69,10 @@ async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus
 }
 
 async function imageDataToPngBlob(data: Uint8Array, width: number, height: number) {
+  if (isPngData(data)) {
+    return new Blob([Uint8Array.from(data)], { type: 'image/png' })
+  }
+
   if (data.length % 4 !== 0) {
     throw new Error('高保真预览返回了无法识别的图片数据，请稍后再试')
   }
@@ -89,7 +93,7 @@ async function imageDataToPngBlob(data: Uint8Array, width: number, height: numbe
 }
 
 function isPngData(data: Uint8Array) {
-  return PNG_SIGNATURE.every((byte, index) => data[index] === byte)
+  return data.length >= PNG_SIGNATURE.length && PNG_SIGNATURE.every((byte, index) => data[index] === byte)
 }
 
 export async function capturePreviewImages(
