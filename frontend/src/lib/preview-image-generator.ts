@@ -5,6 +5,7 @@ import { captureElementAsImageDataUrl } from './dom-to-png'
 import type { PreviewPresentation, PreviewSlide } from '../types'
 
 const PREVIEW_WIDTH = 1600
+const OFFSCREEN_TRANSLATE_X = '-200vw'
 
 export interface PreviewProgressStatus {
   message: string
@@ -46,9 +47,10 @@ function waitForSlideElement(container: HTMLElement) {
 function createRenderHost(presentation: PreviewPresentation) {
   const host = document.createElement('div')
   host.style.position = 'fixed'
-  host.style.left = '-100000px'
+  host.style.left = '0'
   host.style.top = '0'
   host.style.width = `${PREVIEW_WIDTH}px`
+  host.style.transform = `translateX(${OFFSCREEN_TRANSLATE_X})`
   host.style.pointerEvents = 'none'
   host.style.opacity = '0'
   host.style.zIndex = '-1'

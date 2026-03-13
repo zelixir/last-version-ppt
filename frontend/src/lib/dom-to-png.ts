@@ -30,10 +30,10 @@ async function waitForFonts(root: HTMLElement) {
   const fontRequests = [root, ...Array.from(root.querySelectorAll('*'))]
     .map(element => {
       const computed = window.getComputedStyle(element)
-      const font = computed.font?.trim()
+      const font = computed.font.trim()
       if (!font) return null
-      const text = element.textContent?.trim() || '预览文字'
-      return document.fonts.load(font, text)
+      const text = element.textContent?.trim()
+      return text ? document.fonts.load(font, text) : document.fonts.load(font)
     })
     .filter((request): request is Promise<FontFace[]> => request !== null)
 

@@ -26,8 +26,13 @@ function toPreviewFontSize(fontSize: number, presentation: PreviewPresentation) 
 function buildPreviewFontFamily(fontFace?: string) {
   const preferredFont = typeof fontFace === 'string' ? fontFace.trim() : ''
   if (!preferredFont) return DEFAULT_PREVIEW_FONT_STACK
-  const escapedFont = preferredFont.replace(/"/g, '\\"')
-  return `"${escapedFont}", ${DEFAULT_PREVIEW_FONT_STACK}`
+  const safeFont = preferredFont
+    .replace(/[\u0000-\u001F\u007F\\]/g, '')
+    .replace(/[^\p{L}\p{N}\s_-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!safeFont) return DEFAULT_PREVIEW_FONT_STACK
+  return `"${safeFont}", ${DEFAULT_PREVIEW_FONT_STACK}`
 }
 
 export default function SlideCanvas({ slide, presentation, compact = false }: { slide: PreviewSlide; presentation: PreviewPresentation; compact?: boolean }) {
