@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import { fetchProjectPreview } from './lib/project-preview-api'
 import type { ProjectPreviewResult } from './types'
 
 function readInitialProjectId() {
@@ -30,10 +31,7 @@ function PreviewImageTestPage() {
     setStatus('正在生成演示稿并转换预览图片，请稍等…')
 
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(nextProjectId)}/preview`, { method: 'POST' })
-      const data = await response.json().catch(() => null) as ProjectPreviewResult | { error?: string } | null
-      if (!response.ok) throw new Error(data && 'error' in data && data.error ? data.error : '生成预览失败')
-      setPreview(data as ProjectPreviewResult)
+      setPreview(await fetchProjectPreview(nextProjectId))
       setStatus(`生成完成，项目 ${nextProjectId} 的预览图已经准备好了。`)
       const nextUrl = new URL(window.location.href)
       nextUrl.searchParams.set('projectId', nextProjectId)

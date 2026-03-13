@@ -10,6 +10,7 @@ import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
+import { fetchProjectPreview } from '../lib/project-preview-api'
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
   text: '文本',
@@ -255,10 +256,7 @@ export default function Project() {
     try {
       setPreviewLoading(true)
       setPreviewError(null)
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/preview`, { method: 'POST' })
-      const data = await response.json().catch(() => null) as ProjectPreviewResult | { error?: string } | null
-      if (!response.ok) throw new Error(data && 'error' in data && data.error ? data.error : '生成预览失败')
-      setPreview(data as ProjectPreviewResult)
+      setPreview(await fetchProjectPreview(projectKey))
       setSelectedSlideIndex(0)
     } catch (err) {
       setPreview(null)
@@ -322,6 +320,7 @@ export default function Project() {
     const eventSource = new EventSource(`/api/projects/${encodeURIComponent(projectKey)}/files/watch`)
     const handleChange = (event: MessageEvent<string>) => {
       const payload = JSON.parse(event.data || '{}') as { fileName?: string }
+      // 预览图片由后端自动生成，不需要因为 preview 目录变化再次触发刷新。
       if (payload.fileName === 'preview' || payload.fileName?.startsWith('preview/')) return
       fetchProject().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
       refreshPreview().catch(err => setPageError(err instanceof Error ? err.message : String(err)))

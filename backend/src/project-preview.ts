@@ -16,7 +16,7 @@ function toInches(value: unknown): number {
 }
 
 function createTempPptxFile(pptxBuffer: Buffer): { tempDir: string; pptxPath: string } {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'last-version-ppt-preview-'));
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'ppt-preview-temp-'));
   const pptxPath = path.join(tempDir, 'preview-source.pptx');
   writeFileSync(pptxPath, pptxBuffer);
   return { tempDir, pptxPath };
@@ -24,6 +24,7 @@ function createTempPptxFile(pptxBuffer: Buffer): { tempDir: string; pptxPath: st
 
 function runPreviewNode<T>(payload: Record<string, unknown>): Promise<T> {
   return new Promise((resolve, reject) => {
+    // 运行环境已经依赖 Node.js 安装，这里直接调用 node 子进程来执行更稳定的 wasm 转换。
     const child = spawn('node', [previewRunnerPath.pathname], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -43,7 +44,8 @@ function runPreviewNode<T>(payload: Record<string, unknown>): Promise<T> {
     child.on('error', reject);
     child.on('close', code => {
       if (code !== 0) {
-        reject(new Error(stderr.trim() || stdout.trim() || `预览转换失败（退出码 ${code ?? 'unknown'}）`));
+        const errorCodeText = code ?? '未知';
+        reject(new Error(stderr.trim() || stdout.trim() || `预览转换未完成（错误代码：${errorCodeText}）`));
         return;
       }
 
@@ -125,7 +127,4 @@ export async function generateProjectPreviewImages(projectId: string, pptx: Pptx
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
-}
-
-export async function disposePreviewConverter(): Promise<void> {
 }

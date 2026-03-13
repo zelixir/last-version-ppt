@@ -17,6 +17,10 @@ function readStdin() {
   });
 }
 
+/**
+ * 把指定页导出成 PNG。
+ * pageIndex 从 0 开始，传入的 converter 需要已经完成初始化。
+ */
 async function renderPageBuffer(converter, pptxBuffer, pageIndex) {
   const page = await converter.renderPageFullQuality(
     pptxBuffer,
@@ -28,12 +32,34 @@ async function renderPageBuffer(converter, pptxBuffer, pageIndex) {
 }
 
 const payloadText = await readStdin();
-const payload = JSON.parse(payloadText || '{}');
-const pptxBuffer = readFileSync(String(payload.inputPath || ''));
-const converter = await createWorkerConverter({
-  wasmLoader,
-  wasmPath: wasmLoader.wasmDir,
-});
+let payload;
+
+try {
+  payload = JSON.parse(payloadText || '{}');
+} catch (error) {
+  throw new Error(`预览转换需要 JSON 格式的参数：${error instanceof Error ? error.message : String(error)}`);
+}
+const inputPath = String(payload.inputPath || '');
+if (!inputPath) {
+  throw new Error('没有收到要转换的 PPT 文件');
+}
+
+let pptxBuffer;
+try {
+  pptxBuffer = readFileSync(inputPath);
+} catch {
+  throw new Error('找不到要转换的 PPT 文件');
+}
+
+let converter;
+try {
+  converter = await createWorkerConverter({
+    wasmLoader,
+    wasmPath: wasmLoader.wasmDir,
+  });
+} catch (error) {
+  throw new Error(`wasm 转换器初始化失败：${error instanceof Error ? error.message : String(error)}`);
+}
 
 try {
   const slideCount = await converter.getPageCount(pptxBuffer, { inputFormat: 'pptx' });

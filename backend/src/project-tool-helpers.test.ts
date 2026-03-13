@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import test, { after } from 'node:test';
+import test from 'node:test';
 import { existsSync, rmSync, statSync, writeFileSync } from 'fs';
 import PptxGenJS from 'pptxgenjs';
 import { toDashscopeToolContent } from './dashscope-message-content.ts';
-import { disposePreviewConverter, generateProjectPreviewImages } from './project-preview.ts';
+import { generateProjectPreviewImages } from './project-preview.ts';
 import { buildImageToolModelOutput, readProjectTextFile, readProjectTextFileRange } from './project-tool-helpers.ts';
 import { renderPptPageAsImage, renderPptPageAsSvg } from './slide-render.ts';
 import { createProjectFiles, getProjectDir, resolveProjectFile } from './storage.ts';
@@ -17,10 +17,6 @@ async function withTestProject(run: (projectId: string) => Promise<void> | void)
     rmSync(getProjectDir(projectId), { recursive: true, force: true });
   }
 }
-
-after(async () => {
-  await disposePreviewConverter();
-});
 
 test('大文件会提示改用按行读取工具', async () => {
   await withTestProject(async projectId => {
