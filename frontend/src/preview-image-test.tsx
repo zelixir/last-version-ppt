@@ -17,7 +17,7 @@ function PreviewImageTestPage() {
   const [projectId, setProjectId] = useState(readInitialProjectId)
   const [preview, setPreview] = useState<PreviewPresentation | null>(null)
   const [images, setImages] = useState<string[]>([])
-  const [status, setStatus] = useState('请输入项目编号，然后点击“开始生成”。')
+  const [status, setStatus] = useState('请输入项目编号，然后点击“开始生成”。系统会优先用浏览器里的出图引擎来生成预览图。')
   const [loading, setLoading] = useState(false)
   const canRun = projectId.trim().length > 0 && !loading
   const pageCountText = useMemo(() => preview ? `共生成 ${preview.slides.length} 页，已经转成 ${images.length} 张预览图。` : '', [images.length, preview])
@@ -30,7 +30,7 @@ function PreviewImageTestPage() {
     }
 
     setLoading(true)
-    setStatus('正在读取脚本并生成预览图，请稍等…')
+      setStatus('正在读取脚本并生成预览图，请稍等…')
     setImages([])
 
     try {
@@ -65,7 +65,7 @@ function PreviewImageTestPage() {
         <header className="space-y-3">
           <h1 className="text-3xl font-semibold">预览出图测试</h1>
           <p className="max-w-3xl text-sm leading-6 text-slate-300">
-            这个页面会直接读取项目里的 PPT 脚本，先在浏览器里生成预览页面，再把每一页转成图片，方便确认“前端截图出图”这条链路是否正常。
+            这个页面会直接读取项目里的 PPT 脚本，优先用浏览器里的 WASM 出图引擎把每一页转成图片；如果当前环境暂时不支持，再退回旧的浏览器截图方式，方便确认整条预览链路是否正常。
           </p>
         </header>
 

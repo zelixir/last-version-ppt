@@ -1,14 +1,49 @@
-import { createRoot } from 'react-dom/client'
-import { flushSync } from 'react-dom'
-import SlideCanvas from '../components/SlideCanvas'
 import type { PreviewPresentation } from '../types'
+import { Resvg, initWasm } from '@resvg/resvg-wasm'
+import resvgWasmUrl from '@resvg/resvg-wasm/index_bg.wasm?url'
 import { captureElementAsImageDataUrl } from './dom-to-png'
+import { buildPreviewSlideSvg } from './preview-svg'
 
-function waitForRenderedSlide() {
-  return new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+let initResvgPromise: Promise<void> | null = null
+
+function toDataUrl(bytes: Uint8Array, mediaType: string) {
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+  }
+  return `data:${mediaType};base64,${btoa(binary)}`
 }
 
-export async function capturePreviewImages(presentation: PreviewPresentation) {
+function decodeDataUrl(dataUrl: string) {
+  const matched = /^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/i.exec(dataUrl)
+  if (!matched) return null
+  const [, mediaType = 'application/octet-stream', base64] = matched
+  const binary = atob(base64)
+  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
+  return { mediaType, bytes }
+}
+
+async function ensureResvgReady() {
+  if (!initResvgPromise) {
+    initResvgPromise = initWasm(fetch(resvgWasmUrl))
+  }
+  await initResvgPromise
+}
+
+async function readImageBytes(src: string) {
+  const inline = decodeDataUrl(src)
+  if (inline) return inline.bytes
+
+  const response = await fetch(src)
+  if (!response.ok) throw new Error(`加载幻灯片里的图片失败：${src}（HTTP ${response.status}）`)
+  return new Uint8Array(await response.arrayBuffer())
+}
+
+async function capturePreviewImagesWithDom(presentation: PreviewPresentation) {
+  const { createRoot } = await import('react-dom/client')
+  const { flushSync } = await import('react-dom')
+  const { default: SlideCanvas } = await import('../components/SlideCanvas')
   const host = document.createElement('div')
   host.setAttribute('aria-hidden', 'true')
   Object.assign(host.style, {
@@ -34,7 +69,7 @@ export async function capturePreviewImages(presentation: PreviewPresentation) {
           </div>,
         )
       })
-      await waitForRenderedSlide()
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
       const element = host.querySelector<HTMLElement>('[data-slide-canvas="true"]')
       if (!element) throw new Error('预览页面还没准备好，暂时不能生成预览图')
       images.push(await captureElementAsImageDataUrl(element))
@@ -43,5 +78,40 @@ export async function capturePreviewImages(presentation: PreviewPresentation) {
   } finally {
     root.unmount()
     host.remove()
+  }
+}
+
+export async function capturePreviewImages(presentation: PreviewPresentation) {
+  try {
+    await ensureResvgReady()
+    const images: string[] = []
+    for (const slide of presentation.slides) {
+      const { svg, imageAssets, width } = buildPreviewSlideSvg(presentation, slide)
+      const imageAssetMap = new Map(imageAssets.map(asset => [asset.href, asset.src]))
+      const renderer = new Resvg(svg, {
+        fitTo: { mode: 'width', value: width },
+        background: '#FFFFFF',
+      })
+
+      try {
+        for (const href of renderer.imagesToResolve()) {
+          const src = imageAssetMap.get(String(href))
+          if (!src) continue
+          renderer.resolveImage(String(href), await readImageBytes(src))
+        }
+        const rendered = renderer.render()
+        try {
+          images.push(toDataUrl(rendered.asPng(), 'image/png'))
+        } finally {
+          rendered.free()
+        }
+      } finally {
+        renderer.free()
+      }
+    }
+    return images
+  } catch (error) {
+    console.warn('WASM 预览出图失败，改用浏览器截图继续生成。', error)
+    return capturePreviewImagesWithDom(presentation)
   }
 }
