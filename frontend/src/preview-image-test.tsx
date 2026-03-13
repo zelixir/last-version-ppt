@@ -39,8 +39,8 @@ function PreviewImageTestPage() {
       const { content } = await response.json() as { content: string }
       const rendered = await runProjectPreview(nextProjectId, content)
       setPreview(rendered.presentation)
-      setStatus('正在用高保真方式生成预览图，请稍等…')
-      const capturedImages = await capturePreviewImages(rendered.pptxData, progress => setStatus(progress.message))
+      setStatus('正在生成预览图，请稍等…')
+      const capturedImages = await capturePreviewImages({ presentation: rendered.presentation, onProgress: progress => setStatus(progress.message) })
       const uploadedImages = await uploadPreviewImages(nextProjectId, capturedImages, progress => setStatus(progress.message))
       setImages(uploadedImages)
       setStatus(`生成完成，项目 ${nextProjectId} 的预览图已经准备好了。`)

@@ -98,6 +98,7 @@ function serializeSlide(projectId: string, slide: any): PreviewSlide {
         y: toInches(item.options?.y),
         w: toInches(item.options?.w),
         h: toInches(item.options?.h),
+        fontFace: typeof item.options?.fontFace === 'string' ? item.options.fontFace : undefined,
         fontSize: typeof item.options?.fontSize === 'number' ? item.options.fontSize : undefined,
         rows,
       }]
@@ -115,6 +116,7 @@ function serializeSlide(projectId: string, slide: any): PreviewSlide {
         h: toInches(options.h),
         text,
         color: options.color,
+        fontFace: typeof options.fontFace === 'string' ? options.fontFace : undefined,
         fontSize: typeof options.fontSize === 'number' ? options.fontSize : undefined,
         bold: Boolean(options.bold),
         align: options.align,

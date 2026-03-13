@@ -1,8 +1,10 @@
-import { WorkerBrowserConverter, createWasmPaths, type WasmLoadProgress } from '@matbee/libreoffice-converter/browser'
+import { createElement } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import SlideCanvas from '../components/SlideCanvas'
+import { captureElementAsImageDataUrl } from './dom-to-png'
+import type { PreviewPresentation, PreviewSlide } from '../types'
 
-const LIBREOFFICE_WORKER_PATH = '/libreoffice/browser.worker.global.js'
 const PREVIEW_WIDTH = 1600
-const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 
 export interface PreviewProgressStatus {
   message: string
@@ -14,106 +16,78 @@ interface UploadedPreviewImage {
   url: string
 }
 
-let sharedConverterPromise: Promise<WorkerBrowserConverter> | null = null
-const sharedProgressListeners = new Set<(progress: PreviewProgressStatus) => void>()
-
-function emitProgress(progress: PreviewProgressStatus) {
-  sharedProgressListeners.forEach(listener => listener(progress))
+interface CapturePreviewImagesOptions {
+  presentation: PreviewPresentation
+  onProgress?: (progress: PreviewProgressStatus) => void
 }
 
-function phaseToMessage(progress: WasmLoadProgress) {
-  const percent = Number.isFinite(progress.percent) ? `（${Math.round(progress.percent)}%）` : ''
-  switch (progress.phase) {
-    case 'download-wasm':
-      return `正在下载高保真预览组件${percent}`
-    case 'download-data':
-      return `正在准备排版资源${percent}`
-    case 'compile':
-      return `正在启动预览引擎${percent}`
-    case 'filesystem':
-      return `正在整理预览环境${percent}`
-    case 'lok-init':
-      return `正在唤醒排版引擎${percent}`
-    case 'ready':
-      return '高保真预览引擎已经准备好了'
-    default:
-      return progress.message?.trim() || '正在准备高保真预览…'
-  }
+function dataUrlToBlob(dataUrl: string) {
+  return fetch(dataUrl).then(response => {
+    if (!response.ok) throw new Error('预览图片生成失败，请稍后再试')
+    return response.blob()
+  })
 }
 
-async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus) => void) {
-  if (onProgress) sharedProgressListeners.add(onProgress)
-
-  if (!sharedConverterPromise) {
-    const converter = new WorkerBrowserConverter({
-      ...createWasmPaths('/wasm/'),
-      browserWorkerJs: LIBREOFFICE_WORKER_PATH,
-      onProgress: progress => emitProgress({ message: phaseToMessage(progress), percent: progress.percent }),
-    })
-
-    sharedConverterPromise = converter.initialize()
-      .then(() => converter)
-      .catch(error => {
-        sharedConverterPromise = null
-        throw error
+function waitForSlideElement(container: HTMLElement) {
+  return new Promise<HTMLElement>((resolve, reject) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const slideElement = container.querySelector('[data-slide-canvas="true"]')
+        if (slideElement instanceof HTMLElement) {
+          resolve(slideElement)
+          return
+        }
+        reject(new Error('浏览器里没有准备好可导出的预览内容'))
       })
-  }
-
-  try {
-    const converter = await sharedConverterPromise
-    onProgress?.({ message: '高保真预览引擎已经准备好了', percent: 100 })
-    return converter
-  } finally {
-    if (onProgress) sharedProgressListeners.delete(onProgress)
-  }
+    })
+  })
 }
 
-async function imageDataToPngBlob(data: Uint8Array, width: number, height: number) {
-  if (isPngData(data)) {
-    return new Blob([Uint8Array.from(data)], { type: 'image/png' })
-  }
-
-  if (data.length % 4 !== 0) {
-    throw new Error('高保真预览返回了无法识别的图片数据，请稍后再试')
-  }
-
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('当前浏览器不支持生成预览图片')
-
-  const clamped = Uint8ClampedArray.from(data)
-  context.putImageData(new ImageData(clamped, width, height), 0, 0)
-
-  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
-  if (!blob) throw new Error('预览图片生成失败，请稍后再试')
-  return blob
+function createRenderHost(presentation: PreviewPresentation) {
+  const host = document.createElement('div')
+  host.style.position = 'fixed'
+  host.style.left = '-100000px'
+  host.style.top = '0'
+  host.style.width = `${PREVIEW_WIDTH}px`
+  host.style.pointerEvents = 'none'
+  host.style.opacity = '0'
+  host.style.zIndex = '-1'
+  host.style.background = '#ffffff'
+  host.style.contain = 'layout paint size'
+  host.style.aspectRatio = `${presentation.width}/${presentation.height}`
+  document.body.append(host)
+  return host
 }
 
-function isPngData(data: Uint8Array) {
-  return data.length >= PNG_SIGNATURE.length && PNG_SIGNATURE.every((byte, index) => data[index] === byte)
+async function renderSlideToBlob(root: Root, host: HTMLElement, slide: PreviewSlide, presentation: PreviewPresentation) {
+  root.render(createElement(SlideCanvas, { slide, presentation }))
+  const slideElement = await waitForSlideElement(host)
+  const dataUrl = await captureElementAsImageDataUrl(slideElement)
+  return dataUrlToBlob(dataUrl)
 }
 
 export async function capturePreviewImages(
-  pptxData: Uint8Array,
-  onProgress?: (progress: PreviewProgressStatus) => void,
+  options: CapturePreviewImagesOptions,
 ) {
-  const converter = await getPreviewConverter(onProgress)
-  const pageCount = await converter.getPageCount(pptxData, { inputFormat: 'pptx' })
+  const { presentation, onProgress } = options
+  const pageCount = presentation.slides.length
   const images: Blob[] = []
+  const host = createRenderHost(presentation)
+  const root = createRoot(host)
 
-  for (let index = 0; index < pageCount; index += 1) {
-    const currentPage = index + 1
-    onProgress?.({
-      message: `正在生成第 ${currentPage} / ${pageCount} 页高保真预览图…`,
-      percent: Math.round((currentPage / Math.max(pageCount, 1)) * 100),
-    })
-    const preview = await converter.renderPageViaConvert(pptxData, { inputFormat: 'pptx' }, index, PREVIEW_WIDTH)
-    images.push(preview.isPng || isPngData(preview.data)
-      ? new Blob([Uint8Array.from(preview.data)], { type: 'image/png' })
-      : await imageDataToPngBlob(preview.data, preview.width, preview.height))
+  try {
+    onProgress?.({ message: '正在准备浏览器预览图…', percent: 0 })
+    for (let index = 0; index < pageCount; index += 1) {
+      const currentPage = index + 1
+      onProgress?.({
+        message: `正在生成第 ${currentPage} / ${pageCount} 页预览图…`,
+        percent: Math.round((currentPage / Math.max(pageCount, 1)) * 100),
+      })
+      images.push(await renderSlideToBlob(root, host, presentation.slides[index], presentation))
+    }
+  } finally {
+    root.unmount()
+    host.remove()
   }
 
   return images

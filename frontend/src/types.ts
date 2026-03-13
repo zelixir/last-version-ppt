@@ -116,6 +116,7 @@ export interface PreviewTextElement {
   h: number
   text: string
   color?: string
+  fontFace?: string
   fontSize?: number
   bold?: boolean
   align?: string
@@ -150,6 +151,7 @@ export interface PreviewTableElement {
   y: number
   w: number
   h: number
+  fontFace?: string
   fontSize?: number
   rows: string[][]
 }

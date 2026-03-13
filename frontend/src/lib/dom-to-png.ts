@@ -24,6 +24,23 @@ function createImage(url: string) {
   })
 }
 
+async function waitForFonts(root: HTMLElement) {
+  if (!('fonts' in document)) return
+
+  const fontRequests = [root, ...Array.from(root.querySelectorAll('*'))]
+    .map(element => {
+      const computed = window.getComputedStyle(element)
+      const font = computed.font?.trim()
+      if (!font) return null
+      const text = element.textContent?.trim() || '预览文字'
+      return document.fonts.load(font, text)
+    })
+    .filter((request): request is Promise<FontFace[]> => request !== null)
+
+  await Promise.allSettled(fontRequests)
+  await document.fonts.ready
+}
+
 function copyStylesRecursively(source: Element, target: Element) {
   const computed = window.getComputedStyle(source)
   for (const property of computed) {
@@ -82,6 +99,7 @@ function buildSvgDataUrl(svg: string) {
 
 export async function captureElementAsImageDataUrl(element: HTMLElement, pixelRatio = 2) {
   await nextFrame()
+  await waitForFonts(element)
   await waitForImages(element)
 
   const rect = element.getBoundingClientRect()

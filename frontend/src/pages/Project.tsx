@@ -273,7 +273,7 @@ export default function Project() {
       setSelectedSlideIndex(0)
       setPreviewImageLoading(true)
       try {
-        const generatedImages = await capturePreviewImages(rendered.pptxData, progress => setPreviewImageStatus(progress.message))
+        const generatedImages = await capturePreviewImages({ presentation: rendered.presentation, onProgress: progress => setPreviewImageStatus(progress.message) })
         setPreviewImages(await uploadPreviewImages(projectKey, generatedImages, progress => setPreviewImageStatus(progress.message)))
       } catch (error) {
         setPreviewImageError(error instanceof Error ? error.message : String(error))
@@ -687,14 +687,14 @@ export default function Project() {
                             )
                             : (
                               <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-gray-700 bg-gray-950/40 px-6 text-center text-sm text-gray-400">
-                                {previewImageLoading ? (previewImageStatus || '正在生成高保真预览，请稍等…') : '这一页的预览图还没有准备好。'}
+                                {previewImageLoading ? (previewImageStatus || '正在生成预览图，请稍等…') : '这一页的预览图还没有准备好。'}
                               </div>
                             )}
                         </div>
                         <div className="space-y-2 text-xs text-gray-500">
                           <div>把鼠标放在预览页上，向上或向下滑动鼠标中间的小轮子，就能切换上一页或下一页。</div>
                           <div>当前预览会直接生成 PPT，再用高保真方式出图，所以看到的效果会更接近导出的文件。</div>
-                          {previewImageLoading && <div className="text-blue-300">{previewImageStatus || '正在生成高保真预览图，请稍等…'}</div>}
+                          {previewImageLoading && <div className="text-blue-300">{previewImageStatus || '正在生成预览图，请稍等…'}</div>}
                           {previewImageError && <div className="text-amber-300">这次没能生成预览图，请再试一次。原因：{previewImageError}</div>}
                         </div>
                         {preview.logs.length > 0 && (

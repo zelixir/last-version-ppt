@@ -1,6 +1,16 @@
 import type { CSSProperties } from 'react'
 import type { PreviewPresentation, PreviewSlide } from '../types'
 
+const DEFAULT_PREVIEW_FONT_STACK = [
+  '"PingFang SC"',
+  '"Hiragino Sans GB"',
+  '"Microsoft YaHei"',
+  '"Noto Sans CJK SC"',
+  '"Source Han Sans SC"',
+  '"WenQuanYi Micro Hei"',
+  'sans-serif',
+].join(', ')
+
 function toSlideHeightUnit(value: number, presentation: PreviewPresentation) {
   return `${(value / presentation.height) * 100}cqh`
 }
@@ -11,6 +21,13 @@ function toSlideWidthUnit(value: number, presentation: PreviewPresentation) {
 
 function toPreviewFontSize(fontSize: number, presentation: PreviewPresentation) {
   return toSlideHeightUnit(fontSize / 72, presentation)
+}
+
+function buildPreviewFontFamily(fontFace?: string) {
+  const preferredFont = typeof fontFace === 'string' ? fontFace.trim() : ''
+  if (!preferredFont) return DEFAULT_PREVIEW_FONT_STACK
+  const escapedFont = preferredFont.replace(/"/g, '\\"')
+  return `"${escapedFont}", ${DEFAULT_PREVIEW_FONT_STACK}`
 }
 
 export default function SlideCanvas({ slide, presentation, compact = false }: { slide: PreviewSlide; presentation: PreviewPresentation; compact?: boolean }) {
@@ -41,6 +58,7 @@ export default function SlideCanvas({ slide, presentation, compact = false }: { 
                 background: element.fillColor ? `#${element.fillColor}` : 'transparent',
                 border: element.borderColor ? `1px solid #${element.borderColor}` : undefined,
                 fontWeight: element.bold ? 700 : 400,
+                fontFamily: buildPreviewFontFamily(element.fontFace),
                 fontSize: toPreviewFontSize(effectiveFontSize, presentation),
                 lineHeight: 1.25,
                 padding: `${toSlideHeightUnit(compact ? 0.03 : 0.05, presentation)} ${toSlideWidthUnit(compact ? 0.03 : 0.05, presentation)}`,
@@ -75,7 +93,7 @@ export default function SlideCanvas({ slide, presentation, compact = false }: { 
         const tableFontSize = toPreviewFontSize(element.fontSize ?? 32, presentation)
         return (
           <div key={index} className="absolute overflow-hidden rounded border border-slate-300 bg-white" style={style}>
-            <table className="h-full w-full text-slate-700" style={{ fontSize: tableFontSize, lineHeight: 1.2 }}>
+            <table className="h-full w-full text-slate-700" style={{ fontFamily: buildPreviewFontFamily(element.fontFace), fontSize: tableFontSize, lineHeight: 1.2 }}>
               <tbody>
                 {element.rows.map((row, rowIndex) => (
                   <tr key={rowIndex}>
