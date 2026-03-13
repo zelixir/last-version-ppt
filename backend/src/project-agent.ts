@@ -20,7 +20,7 @@ import {
   resolveProjectFile,
   sanitizeProjectName,
 } from './storage.ts';
-import { renderPptPageAsImage } from './slide-render.ts';
+import { readProjectPreviewImage } from './project-preview-cache.ts';
 import {
   buildImageToolModelOutput,
   getImageMediaType,
@@ -499,15 +499,11 @@ function buildProjectTools(options: {
         }),
       }),
       'read-ppt-page': tool({
-        description: '运行当前 PPT 脚本并读取指定页的预览图，便于检查排版和视觉内容。',
+        description: '读取当前项目 preview 文件夹里的指定页预览图，便于检查排版和视觉内容。',
         inputSchema: z.object({ pageNumber: z.number().int().min(1) }),
         execute: async ({ pageNumber }) => {
           emitter.start('read-ppt-page', { pageNumber });
-          const runResult = await runProject({ projectId: options.getProjectId() });
-          if (!runResult.ok || !runResult.pptx) {
-            throw new Error(runResult.error || '当前 PPT 运行失败，无法查看页面');
-          }
-          const rendered = await renderPptPageAsImage(runResult.pptx, pageNumber);
+          const rendered = readProjectPreviewImage(options.getProjectId(), pageNumber);
           emitter.finish('read-ppt-page', `读取第 ${pageNumber} 页预览图`);
           return {
             pageNumber,

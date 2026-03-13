@@ -1,6 +1,11 @@
 import PptxGenJS from 'pptxgenjs'
 import type { PreviewElement, PreviewPresentation, PreviewSlide } from '../types'
 
+export interface ProjectPreviewRunResult {
+  presentation: PreviewPresentation
+  pptxData: Uint8Array
+}
+
 const EMU_PER_INCH = 914400
 const PROJECT_FILE_API_PREFIX = '/api/projects'
 
@@ -139,7 +144,7 @@ function serializeSlide(projectId: string, slide: any): PreviewSlide {
   }
 }
 
-export async function runProjectPreview(projectId: string, code: string): Promise<PreviewPresentation> {
+export async function runProjectPreview(projectId: string, code: string): Promise<ProjectPreviewRunResult> {
   const logs: string[] = []
   const module = { exports: {} as any }
 
@@ -168,11 +173,19 @@ export async function runProjectPreview(projectId: string, code: string): Promis
   const output = await build(context)
   const finalPptx = output instanceof PptxGenJS ? output : pptx
   const layout = (finalPptx as any)._presLayout
+  const pptxStream = await finalPptx.write({ outputType: 'uint8array' })
+  if (!(pptxStream instanceof Uint8Array) && !(pptxStream instanceof ArrayBuffer)) {
+    throw new Error('浏览器里没有拿到可用的 PPT 文件内容，请稍后再试')
+  }
+  const pptxData = pptxStream instanceof Uint8Array ? pptxStream : new Uint8Array(pptxStream)
 
   return {
-    width: toInches(layout?.width) || 13.333,
-    height: toInches(layout?.height) || 7.5,
-    slides: ((finalPptx as any)._slides ?? []).map((slide: any) => serializeSlide(projectId, slide)),
-    logs,
+    presentation: {
+      width: toInches(layout?.width) || 13.333,
+      height: toInches(layout?.height) || 7.5,
+      slides: ((finalPptx as any)._slides ?? []).map((slide: any) => serializeSlide(projectId, slide)),
+      logs,
+    },
+    pptxData,
   }
 }

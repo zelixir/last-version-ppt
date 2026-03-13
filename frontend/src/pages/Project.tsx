@@ -10,8 +10,7 @@ import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
-import SlideCanvas from '../components/SlideCanvas'
-import { capturePreviewImages } from '../lib/preview-image-generator'
+import { capturePreviewImages, uploadPreviewImages } from '../lib/preview-image-generator'
 import { runProjectPreview } from '../lib/project-preview'
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
@@ -132,6 +131,7 @@ export default function Project() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewImageLoading, setPreviewImageLoading] = useState(false)
   const [previewImageError, setPreviewImageError] = useState<string | null>(null)
+  const [previewImageStatus, setPreviewImageStatus] = useState<string | null>(null)
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
   const [showIndexSource, setShowIndexSource] = useState(() => window.localStorage.getItem(SHOW_SCRIPT_STORAGE_KEY) === 'true')
   const [editorValue, setEditorValue] = useState('')
@@ -262,26 +262,31 @@ export default function Project() {
       setPreviewLoading(true)
       setPreviewError(null)
       setPreviewImageError(null)
+      setPreviewImageStatus('正在读取脚本…')
       setPreviewImages([])
       const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/content?fileName=${encodeURIComponent('index.js')}`)
       if (!response.ok) throw new Error('加载 PPT 脚本失败')
       const data = await response.json() as { content: string }
+      setPreviewImageStatus('正在生成 PPT…')
       const rendered = await runProjectPreview(projectKey, data.content)
-      setPreview(rendered)
+      setPreview(rendered.presentation)
       setSelectedSlideIndex(0)
       setPreviewImageLoading(true)
       try {
-        setPreviewImages(await capturePreviewImages(rendered))
+        const generatedImages = await capturePreviewImages(rendered.pptxData, progress => setPreviewImageStatus(progress.message))
+        setPreviewImages(await uploadPreviewImages(projectKey, generatedImages, progress => setPreviewImageStatus(progress.message)))
       } catch (error) {
         setPreviewImageError(error instanceof Error ? error.message : String(error))
       } finally {
         setPreviewImageLoading(false)
+        setPreviewImageStatus(null)
       }
     } catch (err) {
       setPreview(null)
       setPreviewImages([])
       setPreviewError(err instanceof Error ? err.message : String(err))
       setPreviewImageLoading(false)
+      setPreviewImageStatus(null)
     } finally {
       setPreviewLoading(false)
     }
@@ -341,12 +346,13 @@ export default function Project() {
     const eventSource = new EventSource(`/api/projects/${encodeURIComponent(projectKey)}/files/watch`)
     const handleChange = (event: MessageEvent<string>) => {
       const payload = JSON.parse(event.data || '{}') as { fileName?: string }
+      const changedFileName = typeof payload.fileName === 'string' && payload.fileName.trim() ? payload.fileName : null
+      if (changedFileName === 'preview' || changedFileName?.startsWith('preview/')) return
       fetchProject().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
       refreshPreview().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
 
       const currentFileName = selectedFileNameRef.current
       if (!currentFileName || editorDirtyRef.current) return
-      const changedFileName = typeof payload.fileName === 'string' && payload.fileName.trim() ? payload.fileName : null
       if (changedFileName && changedFileName !== currentFileName) return
       const currentFile = projectRef.current?.files.find(file => file.name === currentFileName)
       if (currentFile?.kind === 'text') {
@@ -651,13 +657,17 @@ export default function Project() {
                               <img src={previewImages[index]} alt={`第 ${index + 1} 页预览图`} className="block h-full w-full object-cover" />
                             </div>
                           )
-                          : <SlideCanvas slide={slide} presentation={preview} compact />}
+                          : (
+                            <div className="flex items-center justify-center rounded-xl border border-dashed border-gray-700 bg-gray-950/60 px-3 text-center text-xs text-gray-500" style={{ aspectRatio: `${preview.width}/${preview.height}` }}>
+                              {previewImageLoading ? '正在生成这一页的预览图…' : '这一页的预览图还没有准备好'}
+                            </div>
+                          )}
                       </button>
                     ))}
                     {!previewLoading && !previewError && preview?.slides.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-500">当前没有生成任何幻灯片。</div>}
                   </div>
                   <div className="min-h-0 overflow-y-auto rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
-                    {previewLoading && <div className="flex h-full items-center justify-center gap-2 text-sm text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />正在生成预览…</div>}
+                    {previewLoading && <div className="flex h-full items-center justify-center gap-2 text-sm text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />{previewImageStatus || '正在生成预览…'}</div>}
                     {!previewLoading && previewError && (
                       <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-red-900/40 bg-red-950/20 p-6 text-center">
                         <div className="text-3xl font-bold text-red-200">出错啦</div>
@@ -673,13 +683,17 @@ export default function Project() {
                                 <img src={currentPreviewImage} alt={`第 ${selectedSlideIndex + 1} 页预览图`} className="block h-full w-full object-cover" />
                               </div>
                             )
-                            : <SlideCanvas slide={currentSlide} presentation={preview} />}
+                            : (
+                              <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-gray-700 bg-gray-950/40 px-6 text-center text-sm text-gray-400">
+                                {previewImageLoading ? (previewImageStatus || '正在生成高保真预览，请稍等…') : '这一页的预览图还没有准备好。'}
+                              </div>
+                            )}
                         </div>
                         <div className="space-y-2 text-xs text-gray-500">
                           <div>把鼠标放在预览页上，向上或向下滑动鼠标中间的小轮子，就能切换上一页或下一页。</div>
-                          <div>当前预览会先在页面里排版，再自动截成图片，这样更接近你实际看到的效果。</div>
-                          {previewImageLoading && <div className="text-blue-300">正在把页面里的排版转成预览图，请稍等…</div>}
-                          {previewImageError && <div className="text-amber-300">预览图这次没截成功，先显示页面排版给你继续看。原因：{previewImageError}</div>}
+                          <div>当前预览会直接生成 PPT，再用高保真方式出图，所以看到的效果会更接近导出的文件。</div>
+                          {previewImageLoading && <div className="text-blue-300">{previewImageStatus || '正在生成高保真预览图，请稍等…'}</div>}
+                          {previewImageError && <div className="text-amber-300">这次没能生成预览图，请再试一次。原因：{previewImageError}</div>}
                         </div>
                         {preview.logs.length > 0 && (
                           <div className="rounded-xl border border-gray-800 bg-gray-950/70 p-4">

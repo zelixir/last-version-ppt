@@ -55,6 +55,7 @@ import {
   storageRoot,
   stripVersionSuffix,
 } from './storage.ts';
+import { replaceProjectPreviewImages } from './project-preview-cache.ts';
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -83,6 +84,10 @@ const MIME_TYPES: Record<string, string> = {
 const TEXT_FILE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.csv', '.html', '.css', '.xml', '.yml', '.yaml', '.svg']);
 const IMAGE_FILE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
 const MEDIA_FILE_EXTENSIONS = new Set(['.mp4', '.mp3', '.wav']);
+const CROSS_ORIGIN_ISOLATION_HEADERS = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+} as const;
 
 function getBackendDir(): string {
   try {
@@ -116,6 +121,10 @@ if (getProviders().length === 0 && getAiModels().length === 0) {
 
 function getMimeType(filePath: string): string {
   return MIME_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+}
+
+function withCrossOriginIsolationHeaders(headers: Record<string, string>): Record<string, string> {
+  return { ...headers, ...CROSS_ORIGIN_ISOLATION_HEADERS };
 }
 
 function isTextFile(fileName: string): boolean {
@@ -679,7 +688,7 @@ const app = new Elysia()
     const filePath = resolveProjectFile(params.id, fileName);
     if (!existsSync(filePath)) return new Response('Not found', { status: 404 });
     return new Response(readFileSync(filePath), {
-      headers: { 'Content-Type': getMimeType(filePath), 'Cache-Control': 'no-cache' },
+      headers: withCrossOriginIsolationHeaders({ 'Content-Type': getMimeType(filePath), 'Cache-Control': 'no-cache' }),
     });
   })
   .put('/api/projects/:id/files/content', ({ params, body }) => {
@@ -719,11 +728,41 @@ const app = new Elysia()
       if (!(entry instanceof File)) continue;
       const buffer = Buffer.from(await entry.arrayBuffer());
       const filePath = resolveProjectFile(params.id, entry.name);
+      mkdirSync(path.dirname(filePath), { recursive: true });
       writeFileSync(filePath, buffer);
       uploaded.push(entry.name);
     }
     updateProjectRecord(params.id, { touch: true });
     return { uploaded };
+  })
+  .post('/api/projects/:id/preview-images', async ({ params, request }) => {
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+
+    const form = await request.formData();
+    const files = form.getAll('files');
+    const images: Array<{ pageNumber: number; data: Uint8Array }> = [];
+
+    for (const entry of files) {
+      if (!(entry instanceof File)) continue;
+      const match = entry.name.match(/^slide-(\d+)\.png$/i);
+      if (!match) continue;
+      images.push({
+        pageNumber: Number(match[1]),
+        data: new Uint8Array(await entry.arrayBuffer()),
+      });
+    }
+
+    const storedImages = replaceProjectPreviewImages(params.id, images);
+    updateProjectRecord(params.id, { touch: true });
+
+    return {
+      slideCount: storedImages.length,
+      images: storedImages.map(image => ({
+        pageNumber: image.pageNumber,
+        url: `/api/projects/${encodeURIComponent(params.id)}/files/raw?fileName=${encodeURIComponent(`preview/${image.fileName}`)}&t=${encodeURIComponent(image.updatedAt)}`,
+      })),
+    };
   })
   .post('/api/projects/:id/open-folder', ({ params }) => {
     const project = getProjectById(params.id);
@@ -765,7 +804,7 @@ const app = new Elysia()
           const resourcePath = resolveProjectFile(projectId, fileParts.join('/'));
           if (existsSync(resourcePath) && statSync(resourcePath).isFile()) {
             return new Response(readFileSync(resourcePath), {
-              headers: { 'Content-Type': getMimeType(resourcePath), 'Cache-Control': 'no-cache' },
+              headers: withCrossOriginIsolationHeaders({ 'Content-Type': getMimeType(resourcePath), 'Cache-Control': 'no-cache' }),
             });
           }
         } catch {
@@ -778,7 +817,7 @@ const app = new Elysia()
       const asset = embeddedAssets.get(reqPath) || embeddedAssets.get('/index.html');
       if (asset) {
         return new Response(asset.content, {
-          headers: { 'Content-Type': asset.mimeType, 'Cache-Control': 'no-cache' },
+          headers: withCrossOriginIsolationHeaders({ 'Content-Type': asset.mimeType, 'Cache-Control': 'no-cache' }),
         });
       }
       return new Response('Not Found', { status: 404 });
@@ -790,13 +829,13 @@ const app = new Elysia()
       const fullPath = path.join(frontendDistDir, filePath);
       if (existsSync(fullPath) && statSync(fullPath).isFile()) {
         return new Response(readFileSync(fullPath), {
-          headers: { 'Content-Type': getMimeType(fullPath), 'Cache-Control': 'no-cache' },
+          headers: withCrossOriginIsolationHeaders({ 'Content-Type': getMimeType(fullPath), 'Cache-Control': 'no-cache' }),
         });
       }
       const indexPath = path.join(frontendDistDir, 'index.html');
       if (existsSync(indexPath)) {
         return new Response(readFileSync(indexPath), {
-          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' },
+          headers: withCrossOriginIsolationHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }),
         });
       }
     }

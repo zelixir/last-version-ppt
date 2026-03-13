@@ -7,14 +7,13 @@
     "typecheck": "tsc --noEmit",
     "mcp-sqlite": "bun run src/mcp-sqlite.ts",
     "seed-models": "bun run src/seed-models.ts",
-    "test": "node --test src/*.test.ts"
+    "test": "bun test src/*.test.ts"
   },
   "dependencies": {
     "@ai-sdk/provider": "^3.0.8",
     "@ai-sdk/provider-utils": "^4.0.19",
     "@elysiajs/cors": "^1.2.2",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@resvg/resvg-js": "^2.6.2",
     "ai": "^6.0.111",
     "elysia": "^1.2.25",
     "pptxgenjs": "^4.0.1",
