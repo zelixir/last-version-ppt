@@ -5,12 +5,13 @@ import { captureElementAsImageDataUrl } from './dom-to-png'
 import { buildPreviewSlideSvg } from './preview-svg'
 
 let initResvgPromise: Promise<void> | null = null
+let lastPreviewImageRenderMode: 'wasm' | 'dom-fallback' = 'wasm'
+const BINARY_CONVERSION_CHUNK_SIZE = 0x8000
 
 function toDataUrl(bytes: Uint8Array, mediaType: string) {
   let binary = ''
-  const chunkSize = 0x8000
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+  for (let index = 0; index < bytes.length; index += BINARY_CONVERSION_CHUNK_SIZE) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + BINARY_CONVERSION_CHUNK_SIZE))
   }
   return `data:${mediaType};base64,${btoa(binary)}`
 }
@@ -26,7 +27,13 @@ function decodeDataUrl(dataUrl: string) {
 
 async function ensureResvgReady() {
   if (!initResvgPromise) {
-    initResvgPromise = initWasm(fetch(resvgWasmUrl))
+    initResvgPromise = (async () => {
+      const response = await fetch(resvgWasmUrl)
+      if (!response.ok) {
+        throw new Error(`浏览器里的出图引擎没有加载成功（HTTP ${response.status}）`)
+      }
+      await initWasm(await response.arrayBuffer())
+    })()
   }
   await initResvgPromise
 }
@@ -41,6 +48,7 @@ async function readImageBytes(src: string) {
 }
 
 async function capturePreviewImagesWithDom(presentation: PreviewPresentation) {
+  lastPreviewImageRenderMode = 'dom-fallback'
   const { createRoot } = await import('react-dom/client')
   const { flushSync } = await import('react-dom')
   const { default: SlideCanvas } = await import('../components/SlideCanvas')
@@ -81,9 +89,14 @@ async function capturePreviewImagesWithDom(presentation: PreviewPresentation) {
   }
 }
 
+export function getLastPreviewImageRenderMode() {
+  return lastPreviewImageRenderMode
+}
+
 export async function capturePreviewImages(presentation: PreviewPresentation) {
   try {
     await ensureResvgReady()
+    lastPreviewImageRenderMode = 'wasm'
     const images: string[] = []
     for (const slide of presentation.slides) {
       const { svg, imageAssets, width } = buildPreviewSlideSvg(presentation, slide)

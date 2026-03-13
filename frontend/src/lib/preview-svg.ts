@@ -2,6 +2,8 @@ import type { PreviewImageElement, PreviewPresentation, PreviewShapeElement, Pre
 
 const PX_PER_INCH = 96
 const DEFAULT_FONT_FAMILY = '\'Noto Sans CJK SC\', \'Microsoft YaHei\', \'PingFang SC\', \'Hiragino Sans GB\', Arial, Helvetica, sans-serif'
+const DEFAULT_TEXT_FONT_SIZE_PT = 28
+const DEFAULT_TABLE_FONT_SIZE_PT = 32
 const CHAR_WIDTH_FACTORS = {
   whitespace: 0.32,
   cjk: 0.98,
@@ -46,7 +48,7 @@ function normalizeColor(value: string | undefined, fallback = '#000000') {
 function estimateCharacterWidth(char: string, fontSize: number) {
   if (!char) return 0
   if (/\s/.test(char)) return fontSize * CHAR_WIDTH_FACTORS.whitespace
-  if (/[\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/u.test(char)) return fontSize * CHAR_WIDTH_FACTORS.cjk
+  if (CJK_CHAR_PATTERN.test(char)) return fontSize * CHAR_WIDTH_FACTORS.cjk
   if (/[A-Z0-9]/.test(char)) return fontSize * CHAR_WIDTH_FACTORS.uppercaseOrDigit
   if (/[a-z]/.test(char)) return fontSize * CHAR_WIDTH_FACTORS.lowercase
   if (/[.,;:!?'"，。；：！？、】【（）()《》“”‘’]/u.test(char)) return fontSize * CHAR_WIDTH_FACTORS.punctuation
@@ -91,7 +93,7 @@ function renderTextBlock(element: PreviewTextElement) {
   const y = toPixels(element.y)
   const w = Math.max(0, toPixels(element.w))
   const h = Math.max(0, toPixels(element.h))
-  const fontSize = Math.max(12, Math.round((element.fontSize ?? 28) * (PX_PER_INCH / 72)))
+  const fontSize = Math.max(12, Math.round((element.fontSize ?? DEFAULT_TEXT_FONT_SIZE_PT) * (PX_PER_INCH / 72)))
   const paddingX = 12
   const paddingY = 12
   const lines = wrapTextToLines(element.text, Math.max(0, w - paddingX * 2), fontSize)
@@ -151,7 +153,7 @@ function renderTable(element: PreviewTableElement) {
   const rowHeight = h / rows.length
   const colCount = Math.max(...rows.map(row => row.length), 1)
   const colWidth = w / colCount
-  const fontSize = Math.max(12, Math.round((element.fontSize ?? 32) * (PX_PER_INCH / 72)))
+  const fontSize = Math.max(12, Math.round((element.fontSize ?? DEFAULT_TABLE_FONT_SIZE_PT) * (PX_PER_INCH / 72)))
 
   return rows.flatMap((row, rowIndex) => row.map((cell, colIndex) => {
     const cellX = x + colIndex * colWidth
@@ -193,3 +195,4 @@ export function buildPreviewSlideSvg(presentation: PreviewPresentation, slide: P
 </svg>`,
   }
 }
+const CJK_CHAR_PATTERN = /[\p{Unified_Ideograph}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u

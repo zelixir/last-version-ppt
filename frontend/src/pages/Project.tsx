@@ -11,7 +11,7 @@ import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
 import SlideCanvas from '../components/SlideCanvas'
-import { capturePreviewImages } from '../lib/preview-image-generator'
+import { capturePreviewImages, getLastPreviewImageRenderMode } from '../lib/preview-image-generator'
 import { runProjectPreview } from '../lib/project-preview'
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
@@ -271,7 +271,13 @@ export default function Project() {
       setSelectedSlideIndex(0)
       setPreviewImageLoading(true)
       try {
-        setPreviewImages(await capturePreviewImages(rendered))
+        const images = await capturePreviewImages(rendered)
+        setPreviewImages(images)
+        setPreviewImageError(
+          getLastPreviewImageRenderMode() === 'dom-fallback'
+            ? '浏览器里的快速出图引擎暂时不可用，这次已经自动改用备用方式生成预览图。'
+            : null,
+        )
       } catch (error) {
         setPreviewImageError(error instanceof Error ? error.message : String(error))
       } finally {
@@ -677,9 +683,9 @@ export default function Project() {
                         </div>
                         <div className="space-y-2 text-xs text-gray-500">
                           <div>把鼠标放在预览页上，向上或向下滑动鼠标中间的小轮子，就能切换上一页或下一页。</div>
-                          <div>当前预览会先在页面里排版，再自动截成图片，这样更接近你实际看到的效果。</div>
-                          {previewImageLoading && <div className="text-blue-300">正在把页面里的排版转成预览图，请稍等…</div>}
-                          {previewImageError && <div className="text-amber-300">预览图这次没截成功，先显示页面排版给你继续看。原因：{previewImageError}</div>}
+                          <div>当前预览会优先用浏览器里的 WASM 出图引擎生成图片；如果当前环境不支持，再自动改用备用方式。</div>
+                          {previewImageLoading && <div className="text-blue-300">正在生成预览图，请稍等…</div>}
+                          {previewImageError && <div className="text-amber-300">{previewImageError}</div>}
                         </div>
                         {preview.logs.length > 0 && (
                           <div className="rounded-xl border border-gray-800 bg-gray-950/70 p-4">

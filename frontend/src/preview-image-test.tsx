@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import { capturePreviewImages } from './lib/preview-image-generator'
+import { capturePreviewImages, getLastPreviewImageRenderMode } from './lib/preview-image-generator'
 import { runProjectPreview } from './lib/project-preview'
 import type { PreviewPresentation } from './types'
 
@@ -39,9 +39,14 @@ function PreviewImageTestPage() {
       const { content } = await response.json() as { content: string }
       const rendered = await runProjectPreview(nextProjectId, content)
       const capturedImages = await capturePreviewImages(rendered)
+      const renderMode = getLastPreviewImageRenderMode()
       setPreview(rendered)
       setImages(capturedImages)
-      setStatus(`生成完成，项目 ${nextProjectId} 的预览图已经准备好了。`)
+      setStatus(
+        renderMode === 'wasm'
+          ? `生成完成，项目 ${nextProjectId} 的预览图已经准备好了。`
+          : `生成完成。当前浏览器里的出图引擎暂时不可用，系统已经自动改用备用方式生成预览图。`,
+      )
       const nextUrl = new URL(window.location.href)
       nextUrl.searchParams.set('projectId', nextProjectId)
       window.history.replaceState(null, '', nextUrl)
