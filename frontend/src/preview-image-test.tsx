@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import { capturePreviewImages } from './lib/preview-image-generator'
+import { capturePreviewImages, uploadPreviewImages } from './lib/preview-image-generator'
 import { runProjectPreview } from './lib/project-preview'
 import type { PreviewPresentation } from './types'
 
@@ -9,8 +9,8 @@ function readInitialProjectId() {
   return new URLSearchParams(window.location.search).get('projectId')?.trim() ?? ''
 }
 
-function buildDownloadName(projectId: string, index: number, image: string) {
-  return `${projectId || 'project'}-slide-${index + 1}.${image.startsWith('data:image/svg+xml') ? 'svg' : 'png'}`
+function buildDownloadName(projectId: string, index: number) {
+  return `${projectId || 'project'}-slide-${index + 1}.png`
 }
 
 function PreviewImageTestPage() {
@@ -38,9 +38,11 @@ function PreviewImageTestPage() {
       if (!response.ok) throw new Error('读取项目脚本失败')
       const { content } = await response.json() as { content: string }
       const rendered = await runProjectPreview(nextProjectId, content)
-      const capturedImages = await capturePreviewImages(rendered)
-      setPreview(rendered)
-      setImages(capturedImages)
+      setPreview(rendered.presentation)
+      setStatus('正在用高保真方式生成预览图，请稍等…')
+      const capturedImages = await capturePreviewImages(rendered.pptxData, progress => setStatus(progress.message))
+      const uploadedImages = await uploadPreviewImages(nextProjectId, capturedImages, progress => setStatus(progress.message))
+      setImages(uploadedImages)
       setStatus(`生成完成，项目 ${nextProjectId} 的预览图已经准备好了。`)
       const nextUrl = new URL(window.location.href)
       nextUrl.searchParams.set('projectId', nextProjectId)
@@ -64,9 +66,9 @@ function PreviewImageTestPage() {
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="space-y-3">
           <h1 className="text-3xl font-semibold">预览出图测试</h1>
-          <p className="max-w-3xl text-sm leading-6 text-slate-300">
-            这个页面会直接读取项目里的 PPT 脚本，先在浏览器里生成预览页面，再把每一页转成图片，方便确认“前端截图出图”这条链路是否正常。
-          </p>
+            <p className="max-w-3xl text-sm leading-6 text-slate-300">
+             这个页面会直接读取项目里的 PPT 脚本，在浏览器里生成 PPT，再用高保真的方式把每一页转成图片并写进 preview 文件夹，方便确认整条链路是否正常。
+            </p>
         </header>
 
         <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5">
@@ -101,11 +103,11 @@ function PreviewImageTestPage() {
                 <article key={index} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <div className="text-sm font-medium text-white">第 {index + 1} 页</div>
-                    <a
-                      href={image}
-                      download={buildDownloadName(projectId, index, image)}
-                      className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-200 hover:border-slate-500"
-                    >
+                     <a
+                       href={image}
+                       download={buildDownloadName(projectId, index)}
+                        className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-200 hover:border-slate-500"
+                      >
                       下载这一页
                     </a>
                   </div>

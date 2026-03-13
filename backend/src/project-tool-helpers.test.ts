@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { rmSync, writeFileSync } from 'fs';
-import PptxGenJS from 'pptxgenjs';
 import { toDashscopeToolContent } from './dashscope-message-content.ts';
 import { buildImageToolModelOutput, readProjectTextFile, readProjectTextFileRange } from './project-tool-helpers.ts';
-import { renderPptPageAsImage, renderPptPageAsSvg } from './slide-render.ts';
+import { readProjectPreviewImage, replaceProjectPreviewImages } from './project-preview-cache.ts';
 import { createProjectFiles, getProjectDir, resolveProjectFile } from './storage.ts';
 
 async function withTestProject(run: (projectId: string) => Promise<void> | void) {
@@ -52,52 +51,16 @@ test('图片工具结果会保留给多模态模型使用的图片内容', () =>
   ]);
 });
 
-test('可以把指定页面渲染成预览图片', async () => {
+test('可以读取 preview 文件夹里的指定页面预览图片', async () => {
   await withTestProject(async projectId => {
-    const { runProject } = await import('./project-runner.ts');
-    const result = await runProject({ projectId });
-    assert.equal(result.ok, true);
-    assert.ok(result.pptx);
+    replaceProjectPreviewImages(projectId, [
+      { pageNumber: 1, data: Uint8Array.from([1, 2, 3, 4]) },
+      { pageNumber: 2, data: Uint8Array.from([5, 6, 7, 8]) },
+    ]);
 
-    const preview = await renderPptPageAsImage(result.pptx!, 1);
-    assert.equal(preview.slideCount, 1);
+    const preview = readProjectPreviewImage(projectId, 1);
+    assert.equal(preview.slideCount, 2);
     assert.equal(preview.mediaType, 'image/png');
-    assert.ok(Buffer.from(preview.data, 'base64').length > 1000);
+    assert.equal(Buffer.from(preview.data, 'base64').toString('hex'), '01020304');
   });
-});
-
-test('预览渲染会保留富文本 breakLine 和字符串换行', () => {
-  const pptx = new PptxGenJS();
-  const slide = pptx.addSlide();
-
-  slide.addText([
-    { text: '第一行', options: { breakLine: true } },
-    { text: '第二行', options: { breakLine: true } },
-    { text: '第三行' },
-  ], { x: 1, y: 1, w: 4, h: 2, fontSize: 24, color: '000000' });
-
-  slide.addText('甲\n乙\n丙', { x: 1, y: 3.5, w: 4, h: 2, fontSize: 24, color: '000000' });
-
-  const { svg } = renderPptPageAsSvg(pptx, 1);
-  assert.match(svg, /第一行<\/tspan><tspan[^>]*>第二行<\/tspan><tspan[^>]*>第三行/);
-  assert.match(svg, /甲<\/tspan><tspan[^>]*>乙<\/tspan><tspan[^>]*>丙/);
-});
-
-test('预览渲染会按文本框宽度自动换行中文正文', () => {
-  const pptx = new PptxGenJS();
-  const slide = pptx.addSlide();
-
-  slide.addText('请在右侧告诉智能助手，你想做什么样的演示稿。', {
-    x: 0.8,
-    y: 1.96,
-    w: 11,
-    h: 1.72,
-    fontSize: 56,
-    color: '334155',
-  });
-
-  const { svg } = renderPptPageAsSvg(pptx, 1);
-  assert.match(svg, /请在右侧告诉智能助手，你想做/);
-  assert.match(svg, /什么样的演示稿。/);
-  assert.match(svg, /<\/tspan><tspan[^>]*>/);
 });
