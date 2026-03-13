@@ -69,7 +69,7 @@ export function readProjectPreviewImage(
 ): { slideCount: number; mediaType: 'image/png'; data: string } {
   const previews = listProjectPreviewImages(projectId);
   if (previews.length === 0) {
-    throw new Error('还没有缓存预览图，请先在页面里刷新预览。');
+    throw new Error('项目预览缓存还是空的，请先在页面里重新生成预览。');
   }
 
   const preview = previews.find(item => item.pageNumber === pageNumber);

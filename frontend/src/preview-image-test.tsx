@@ -103,11 +103,11 @@ function PreviewImageTestPage() {
                 <article key={index} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <div className="text-sm font-medium text-white">第 {index + 1} 页</div>
-                    <a
-                        href={image}
+                     <a
+                       href={image}
                        download={buildDownloadName(projectId, index)}
-                      className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-200 hover:border-slate-500"
-                    >
+                        className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-200 hover:border-slate-500"
+                      >
                       下载这一页
                     </a>
                   </div>

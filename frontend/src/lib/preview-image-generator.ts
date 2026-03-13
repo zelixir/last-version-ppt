@@ -1,8 +1,7 @@
 import { WorkerBrowserConverter, createWasmPaths, type WasmLoadProgress } from '@matbee/libreoffice-converter/browser'
 
 const LIBREOFFICE_WORKER_PATH = '/libreoffice/browser.worker.global.js'
-const PREVIEW_DPI = 180
-const PREVIEW_MAX_DIMENSION = 2200
+const PREVIEW_WIDTH = 1600
 
 export interface PreviewProgressStatus {
   message: string
@@ -76,7 +75,7 @@ async function imageDataToPngBlob(data: Uint8Array, width: number, height: numbe
   const context = canvas.getContext('2d')
   if (!context) throw new Error('当前浏览器不支持生成预览图片')
 
-  const clamped = new Uint8ClampedArray(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength))
+  const clamped = Uint8ClampedArray.from(data)
   context.putImageData(new ImageData(clamped, width, height), 0, 0)
 
   const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
@@ -95,14 +94,11 @@ export async function capturePreviewImages(
   for (let index = 0; index < pageCount; index += 1) {
     const currentPage = index + 1
     onProgress?.({
-      message: `正在生成第 ${currentPage} / ${pageCount} 页预览图…`,
+      message: `正在生成第 ${currentPage} / ${pageCount} 页高保真预览图…`,
       percent: Math.round((currentPage / Math.max(pageCount, 1)) * 100),
     })
-    const page = await converter.renderPageFullQuality(pptxData, { inputFormat: 'pptx' }, index, {
-      dpi: PREVIEW_DPI,
-      maxDimension: PREVIEW_MAX_DIMENSION,
-    })
-    images.push(await imageDataToPngBlob(page.data, page.width, page.height))
+    const preview = await converter.renderPageViaConvert(pptxData, { inputFormat: 'pptx' }, index, PREVIEW_WIDTH)
+    images.push(preview.isPng ? new Blob([Uint8Array.from(preview.data)], { type: 'image/png' }) : await imageDataToPngBlob(preview.data, preview.width, preview.height))
   }
 
   return images

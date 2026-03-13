@@ -346,7 +346,9 @@ export default function Project() {
     const eventSource = new EventSource(`/api/projects/${encodeURIComponent(projectKey)}/files/watch`)
     const handleChange = (event: MessageEvent<string>) => {
       const payload = JSON.parse(event.data || '{}') as { fileName?: string }
-      const changedFileName = typeof payload.fileName === 'string' && payload.fileName.trim() ? payload.fileName : null
+      const changedFileName = typeof payload.fileName === 'string' && payload.fileName.trim()
+        ? payload.fileName
+        : null
       if (changedFileName === 'preview' || changedFileName?.startsWith('preview/')) return
       fetchProject().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
       refreshPreview().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
