@@ -6,6 +6,7 @@ import {
   PPT_TEXT_SAFE_HEIGHT_PADDING,
   calculateMaxCharsPerLine,
   calculateSafeTextBoxHeight,
+  recommendSingleLineChars,
 } from '../backend/src/ppt-text-layout.ts';
 
 const fontSizes = [88, 72, 56, 48];
@@ -33,5 +34,6 @@ console.table(sampleBoxes.map(item => ({
   width: item.width,
   fontSize: item.fontSize,
   maxChars: calculateMaxCharsPerLine(item.width, item.fontSize),
+  safeChars: recommendSingleLineChars(item.width, item.fontSize),
   safeHeight: calculateSafeTextBoxHeight(item.fontSize, item.lines ?? 1),
 })));

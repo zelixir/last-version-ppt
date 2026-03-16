@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
+import { warmupPreviewEngine } from '../lib/preview-image-generator'
 
 const PLACEHOLDERS = [
   '做一个 8 页的产品介绍 PPT，风格科技感强，包含时间线与功能亮点。',
@@ -104,6 +105,7 @@ export default function Home() {
       if (!response.ok) throw new Error(data.error || '创建项目失败')
       const prompt = requirement.trim()
       const nextSeed = placeholderSeed + 1
+      void warmupPreviewEngine()
       setPlaceholderSeed(nextSeed)
       setRequirement(PLACEHOLDERS[nextSeed % PLACEHOLDERS.length])
       navigate(`/projects/${data.id}`, { state: { autoPrompt: prompt, suggestedModelId: selectedModelId } })

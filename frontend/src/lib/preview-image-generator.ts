@@ -87,6 +87,14 @@ async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus
   }
 }
 
+export async function warmupPreviewEngine(onProgress?: (progress: PreviewProgressStatus) => void) {
+  try {
+    await getPreviewConverter(onProgress)
+  } catch {
+    // Let the real preview flow surface initialization errors to the user.
+  }
+}
+
 async function runPreviewTask<T>(
   task: () => Promise<T>,
   onProgress?: (progress: PreviewProgressStatus) => void,

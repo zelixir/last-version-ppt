@@ -234,7 +234,7 @@ function buildSampleProjectScript() {
   [
     { no: '01', title: '封面', desc: '说明这份演示稿要讲什么。' },
     { no: '02', title: '目录', desc: '把章节顺序列清楚。' },
-    { no: '03', title: '正文', desc: '用正文页检查大字号排版。' }
+    { no: '03', title: '正文', desc: '用正文页检查字号排版。' }
   ].forEach((item, index) => {
     const y = 1.42 + index * 1.62;
     agenda.addText(item.no, {
@@ -309,7 +309,7 @@ function buildSampleProjectScript() {
     bold: true,
     color: '1D4ED8'
   });
-  body.addText('截图保存后，就能逐页确认排版。', {
+  body.addText('截图保存后，就能确认排版。', {
     ...baseTextStyle,
     x: 6.32,
     y: 2.52,

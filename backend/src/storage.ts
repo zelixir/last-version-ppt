@@ -68,9 +68,9 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '0F172A'
   });
   [
-    { no: '01', title: '封面', desc: '先讲清主题、对象和这次要解决的问题。' },
-    { no: '02', title: '目录', desc: '把章节顺序列出来，方便快速理解整份内容。' },
-    { no: '03', title: '正文', desc: '按重点内容展开说明，再补数据、方案和下一步。' },
+    { no: '01', title: '封面', desc: '先讲清主题和要解决的问题。' },
+    { no: '02', title: '目录', desc: '把章节顺序列出来方便理解。' },
+    { no: '03', title: '正文', desc: '按重点展开说明并补后续动作。' },
   ].forEach((item, index) => {
     const y = page.sectionTop + index * 1.62;
     agenda.addText(item.no, {

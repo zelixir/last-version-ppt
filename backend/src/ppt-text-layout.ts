@@ -1,6 +1,7 @@
 export const PPT_TEXT_LINE_HEIGHT_FACTOR = 1.67;
 export const PPT_TEXT_CHAR_WIDTH_FACTOR = 2.3;
 export const PPT_TEXT_SAFE_HEIGHT_PADDING = 0.02;
+export const PPT_TEXT_SAFE_SINGLE_LINE_RESERVED_CHARS = 4;
 export const PPT_CHARACTERS_PER_INCH = 72;
 
 function roundUpToHundredth(value: number): number {
@@ -21,6 +22,6 @@ export function calculateMaxCharsPerLine(width: number, fontSize: number, charWi
   return Math.max(1, Math.floor((effectiveWidth * effectiveCharFactor) / fontSize));
 }
 
-export function recommendSingleLineChars(width: number, fontSize: number, reservedChars = 2): number {
+export function recommendSingleLineChars(width: number, fontSize: number, reservedChars = PPT_TEXT_SAFE_SINGLE_LINE_RESERVED_CHARS): number {
   return Math.max(1, calculateMaxCharsPerLine(width, fontSize) - reservedChars);
 }
