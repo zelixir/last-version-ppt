@@ -57,7 +57,10 @@ async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus
 
     sharedConverterPromise = converter.initialize()
       .then(async () => {
-        // After init, upload system fonts into the WASM virtual filesystem
+        // After init, upload system fonts into the WASM virtual filesystem.
+        // NOTE: WorkerBrowserConverter does not expose a public font API, so we
+        // access its internal Worker instance as a temporary workaround until
+        // the library provides an official mechanism.
         try {
           await fontsPromise
           const worker = (converter as any).worker as Worker | undefined

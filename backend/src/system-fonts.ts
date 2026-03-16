@@ -40,6 +40,7 @@ function collectFontFiles(dir: string, maxDepth = 3, currentDepth = 0): Array<{ 
   try {
     const entries = readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue; // skip symlinks to avoid circular traversal
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         results.push(...collectFontFiles(fullPath, maxDepth, currentDepth + 1));
