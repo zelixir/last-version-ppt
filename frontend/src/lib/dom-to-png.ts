@@ -41,6 +41,22 @@ async function waitForFonts(root: HTMLElement) {
   await document.fonts.ready
 }
 
+async function waitForImages(root: HTMLElement) {
+  const images = Array.from(root.querySelectorAll('img'))
+  await Promise.all(images.map(image => {
+    if (image.complete && image.naturalWidth > 0) return Promise.resolve()
+    return new Promise<void>(resolve => {
+      const finish = () => {
+        image.removeEventListener('load', finish)
+        image.removeEventListener('error', finish)
+        resolve()
+      }
+      image.addEventListener('load', finish)
+      image.addEventListener('error', finish)
+    })
+  }))
+}
+
 function copyStylesRecursively(source: Element, target: Element) {
   const computed = window.getComputedStyle(source)
   for (const property of computed) {
@@ -77,26 +93,6 @@ async function inlineImages(sourceRoot: HTMLElement, targetRoot: HTMLElement) {
   }))
 }
 
-async function waitForImages(root: HTMLElement) {
-  const images = Array.from(root.querySelectorAll('img'))
-  await Promise.all(images.map(image => {
-    if (image.complete && image.naturalWidth > 0) return Promise.resolve()
-    return new Promise<void>(resolve => {
-      const finish = () => {
-        image.removeEventListener('load', finish)
-        image.removeEventListener('error', finish)
-        resolve()
-      }
-      image.addEventListener('load', finish)
-      image.addEventListener('error', finish)
-    })
-  }))
-}
-
-function buildSvgDataUrl(svg: string) {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-}
-
 export async function captureElementAsImageDataUrl(element: HTMLElement, pixelRatio = 2) {
   await nextFrame()
   await waitForFonts(element)
@@ -121,7 +117,7 @@ export async function captureElementAsImageDataUrl(element: HTMLElement, pixelRa
   <foreignObject x="0" y="0" width="100%" height="100%">${markup}</foreignObject>
 </svg>`
 
-  const svgDataUrl = buildSvgDataUrl(svg)
+  const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
   const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
   const objectUrl = URL.createObjectURL(blob)
 

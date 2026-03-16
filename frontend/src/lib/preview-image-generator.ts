@@ -22,11 +22,27 @@ interface CapturePreviewImagesOptions {
   onProgress?: (progress: PreviewProgressStatus) => void
 }
 
+interface PreviewCaptureResult {
+  blob: Blob
+  extension: 'png' | 'svg'
+  mimeType: 'image/png' | 'image/svg+xml'
+}
+
 function dataUrlToBlob(dataUrl: string) {
   return fetch(dataUrl).then(response => {
     if (!response.ok) throw new Error('预览图片生成失败，请稍后再试')
     return response.blob()
   })
+}
+
+function getCaptureResultMeta(dataUrl: string): Pick<PreviewCaptureResult, 'extension' | 'mimeType'> {
+  if (dataUrl.startsWith('data:image/png')) {
+    return { extension: 'png', mimeType: 'image/png' }
+  }
+  if (dataUrl.startsWith('data:image/svg+xml')) {
+    return { extension: 'svg', mimeType: 'image/svg+xml' }
+  }
+  throw new Error('预览图导出失败，请稍后再试')
 }
 
 function waitForSlideElement(container: HTMLElement) {
@@ -65,7 +81,12 @@ async function renderSlideToBlob(root: Root, host: HTMLElement, slide: PreviewSl
   root.render(createElement(SlideCanvas, { slide, presentation }))
   const slideElement = await waitForSlideElement(host)
   const dataUrl = await captureElementAsImageDataUrl(slideElement)
-  return dataUrlToBlob(dataUrl)
+  const { extension, mimeType } = getCaptureResultMeta(dataUrl)
+  return {
+    blob: await dataUrlToBlob(dataUrl),
+    extension,
+    mimeType,
+  } satisfies PreviewCaptureResult
 }
 
 export async function capturePreviewImages(
@@ -73,7 +94,7 @@ export async function capturePreviewImages(
 ) {
   const { presentation, onProgress } = options
   const pageCount = presentation.slides.length
-  const images: Blob[] = []
+  const images: PreviewCaptureResult[] = []
   const host = createRenderHost(presentation)
   const root = createRoot(host)
 
@@ -97,14 +118,14 @@ export async function capturePreviewImages(
 
 export async function uploadPreviewImages(
   projectId: string,
-  images: Blob[],
+  images: PreviewCaptureResult[],
   onProgress?: (progress: PreviewProgressStatus) => void,
 ) {
   onProgress?.({ message: '正在保存预览图，稍后就能直接打开…' })
 
   const formData = new FormData()
   images.forEach((image, index) => {
-    formData.append('files', new File([image], `slide-${index + 1}.png`, { type: 'image/png' }))
+    formData.append('files', new File([image.blob], `slide-${index + 1}.${image.extension}`, { type: image.mimeType }))
   })
 
   const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/preview-images`, {

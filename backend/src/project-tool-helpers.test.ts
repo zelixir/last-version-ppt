@@ -54,13 +54,33 @@ test('图片工具结果会保留给多模态模型使用的图片内容', () =>
 test('可以读取 preview 文件夹里的指定页面预览图片', async () => {
   await withTestProject(async projectId => {
     replaceProjectPreviewImages(projectId, [
-      { pageNumber: 1, data: Uint8Array.from([1, 2, 3, 4]) },
-      { pageNumber: 2, data: Uint8Array.from([5, 6, 7, 8]) },
+      { pageNumber: 1, extension: 'png', data: Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]) },
+      { pageNumber: 2, extension: 'png', data: Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 5, 6, 7, 8]) },
     ]);
 
     const preview = readProjectPreviewImage(projectId, 1);
     assert.equal(preview.slideCount, 2);
     assert.equal(preview.mediaType, 'image/png');
-    assert.equal(Buffer.from(preview.data, 'base64').toString('hex'), '01020304');
+    assert.equal(Buffer.from(preview.data, 'base64').toString('hex'), '89504e470d0a1a0a01020304');
+  });
+});
+
+test('预览缓存会拒绝格式和后缀不一致的预览图片', async () => {
+  await withTestProject(async projectId => {
+    assert.throws(() => replaceProjectPreviewImages(projectId, [
+      { pageNumber: 1, extension: 'png', data: new TextEncoder().encode('<?xml version="1.0"?><svg></svg>') },
+    ]), /格式和文件后缀不一致/);
+  });
+});
+
+test('可以读取 svg 格式的 preview 图片', async () => {
+  await withTestProject(async projectId => {
+    replaceProjectPreviewImages(projectId, [
+      { pageNumber: 1, extension: 'svg', data: new TextEncoder().encode('<?xml version="1.0"?><svg></svg>') },
+    ]);
+
+    const preview = readProjectPreviewImage(projectId, 1);
+    assert.equal(preview.slideCount, 1);
+    assert.equal(preview.mediaType, 'image/svg+xml');
   });
 });

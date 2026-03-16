@@ -191,6 +191,15 @@ function getProjectFileUrl(projectId: string, fileName: string): string {
   return `/api/projects/${encodeURIComponent(projectId)}/files/raw?fileName=${encodeURIComponent(fileName)}`;
 }
 
+function isFormFileLike(value: unknown): value is { name: string; arrayBuffer: () => Promise<ArrayBuffer> } {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && typeof (value as { name?: unknown }).name === 'string'
+    && typeof (value as { arrayBuffer?: unknown }).arrayBuffer === 'function',
+  );
+}
+
 function extractMessageText(message: ProjectChatUiMessage): string {
   return (message.parts ?? [])
     .filter((part): part is Extract<ProjectChatUiMessage['parts'][number], { type: 'text' }> => part.type === 'text')
@@ -725,7 +734,7 @@ const app = new Elysia()
     const files = form.getAll('files');
     const uploaded: string[] = [];
     for (const entry of files) {
-      if (!(entry instanceof File)) continue;
+      if (!isFormFileLike(entry)) continue;
       const buffer = Buffer.from(await entry.arrayBuffer());
       const filePath = resolveProjectFile(params.id, entry.name);
       mkdirSync(path.dirname(filePath), { recursive: true });
@@ -741,19 +750,25 @@ const app = new Elysia()
 
     const form = await request.formData();
     const files = form.getAll('files');
-    const images: Array<{ pageNumber: number; data: Uint8Array }> = [];
+    const images: Array<{ pageNumber: number; extension: 'png' | 'svg'; data: Uint8Array }> = [];
 
     for (const entry of files) {
-      if (!(entry instanceof File)) continue;
-      const match = entry.name.match(/^slide-(\d+)\.png$/i);
+      if (!isFormFileLike(entry)) continue;
+      const match = entry.name.match(/^slide-(\d+)\.(png|svg)$/i);
       if (!match) continue;
       images.push({
         pageNumber: Number(match[1]),
+        extension: match[2].toLowerCase() as 'png' | 'svg',
         data: new Uint8Array(await entry.arrayBuffer()),
       });
     }
 
-    const storedImages = replaceProjectPreviewImages(params.id, images);
+    let storedImages;
+    try {
+      storedImages = replaceProjectPreviewImages(params.id, images);
+    } catch (error) {
+      return errorResponse(error instanceof Error ? error.message : '保存预览图失败', 400);
+    }
     updateProjectRecord(params.id, { touch: true });
 
     return {

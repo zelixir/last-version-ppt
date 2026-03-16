@@ -9,8 +9,10 @@ function readInitialProjectId() {
   return new URLSearchParams(window.location.search).get('projectId')?.trim() ?? ''
 }
 
-function buildDownloadName(projectId: string, index: number) {
-  return `${projectId || 'project'}-slide-${index + 1}.png`
+function buildDownloadName(projectId: string, imageUrl: string, index: number) {
+  const pathname = imageUrl.split('?')[0]
+  const extension = pathname.endsWith('.svg') ? 'svg' : 'png'
+  return `${projectId || 'project'}-slide-${index + 1}.${extension}`
 }
 
 function PreviewImageTestPage() {
@@ -104,8 +106,8 @@ function PreviewImageTestPage() {
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <div className="text-sm font-medium text-white">第 {index + 1} 页</div>
                      <a
-                       href={image}
-                       download={buildDownloadName(projectId, index)}
+                        href={image}
+                        download={buildDownloadName(projectId, image, index)}
                         className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-200 hover:border-slate-500"
                       >
                       下载这一页
