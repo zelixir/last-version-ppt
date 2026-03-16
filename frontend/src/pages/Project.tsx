@@ -260,7 +260,7 @@ export default function Project() {
     })
   }
 
-  const runPreviewRefreshOnce = async (runId: number) => {
+  const executePreviewRefresh = async (runId: number) => {
     const targetProjectKey = projectKeyRef.current
     const isStale = () => projectKeyRef.current !== targetProjectKey || previewRefreshRunIdRef.current !== runId
 
@@ -314,7 +314,7 @@ export default function Project() {
         previewRefreshQueuedRef.current = false
         const runId = previewRefreshRunIdRef.current + 1
         previewRefreshRunIdRef.current = runId
-        await runPreviewRefreshOnce(runId)
+        await executePreviewRefresh(runId)
       }
     })()
 

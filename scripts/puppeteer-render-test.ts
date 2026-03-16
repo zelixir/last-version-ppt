@@ -45,6 +45,7 @@ const defaultOutputDir = path.join(
 function parseArgs(argv: string[]): RunOptions {
   let outputDir = defaultOutputDir;
   let skipBuild = false;
+  // 首次冷启动 LibreOffice WASM + 字体上传会明显更慢，多页示例需要预留更充足的等待时间。
   let timeoutMs = 420_000;
 
   for (let index = 0; index < argv.length; index += 1) {

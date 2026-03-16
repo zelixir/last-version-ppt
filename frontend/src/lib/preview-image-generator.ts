@@ -99,6 +99,7 @@ async function runPreviewTask<T>(
 
   const previousTask = previewTaskQueue
   let releaseCurrentTask = () => {}
+  // 先把当前任务挂到队尾，再等待上一个任务结束，这样每次只会有一个 LibreOffice 预览任务进入执行区。
   previewTaskQueue = new Promise(resolve => {
     releaseCurrentTask = resolve
   })

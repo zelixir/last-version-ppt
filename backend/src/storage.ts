@@ -15,12 +15,12 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     titleTop: 0.52,
     sectionTop: 1.42,
   };
-  const textBox = { margin: 0, breakLine: false };
+  const textOptions = { margin: 0, breakLine: false };
 
   const cover = pptx.addSlide();
   cover.background = { color: '0F172A' };
   cover.addText('新的演示文稿', {
-    ...textBox,
+    ...textOptions,
     x: page.left,
     y: 0.76,
     w: page.width,
@@ -30,7 +30,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: 'FFFFFF'
   });
   cover.addText('请在右侧告诉智能助手，你想做什么样的演示稿。', {
-    ...textBox,
+    ...textOptions,
     x: page.left,
     y: 2.18,
     w: page.width,
@@ -39,7 +39,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: 'CBD5E1'
   });
   cover.addText('如果有图片、表格或资料，也可以先上传，再说明想放到哪一页。', {
-    ...textBox,
+    ...textOptions,
     x: page.left,
     y: 3.4,
     w: page.width,
@@ -51,7 +51,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
   const agenda = pptx.addSlide();
   agenda.background = { color: 'F8FAFC' };
   agenda.addText('这份演示稿会按下面的结构继续补全', {
-    ...textBox,
+    ...textOptions,
     x: page.left,
     y: page.titleTop,
     w: page.width,
@@ -67,7 +67,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
   ].forEach((item, index) => {
     const y = page.sectionTop + index * 1.62;
     agenda.addText(item.no, {
-      ...textBox,
+      ...textOptions,
       x: page.left,
       y,
       w: 0.9,
@@ -77,7 +77,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
       color: '2563EB'
     });
     agenda.addText(item.title, {
-      ...textBox,
+      ...textOptions,
       x: 1.9,
       y: y + 0.04,
       w: 2.6,
@@ -87,7 +87,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
       color: '0F172A'
     });
     agenda.addText(item.desc, {
-      ...textBox,
+      ...textOptions,
       x: 4.94,
       y: y + 0.04,
       w: 6.98,
@@ -100,7 +100,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
   const body = pptx.addSlide();
   body.background = { color: 'FFFFFF' };
   body.addText('你可以继续这样完善正文', {
-    ...textBox,
+    ...textOptions,
     x: page.left,
     y: page.titleTop,
     w: page.width,
@@ -119,7 +119,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     line: { color: 'E2E8F0', pt: 1 }
   });
   body.addText('核心信息', {
-    ...textBox,
+    ...textOptions,
     x: page.left,
     y: 1.56,
     w: 3.4,
@@ -129,7 +129,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '0F172A'
   });
   body.addText('• 这一页写结论\\n• 下一行补原因\\n• 最后一行写动作', {
-    ...textBox,
+    ...textOptions,
     x: page.left,
     y: 2.34,
     w: 5.24,
@@ -138,7 +138,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '334155'
   });
   body.addText('关键数字', {
-    ...textBox,
+    ...textOptions,
     x: 6.32,
     y: 1.56,
     w: 2.7,
@@ -148,7 +148,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '1D4ED8'
   });
   body.addText('把最想让人记住的结果放在这里。', {
-    ...textBox,
+    ...textOptions,
     x: 6.32,
     y: 2.34,
     w: 5.2,
@@ -157,7 +157,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '1E3A8A'
   });
   body.addText('下一步动作', {
-    ...textBox,
+    ...textOptions,
     x: 6.32,
     y: 4.1,
     w: 3.2,
@@ -167,7 +167,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '0F172A'
   });
   body.addText('说明负责人、时间和预期结果，整页会更完整。', {
-    ...textBox,
+    ...textOptions,
     x: 6.32,
     y: 4.88,
     w: 5.16,
