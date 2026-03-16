@@ -481,7 +481,7 @@ async function waitForRenderResult(page: Page, timeoutMs: number) {
 
 async function saveCanvasMetrics(page: Page, outputDir: string, sessionLog: (message: string) => void) {
   await page.setViewport({ width: 1200, height: 800, deviceScaleFactor: 1 });
-      await page.setContent(`<!doctype html><html><head><style>
+  await page.setContent(`<!doctype html><html><head><style>
     @font-face {
       font-family: 'LastVersionPptCjkUi';
       src: url('${new URL(canvasFontPath, serverOrigin).toString()}') format('opentype');
