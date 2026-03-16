@@ -19,6 +19,17 @@ var _fontsInstalled = false;
 var _pendingFonts = [];
 var _pendingFontRequestId = null;
 
+function _ensureDirectory(path) {
+  if (!self.Module || !self.Module.FS) return;
+  var FS = self.Module.FS;
+  var segments = path.split('/').filter(Boolean);
+  var currentPath = '';
+  for (var i = 0; i < segments.length; i++) {
+    currentPath += '/' + segments[i];
+    try { FS.mkdir(currentPath); } catch (_e) { /* already exists */ }
+  }
+}
+
 /**
  * Write font data into the WASM virtual filesystem.
  */
@@ -29,8 +40,7 @@ function _installFonts(fonts) {
   var FS = self.Module.FS;
 
   // Ensure the custom fonts directory exists
-  try { FS.mkdir('/usr/share/fonts'); } catch (_e) { /* already exists */ }
-  try { FS.mkdir('/usr/share/fonts/custom'); } catch (_e) { /* already exists */ }
+  _ensureDirectory('/usr/share/fonts/custom');
 
   var installed = 0;
   var installedFonts = [];
