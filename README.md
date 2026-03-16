@@ -38,6 +38,26 @@ http://localhost:5173/preview-image-test.html?projectId=你的项目编号
 
 页面会直接读取项目脚本，先在浏览器里排版，再把每一页转成预览图，方便确认预览功能是否正常。
 
+如果你想用 Puppeteer 自动跑完整条链路、把中文预览图和排查日志都保存下来，可以运行：
+
+```bash
+bun run test:render
+```
+
+脚本会自动：
+
+- 构建前端页面
+- 启动本地后端
+- 新建一个带中文内容的测试项目
+- 打开“预览出图测试”页面并触发出图
+- 把生成出来的第一页图片、页面截图和日志文件保存到临时目录
+
+如果你希望把文件存到指定位置，可以这样运行：
+
+```bash
+bun run scripts/puppeteer-render-test.ts --output-dir 你的目录
+```
+
 ## 发布 Windows EXE
 
 仓库提供了一个 GitHub Actions 手动工作流：进入 Actions，运行“发布 Windows 可执行文件”，输入版本号后即可构建 exe 并发布到对应的 GitHub Release。
