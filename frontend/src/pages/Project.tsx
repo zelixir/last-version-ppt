@@ -10,7 +10,7 @@ import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
-import { capturePreviewImages, uploadPreviewImages } from '../lib/preview-image-generator'
+import { capturePreviewImages, uploadPreviewImages, warmupPreviewEngine } from '../lib/preview-image-generator'
 import { runProjectPreview } from '../lib/project-preview'
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
@@ -366,6 +366,7 @@ export default function Project() {
   }
 
   useEffect(() => {
+    void warmupPreviewEngine()
     Promise.all([fetchProject(), fetchModels()])
       .then(() => refreshPreview())
       .catch(err => {
