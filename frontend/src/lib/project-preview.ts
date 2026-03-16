@@ -8,6 +8,9 @@ export interface ProjectPreviewRunResult {
 
 const EMU_PER_INCH = 914400
 const PROJECT_FILE_API_PREFIX = '/api/projects'
+export const DEFAULT_PPT_LAYOUT = 'LAYOUT_WIDE'
+export const DEFAULT_PPT_WIDTH = 13.333
+export const DEFAULT_PPT_HEIGHT = 7.5
 
 function buildProjectResourceUrl(projectId: string, fileName: string) {
   return `${PROJECT_FILE_API_PREFIX}/${encodeURIComponent(projectId)}/files/raw?fileName=${encodeURIComponent(fileName)}`
@@ -161,7 +164,7 @@ export async function runProjectPreview(projectId: string, code: string): Promis
   }
 
   const pptx = new PptxGenJS()
-  pptx.layout = 'LAYOUT_WIDE'
+  pptx.layout = DEFAULT_PPT_LAYOUT
 
   const context = {
     pptx,
@@ -181,8 +184,8 @@ export async function runProjectPreview(projectId: string, code: string): Promis
 
   return {
     presentation: {
-      width: toInches(layout?.width) || 13.333,
-      height: toInches(layout?.height) || 7.5,
+      width: toInches(layout?.width) || DEFAULT_PPT_WIDTH,
+      height: toInches(layout?.height) || DEFAULT_PPT_HEIGHT,
       slides: ((finalPptx as any)._slides ?? []).map((slide: any) => serializeSlide(projectId, slide)),
       logs,
     },

@@ -45,7 +45,8 @@ const defaultOutputDir = path.join(
 function parseArgs(argv: string[]): RunOptions {
   let outputDir = defaultOutputDir;
   let skipBuild = false;
-  let timeoutMs = 240_000;
+  // 首次冷启动 LibreOffice WASM + 字体上传会明显更慢，多页示例需要预留更充足的等待时间。
+  let timeoutMs = 420_000;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -178,61 +179,162 @@ function buildSampleProjectScript() {
   pptx.author = 'puppeteer render test';
   pptx.subject = '中文预览验证';
   pptx.title = '中文出图验证';
+  const page = { left: 0.72, width: 11.56, titleTop: 0.52 };
+  const baseTextStyle = { fontFace: 'Noto Sans CJK SC', margin: 0 };
 
-  const slide = pptx.addSlide();
-  const baseTextStyle = { fontFace: 'Noto Sans CJK SC' };
-  slide.background = { color: 'F8FAFC' };
-  slide.addText('中文预览验证成功', {
+  const cover = pptx.addSlide();
+  cover.background = { color: '0F172A' };
+  cover.addText('中文预览验证成功', {
     ...baseTextStyle,
-    x: 0.8,
-    y: 0.72,
-    w: 11.2,
-    h: 0.7,
-    fontSize: 28,
+    x: page.left,
+    y: 0.76,
+    w: page.width,
+    h: 1.3,
+    fontSize: 88,
+    bold: true,
+    color: 'FFFFFF'
+  });
+  cover.addText('封面、目录、正文三页都能正常出图，说明整条链路已经通了。', {
+    ...baseTextStyle,
+    x: page.left,
+    y: 2.18,
+    w: page.width,
+    h: 0.9,
+    fontSize: 56,
+    color: 'CBD5E1'
+  });
+  cover.addText('这组截图会保存到临时目录，用来确认中文、字号和排版都没有异常。', {
+    ...baseTextStyle,
+    x: page.left,
+    y: 3.4,
+    w: page.width,
+    h: 0.82,
+    fontSize: 48,
+    color: 'E2E8F0'
+  });
+
+  const agenda = pptx.addSlide();
+  agenda.background = { color: 'F8FAFC' };
+  agenda.addText('目录', {
+    ...baseTextStyle,
+    x: page.left,
+    y: page.titleTop,
+    w: page.width,
+    h: 0.86,
+    fontSize: 72,
     bold: true,
     color: '0F172A'
   });
-  slide.addText('这张图片由 Puppeteer 自动触发生成，用来确认汉字能正常显示。', {
+  [
+    { no: '01', title: '封面', desc: '说明这份演示稿要讲什么、给谁看。' },
+    { no: '02', title: '目录', desc: '把章节顺序列清楚，避免读者迷路。' },
+    { no: '03', title: '正文', desc: '用一页典型正文验证大字号排版是否稳定。' }
+  ].forEach((item, index) => {
+    const y = 1.42 + index * 1.62;
+    agenda.addText(item.no, {
+      ...baseTextStyle,
+      x: page.left,
+      y,
+      w: 0.9,
+      h: 0.58,
+      fontSize: 56,
+      bold: true,
+      color: '2563EB'
+    });
+    agenda.addText(item.title, {
+      ...baseTextStyle,
+      x: 1.9,
+      y: y + 0.04,
+      w: 2.6,
+      h: 0.5,
+      fontSize: 48,
+      bold: true,
+      color: '0F172A'
+    });
+    agenda.addText(item.desc, {
+      ...baseTextStyle,
+      x: 4.94,
+      y: y + 0.04,
+      w: 6.98,
+      h: 0.46,
+      fontSize: 48,
+      color: '475569'
+    });
+  });
+
+  const body = pptx.addSlide();
+  body.background = { color: 'FFFFFF' };
+  body.addText('正文页排版检查', {
     ...baseTextStyle,
-    x: 0.8,
-    y: 1.7,
-    w: 11.4,
-    h: 0.7,
-    fontSize: 18,
+    x: page.left,
+    y: page.titleTop,
+    w: page.width,
+    h: 0.86,
+    fontSize: 72,
+    bold: true,
+    color: '0F172A'
+  });
+  body.addText('检查项', {
+    ...baseTextStyle,
+    x: page.left,
+    y: 1.56,
+    w: 3.0,
+    h: 0.58,
+    fontSize: 56,
+    bold: true,
+    color: '0F172A'
+  });
+  body.addText('• 标题不要重叠\\n• 正文不要过早换行\\n• 中文不要变成方块', {
+    ...baseTextStyle,
+    x: page.left,
+    y: 2.34,
+    w: 5.24,
+    h: 1.86,
+    fontSize: 48,
     color: '334155'
   });
-  slide.addText('你好，世界！欢迎使用最后一版 PPT。', {
+  body.addText('检查结果', {
     ...baseTextStyle,
-    x: 0.8,
-    y: 2.72,
-    w: 11.2,
-    h: 0.8,
-    fontSize: 24,
-    color: '1D4ED8',
-    bold: true
+    x: 6.32,
+    y: 1.56,
+    w: 2.7,
+    h: 0.58,
+    fontSize: 56,
+    bold: true,
+    color: '1D4ED8'
   });
-  slide.addText('日志会同时保存浏览器输出、网络请求、页面状态和后端输出，方便排查问题。', {
+  body.addText('截图保存后，就能逐页确认排版是否稳定。', {
     ...baseTextStyle,
-    x: 0.8,
-    y: 3.86,
-    w: 11.4,
+    x: 6.32,
+    y: 2.34,
+    w: 5.2,
     h: 1.1,
-    fontSize: 18,
-    color: '475569'
+    fontSize: 48,
+    color: '1E3A8A'
   });
-  slide.addText('生成时间：' + new Date().toLocaleString('zh-CN', { hour12: false }), {
+  body.addText('生成时间', {
     ...baseTextStyle,
-    x: 0.8,
-    y: 5.38,
-    w: 11,
-    h: 0.4,
-    fontSize: 12,
-    color: '64748B'
+    x: 6.32,
+    y: 4.1,
+    w: 2.7,
+    h: 0.58,
+    fontSize: 56,
+    bold: true,
+    color: '0F172A'
+  });
+  body.addText(new Date().toLocaleString('zh-CN', { hour12: false }), {
+    ...baseTextStyle,
+    x: 6.32,
+    y: 4.88,
+    w: 5.16,
+    h: 1.1,
+    fontSize: 48,
+    color: '475569'
   });
 
   log('开始生成中文预览图');
-  log('页面里应该能看到“你好，世界！欢迎使用最后一版 PPT。”这行文字');
-  log({ slideCount: 1, note: '如果日志文件里出现这条记录，说明页面脚本日志已经通了。' });
+  log('页面里应该能看到封面、目录、正文共 3 页。');
+  log({ slideCount: 3, note: '如果三张图片都生成成功，说明当前默认尺寸能承载 88/72/56/48 这组字号。' });
 };
 `;
 }
@@ -356,14 +458,21 @@ async function waitForRenderResult(page: Page, timeoutMs: number) {
   return await page.evaluate(() => window.__PREVIEW_IMAGE_TEST_STATE__ || null) as RenderPageState | null;
 }
 
-async function saveImage(outputDir: string, imageUrl: string, sessionLog: (message: string) => void) {
-  const absoluteUrl = new URL(imageUrl, serverOrigin).toString();
-  const response = await fetch(absoluteUrl);
-  if (!response.ok) throw new Error(`下载预览图失败：${response.status}`);
-  const filePath = path.join(outputDir, 'rendered-slide-1.png');
-  writeFileSync(filePath, Buffer.from(await response.arrayBuffer()));
-  sessionLog(`第一页预览图已保存：${filePath}`);
-  return filePath;
+async function saveImages(outputDir: string, imageUrls: string[], sessionLog: (message: string) => void) {
+  const filePaths: string[] = [];
+
+  for (let index = 0; index < imageUrls.length; index += 1) {
+    const imageUrl = imageUrls[index];
+    const absoluteUrl = new URL(imageUrl, serverOrigin).toString();
+    const response = await fetch(absoluteUrl);
+    if (!response.ok) throw new Error(`下载第 ${index + 1} 页预览图失败：${response.status}`);
+    const filePath = path.join(outputDir, `rendered-slide-${index + 1}.png`);
+    writeFileSync(filePath, Buffer.from(await response.arrayBuffer()));
+    filePaths.push(filePath);
+    sessionLog(`第 ${index + 1} 页预览图已保存：${filePath}`);
+  }
+
+  return filePaths;
 }
 
 async function run() {
@@ -446,7 +555,7 @@ async function run() {
       throw new Error('页面没有生成任何预览图');
     }
 
-    const imagePath = await saveImage(outputDir, state.images[0], sessionLog);
+    const imagePaths = await saveImages(outputDir, state.images, sessionLog);
     const summary = {
       ok: true,
       projectId: state.projectId,
@@ -455,7 +564,7 @@ async function run() {
       imageCount: state.images.length,
       outputDir,
       screenshotPath,
-      imagePath,
+      imagePaths,
       pageUrl,
       updatedAt: new Date().toISOString(),
     };
