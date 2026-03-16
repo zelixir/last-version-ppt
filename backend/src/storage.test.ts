@@ -32,7 +32,7 @@ test('DEFAULT_INDEX_JS uses the verified three-page default template', () => {
   assert.match(DEFAULT_INDEX_JS, /默认包含封面、目录和正文 3 页结构/);
 });
 
-test('DEFAULT_INDEX_JS keeps single-line sample copy within the safe character budget', () => {
+test('DEFAULT_INDEX_JS keeps single-line sample text within the safe character budget', () => {
   const agendaSafeChars = recommendSingleLineChars(6.98, 48);
   const bodySideSafeChars = recommendSingleLineChars(5.16, 48);
 
