@@ -75,6 +75,7 @@ const MIME_TYPES: Record<string, string> = {
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
+  '.wasm': 'application/wasm',
   '.txt': 'text/plain; charset=utf-8',
   '.md': 'text/markdown; charset=utf-8',
   '.pdf': 'application/pdf',
@@ -306,9 +307,10 @@ function syncProjectsWithFilesystem(): void {
     createProjectFiles(projectId);
   }
 
+  const syncedProjects = listProjects();
   const currentProjectId = getCurrentProjectId();
   if (currentProjectId && !directoryIds.includes(currentProjectId)) {
-    const nextProjectId = listProjects()[0]?.id;
+    const nextProjectId = projects.find(project => directoryIds.includes(project.id))?.id ?? directoryIds[0] ?? syncedProjects[0]?.id;
     if (nextProjectId) setCurrentProjectId(nextProjectId);
     else deleteSetting('currentProjectId');
   }

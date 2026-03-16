@@ -15,9 +15,9 @@ export function calculateSafeTextBoxHeight(fontSize: number, lines = 1, padding 
   return roundUpToHundredth(((fontSize * PPT_TEXT_LINE_HEIGHT_FACTOR * lines) / 100) + padding);
 }
 
-export function calculateMaxCharsPerLine(width: number, fontSize: number, charWeight = 0): number {
+export function calculateMaxCharsPerLine(width: number, fontSize: number, charWidthAdjustment = 0): number {
   const effectiveWidth = Math.floor(width * PPT_CHARACTERS_PER_INCH);
-  const effectiveCharFactor = PPT_TEXT_CHAR_WIDTH_FACTOR + charWeight;
+  const effectiveCharFactor = PPT_TEXT_CHAR_WIDTH_FACTOR + charWidthAdjustment;
   return Math.max(1, Math.floor((effectiveWidth * effectiveCharFactor) / fontSize));
 }
 
