@@ -15,9 +15,15 @@ test('DEFAULT_INDEX_JS uses the verified three-page default template', () => {
   assert.match(DEFAULT_INDEX_JS, /fontSize: 72/);
   assert.match(DEFAULT_INDEX_JS, /fontSize: 56/);
   assert.match(DEFAULT_INDEX_JS, /fontSize: 48/);
+  assert.match(DEFAULT_INDEX_JS, /h: 1\.49/);
+  assert.match(DEFAULT_INDEX_JS, /h: 1\.23/);
+  assert.match(DEFAULT_INDEX_JS, /h: 0\.96/);
+  assert.match(DEFAULT_INDEX_JS, /h: 0\.83/);
+  assert.match(DEFAULT_INDEX_JS, /h: 2\.43/);
   assert.match(DEFAULT_INDEX_JS, /margin: 0/);
   assert.match(DEFAULT_INDEX_JS, /封面/);
   assert.match(DEFAULT_INDEX_JS, /目录/);
   assert.match(DEFAULT_INDEX_JS, /正文/);
+  assert.match(DEFAULT_INDEX_JS, /写清负责人、时间和结果/);
   assert.match(DEFAULT_INDEX_JS, /默认包含封面、目录和正文 3 页结构/);
 });

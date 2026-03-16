@@ -34,6 +34,10 @@ test('PPTXGENJS_GUIDE recommends the updated default text sizes', () => {
   assert.match(PPTXGENJS_GUIDE, /fontSize: 72/);
   assert.match(PPTXGENJS_GUIDE, /fontSize: 56/);
   assert.match(PPTXGENJS_GUIDE, /fontSize: 48/);
+  assert.match(PPTXGENJS_GUIDE, /fontSize × 1\.67 ÷ 100 × 行数/);
+  assert.match(PPTXGENJS_GUIDE, /safeH = h \+ 0\.02/);
+  assert.match(PPTXGENJS_GUIDE, /目录说明框 w 6\.98、fontSize 48 时理论上限约 24 字/);
+  assert.match(PPTXGENJS_GUIDE, /正文右侧说明框 w 5\.16、fontSize 48 时理论上限约 17 字/);
   assert.match(PPTXGENJS_GUIDE, /margin: 0/);
   assert.match(PPTXGENJS_GUIDE, /左右各 0\.72 英寸边距/);
 });
