@@ -56,6 +56,7 @@ import {
   stripVersionSuffix,
 } from './storage.ts';
 import { replaceProjectPreviewImages } from './project-preview-cache.ts';
+import { listSystemFonts, getSystemFontData } from './system-fonts.ts';
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -86,7 +87,7 @@ const IMAGE_FILE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp',
 const MEDIA_FILE_EXTENSIONS = new Set(['.mp4', '.mp3', '.wav']);
 const CROSS_ORIGIN_ISOLATION_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Embedder-Policy': 'credentialless',
 } as const;
 
 function getBackendDir(): string {
@@ -790,6 +791,22 @@ const app = new Elysia()
         'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
         'Content-Disposition': buildAttachmentDisposition(`${params.id}.pptx`),
       },
+    });
+  })
+  .get('/api/system-fonts', () => {
+    const fonts = listSystemFonts();
+    return { fonts: fonts.map(f => ({ name: f.name, size: f.size })) };
+  })
+  .get('/api/system-fonts/data', ({ query }) => {
+    const name = String((query as any).name ?? '');
+    if (!name) return errorResponse('缺少 name 参数');
+    const font = getSystemFontData(name);
+    if (!font) return new Response('Not found', { status: 404 });
+    return new Response(font.data, {
+      headers: withCrossOriginIsolationHeaders({
+        'Content-Type': font.mimeType,
+        'Cache-Control': 'public, max-age=86400',
+      }),
     });
   })
   .get('/*', ({ request }) => {

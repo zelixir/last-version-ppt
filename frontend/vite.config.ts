@@ -22,7 +22,7 @@ const LIBREOFFICE_MIME_TYPES: Record<string, string> = {
 
 const CROSS_ORIGIN_ISOLATION_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Embedder-Policy': 'credentialless',
 } as const
 
 function getLibreOfficeAssetMimeType(filePath: string) {

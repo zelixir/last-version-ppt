@@ -190,7 +190,7 @@ export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimo
     '最终回复面向不懂技术的普通用户，尽量使用自然中文，避免技术术语和英文缩写。',
     supportsMultimodal
       ? '当前模型支持看图：必要时可以读取上传的图片，也可以查看当前 PPT 某一页的预览图来判断版式是否合适。'
-      : '当前模型暂时不支持看图，请主要依靠文本文件和运行结果来完成任务。',
+      : '当前模型暂时不支持看图，请主要依靠文本文件和运行结果来完成任务。如果用户问你"能做什么"或在帮助信息中，请告知用户：切换到支持多模态的模型后，AI 可以直接查看预览效果来检查排版是否合适。',
     PPTXGENJS_GUIDE,
     `当前项目：${projectId}`,
     `当前资源：${listProjectFiles(projectId).map(file => file.name).join(', ') || '（空）'}`,

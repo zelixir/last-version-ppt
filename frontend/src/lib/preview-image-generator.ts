@@ -1,6 +1,7 @@
 import { WorkerBrowserConverter, createWasmPaths, type WasmLoadProgress } from '@matbee/libreoffice-converter/browser'
+import { uploadFontsToWorker, loadSystemFonts } from './system-fonts'
 
-const LIBREOFFICE_WORKER_PATH = '/libreoffice/browser.worker.global.js'
+const LIBREOFFICE_WORKER_PATH = '/libreoffice/font-worker-wrapper.js'
 const PREVIEW_WIDTH = 1600
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 
@@ -45,6 +46,9 @@ async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus
   if (onProgress) sharedProgressListeners.add(onProgress)
 
   if (!sharedConverterPromise) {
+    // Start loading system fonts in parallel with converter initialization
+    const fontsPromise = loadSystemFonts()
+
     const converter = new WorkerBrowserConverter({
       ...createWasmPaths('/wasm/'),
       browserWorkerJs: LIBREOFFICE_WORKER_PATH,
@@ -52,7 +56,17 @@ async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus
     })
 
     sharedConverterPromise = converter.initialize()
-      .then(() => converter)
+      .then(async () => {
+        // After init, upload system fonts into the WASM virtual filesystem
+        try {
+          await fontsPromise
+          const worker = (converter as any).worker as Worker | undefined
+          if (worker) await uploadFontsToWorker(worker)
+        } catch {
+          // Font loading is best-effort; continue without fonts
+        }
+        return converter
+      })
       .catch(error => {
         sharedConverterPromise = null
         throw error
