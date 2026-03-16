@@ -6,6 +6,7 @@ import path from 'path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { fileURLToPath } from 'url';
 import puppeteer, { type ConsoleMessage, type Page } from 'puppeteer';
+import { calculateSafeTextBoxHeight } from '../backend/src/ppt-text-layout.ts';
 
 interface RenderPageState {
   projectId: string;
@@ -41,6 +42,11 @@ const defaultOutputDir = path.join(
   'puppeteer-render-test',
   new Date().toISOString().replace(/[:.]/g, '-'),
 );
+const COVER_TITLE_HEIGHT = calculateSafeTextBoxHeight(88);
+const PAGE_TITLE_HEIGHT = calculateSafeTextBoxHeight(72);
+const SECTION_TITLE_HEIGHT = calculateSafeTextBoxHeight(56);
+const BODY_TEXT_HEIGHT = calculateSafeTextBoxHeight(48);
+const THREE_LINE_BODY_HEIGHT = calculateSafeTextBoxHeight(48, 3);
 
 function parseArgs(argv: string[]): RunOptions {
   let outputDir = defaultOutputDir;
@@ -189,26 +195,26 @@ function buildSampleProjectScript() {
     x: page.left,
     y: 0.76,
     w: page.width,
-    h: 1.3,
+    h: ${COVER_TITLE_HEIGHT},
     fontSize: 88,
     bold: true,
     color: 'FFFFFF'
   });
-  cover.addText('封面、目录、正文三页都能正常出图，说明整条链路已经通了。', {
+  cover.addText('封面、目录、正文三页都能正常出图。', {
     ...baseTextStyle,
     x: page.left,
     y: 2.18,
     w: page.width,
-    h: 0.9,
+    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     color: 'CBD5E1'
   });
-  cover.addText('这组截图会保存到临时目录，用来确认中文、字号和排版都没有异常。', {
+  cover.addText('截图会保存到临时目录，方便检查排版。', {
     ...baseTextStyle,
     x: page.left,
-    y: 3.4,
+    y: 3.42,
     w: page.width,
-    h: 0.82,
+    h: ${BODY_TEXT_HEIGHT},
     fontSize: 48,
     color: 'E2E8F0'
   });
@@ -220,15 +226,15 @@ function buildSampleProjectScript() {
     x: page.left,
     y: page.titleTop,
     w: page.width,
-    h: 0.86,
+    h: ${PAGE_TITLE_HEIGHT},
     fontSize: 72,
     bold: true,
     color: '0F172A'
   });
   [
-    { no: '01', title: '封面', desc: '说明这份演示稿要讲什么、给谁看。' },
-    { no: '02', title: '目录', desc: '把章节顺序列清楚，避免读者迷路。' },
-    { no: '03', title: '正文', desc: '用一页典型正文验证大字号排版是否稳定。' }
+    { no: '01', title: '封面', desc: '说明这份演示稿要讲什么。' },
+    { no: '02', title: '目录', desc: '把章节顺序列清楚。' },
+    { no: '03', title: '正文', desc: '用正文页检查大字号排版。' }
   ].forEach((item, index) => {
     const y = 1.42 + index * 1.62;
     agenda.addText(item.no, {
@@ -236,7 +242,7 @@ function buildSampleProjectScript() {
       x: page.left,
       y,
       w: 0.9,
-      h: 0.58,
+      h: ${SECTION_TITLE_HEIGHT},
       fontSize: 56,
       bold: true,
       color: '2563EB'
@@ -246,7 +252,7 @@ function buildSampleProjectScript() {
       x: 1.9,
       y: y + 0.04,
       w: 2.6,
-      h: 0.5,
+      h: ${BODY_TEXT_HEIGHT},
       fontSize: 48,
       bold: true,
       color: '0F172A'
@@ -256,7 +262,7 @@ function buildSampleProjectScript() {
       x: 4.94,
       y: y + 0.04,
       w: 6.98,
-      h: 0.46,
+      h: ${BODY_TEXT_HEIGHT},
       fontSize: 48,
       color: '475569'
     });
@@ -269,7 +275,7 @@ function buildSampleProjectScript() {
     x: page.left,
     y: page.titleTop,
     w: page.width,
-    h: 0.86,
+    h: ${PAGE_TITLE_HEIGHT},
     fontSize: 72,
     bold: true,
     color: '0F172A'
@@ -279,7 +285,7 @@ function buildSampleProjectScript() {
     x: page.left,
     y: 1.56,
     w: 3.0,
-    h: 0.58,
+    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     bold: true,
     color: '0F172A'
@@ -287,9 +293,9 @@ function buildSampleProjectScript() {
   body.addText('• 标题不要重叠\\n• 正文不要过早换行\\n• 中文不要变成方块', {
     ...baseTextStyle,
     x: page.left,
-    y: 2.34,
+    y: 2.52,
     w: 5.24,
-    h: 1.86,
+    h: ${THREE_LINE_BODY_HEIGHT},
     fontSize: 48,
     color: '334155'
   });
@@ -298,26 +304,26 @@ function buildSampleProjectScript() {
     x: 6.32,
     y: 1.56,
     w: 2.7,
-    h: 0.58,
+    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     bold: true,
     color: '1D4ED8'
   });
-  body.addText('截图保存后，就能逐页确认排版是否稳定。', {
+  body.addText('截图保存后，就能逐页确认排版。', {
     ...baseTextStyle,
     x: 6.32,
-    y: 2.34,
+    y: 2.52,
     w: 5.2,
-    h: 1.1,
+    h: ${BODY_TEXT_HEIGHT},
     fontSize: 48,
     color: '1E3A8A'
   });
   body.addText('生成时间', {
     ...baseTextStyle,
     x: 6.32,
-    y: 4.1,
+    y: 4.14,
     w: 2.7,
-    h: 0.58,
+    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     bold: true,
     color: '0F172A'
@@ -325,9 +331,9 @@ function buildSampleProjectScript() {
   body.addText(new Date().toLocaleString('zh-CN', { hour12: false }), {
     ...baseTextStyle,
     x: 6.32,
-    y: 4.88,
+    y: 5.1,
     w: 5.16,
-    h: 1.1,
+    h: ${BODY_TEXT_HEIGHT},
     fontSize: 48,
     color: '475569'
   });

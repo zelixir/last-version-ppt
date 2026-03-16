@@ -1,6 +1,13 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';
+import { calculateSafeTextBoxHeight } from './ppt-text-layout.ts';
+
+const COVER_TITLE_HEIGHT = calculateSafeTextBoxHeight(88);
+const PAGE_TITLE_HEIGHT = calculateSafeTextBoxHeight(72);
+const SECTION_TITLE_HEIGHT = calculateSafeTextBoxHeight(56);
+const BODY_TEXT_HEIGHT = calculateSafeTextBoxHeight(48);
+const THREE_LINE_BODY_HEIGHT = calculateSafeTextBoxHeight(48, 3);
 
 export const APP_FOLDER_NAME = 'last-version-ppt';
 export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentation({ pptx, log }) {
@@ -24,26 +31,26 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     x: page.left,
     y: 0.76,
     w: page.width,
-    h: 1.3,
+    h: ${COVER_TITLE_HEIGHT},
     fontSize: 88,
     bold: true,
     color: 'FFFFFF'
   });
-  cover.addText('请在右侧告诉智能助手，你想做什么样的演示稿。', {
+  cover.addText('请告诉智能助手，这份演示稿要讲什么。', {
     ...textOptions,
     x: page.left,
     y: 2.18,
     w: page.width,
-    h: 0.9,
+    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     color: 'CBD5E1'
   });
-  cover.addText('如果有图片、表格或资料，也可以先上传，再说明想放到哪一页。', {
+  cover.addText('有图片、表格或资料时，也可以先上传再说明。', {
     ...textOptions,
     x: page.left,
-    y: 3.4,
+    y: 3.42,
     w: page.width,
-    h: 0.82,
+    h: ${BODY_TEXT_HEIGHT},
     fontSize: 48,
     color: 'E2E8F0'
   });
@@ -55,7 +62,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     x: page.left,
     y: page.titleTop,
     w: page.width,
-    h: 0.86,
+    h: ${PAGE_TITLE_HEIGHT},
     fontSize: 72,
     bold: true,
     color: '0F172A'
@@ -71,7 +78,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
       x: page.left,
       y,
       w: 0.9,
-      h: 0.58,
+      h: ${SECTION_TITLE_HEIGHT},
       fontSize: 56,
       bold: true,
       color: '2563EB'
@@ -81,7 +88,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
       x: 1.9,
       y: y + 0.04,
       w: 2.6,
-      h: 0.5,
+      h: ${BODY_TEXT_HEIGHT},
       fontSize: 48,
       bold: true,
       color: '0F172A'
@@ -91,7 +98,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
       x: 4.94,
       y: y + 0.04,
       w: 6.98,
-      h: 0.46,
+      h: ${BODY_TEXT_HEIGHT},
       fontSize: 48,
       color: '475569'
     });
@@ -104,7 +111,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     x: page.left,
     y: page.titleTop,
     w: page.width,
-    h: 0.86,
+    h: ${PAGE_TITLE_HEIGHT},
     fontSize: 72,
     bold: true,
     color: '0F172A'
@@ -123,7 +130,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     x: page.left,
     y: 1.56,
     w: 3.4,
-    h: 0.58,
+    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     bold: true,
     color: '0F172A'
@@ -131,9 +138,9 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
   body.addText('• 这一页写结论\\n• 下一行补原因\\n• 最后一行写动作', {
     ...textOptions,
     x: page.left,
-    y: 2.34,
+    y: 2.52,
     w: 5.24,
-    h: 1.86,
+    h: ${THREE_LINE_BODY_HEIGHT},
     fontSize: 48,
     color: '334155'
   });
@@ -142,36 +149,36 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     x: 6.32,
     y: 1.56,
     w: 2.7,
-    h: 0.58,
+    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     bold: true,
     color: '1D4ED8'
   });
-  body.addText('把最想让人记住的结果放在这里。', {
+  body.addText('把最重要的结果放在这里。', {
     ...textOptions,
     x: 6.32,
-    y: 2.34,
+    y: 2.52,
     w: 5.2,
-    h: 1.1,
+    h: ${BODY_TEXT_HEIGHT},
     fontSize: 48,
     color: '1E3A8A'
   });
   body.addText('下一步动作', {
     ...textOptions,
     x: 6.32,
-    y: 4.1,
+    y: 4.14,
     w: 3.2,
-    h: 0.58,
+    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     bold: true,
     color: '0F172A'
   });
-  body.addText('说明负责人、时间和预期结果，整页会更完整。', {
+  body.addText('写清负责人、时间和结果。', {
     ...textOptions,
     x: 6.32,
-    y: 4.88,
+    y: 5.1,
     w: 5.16,
-    h: 1.1,
+    h: ${BODY_TEXT_HEIGHT},
     fontSize: 48,
     color: '475569'
   });

@@ -56,6 +56,7 @@ import {
   stripVersionSuffix,
 } from './storage.ts';
 import { replaceProjectPreviewImages } from './project-preview-cache.ts';
+import { getProjectRecordSyncDiff } from './project-record-sync.ts';
 import { listSystemFonts, getSystemFontData } from './system-fonts.ts';
 
 const MIME_TYPES: Record<string, string> = {
@@ -74,6 +75,7 @@ const MIME_TYPES: Record<string, string> = {
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
+  '.wasm': 'application/wasm',
   '.txt': 'text/plain; charset=utf-8',
   '.md': 'text/markdown; charset=utf-8',
   '.pdf': 'application/pdf',
@@ -282,7 +284,15 @@ async function handleProjectChatRequest(projectId: string, payload: { id?: strin
 }
 
 function syncProjectsWithFilesystem(): void {
-  for (const projectId of listProjectDirectories()) {
+  const directoryIds = listProjectDirectories();
+  const projects = listProjects();
+  const { missingRecordIds, staleRecordIds } = getProjectRecordSyncDiff(directoryIds, projects.map(project => project.id));
+
+  for (const projectId of staleRecordIds) {
+    deleteProjectRecord(projectId);
+  }
+
+  for (const projectId of missingRecordIds) {
     if (!getProjectById(projectId)) {
       createProjectRecord({
         id: projectId,
@@ -291,7 +301,18 @@ function syncProjectsWithFilesystem(): void {
         chatHistory: [],
       });
     }
+  }
+
+  for (const projectId of directoryIds) {
     createProjectFiles(projectId);
+  }
+
+  const syncedProjects = listProjects();
+  const currentProjectId = getCurrentProjectId();
+  if (currentProjectId && !directoryIds.includes(currentProjectId)) {
+    const nextProjectId = projects.find(project => directoryIds.includes(project.id))?.id ?? directoryIds[0] ?? syncedProjects[0]?.id;
+    if (nextProjectId) setCurrentProjectId(nextProjectId);
+    else deleteSetting('currentProjectId');
   }
 }
 
