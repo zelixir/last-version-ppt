@@ -34,6 +34,7 @@ const frontendDir = path.join(repoRoot, 'frontend');
 const frontendDistDir = path.join(frontendDir, 'dist');
 const backendDir = path.join(repoRoot, 'backend');
 const serverOrigin = 'http://127.0.0.1:3101';
+const PROCESS_KILL_TIMEOUT_MS = 5_000;
 const defaultOutputDir = path.join(
   tmpdir(),
   'last-version-ppt',
@@ -50,7 +51,7 @@ function parseArgs(argv: string[]): RunOptions {
     const arg = argv[index];
     if (arg === '--output-dir') {
       const value = argv[index + 1];
-      if (!value) throw new Error('缺少 --output-dir 的目录参数');
+      if (!value || value.startsWith('--')) throw new Error('缺少 --output-dir 的目录参数');
       outputDir = path.resolve(value);
       index += 1;
       continue;
@@ -60,8 +61,10 @@ function parseArgs(argv: string[]): RunOptions {
       continue;
     }
     if (arg === '--timeout-ms') {
-      const value = Number(argv[index + 1]);
-      if (!Number.isFinite(value) || value <= 0) throw new Error('请为 --timeout-ms 提供大于 0 的数字');
+      const rawValue = argv[index + 1];
+      if (!rawValue || rawValue.startsWith('--')) throw new Error('请为 --timeout-ms 提供大于 0 的数字');
+      const value = Number(rawValue);
+      if (!Number.isFinite(value) || value <= 0) throw new Error('请为 --timeout-ms 提供有效的正整数');
       timeoutMs = value;
       index += 1;
       continue;
@@ -308,7 +311,7 @@ async function stopProcess(child: ChildProcessWithoutNullStreams | null, session
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
       resolve(null);
-    }, 5_000);
+    }, PROCESS_KILL_TIMEOUT_MS);
     child.once('close', () => {
       clearTimeout(timer);
       resolve(null);
@@ -407,13 +410,17 @@ async function run() {
     } else {
       sessionLog('没有找到本机浏览器路径，将尝试使用 Puppeteer 自带的浏览器。');
     }
+    const browserArgs: string[] = [];
+    if (process.platform === 'linux' && process.env.PUPPETEER_DISABLE_SANDBOX !== '0') {
+      // Sandbox is disabled by default on Linux unless PUPPETEER_DISABLE_SANDBOX=0 is set.
+      // Set PUPPETEER_DISABLE_SANDBOX=0 to enable sandboxing when the environment supports it.
+      browserArgs.push('--no-sandbox', '--disable-setuid-sandbox');
+    }
     browser = await puppeteer.launch({
       headless: true,
       defaultViewport: { width: 1600, height: 1200, deviceScaleFactor: 1 },
       executablePath: browserExecutablePath,
-      args: process.platform === 'linux'
-        ? ['--no-sandbox', '--disable-setuid-sandbox']
-        : [],
+      args: browserArgs,
     });
 
     const page = await browser.newPage();

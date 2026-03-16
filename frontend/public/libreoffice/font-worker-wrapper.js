@@ -18,6 +18,14 @@ var _originalOnMessage = self.onmessage;
 var _fontsInstalled = false;
 var _pendingFonts = [];
 
+function _tryMkdir(path) {
+  try {
+    self.Module.FS.mkdir(path);
+  } catch (err) {
+    if (err && err.code !== 'EEXIST') throw err;
+  }
+}
+
 /**
  * Write font data into the WASM virtual filesystem.
  */
@@ -26,10 +34,10 @@ function _installFonts(fonts) {
   var FS = self.Module.FS;
 
   // Ensure the custom fonts directory exists
-  try { FS.mkdir('/usr'); } catch (_e) { /* already exists */ }
-  try { FS.mkdir('/usr/share'); } catch (_e) { /* already exists */ }
-  try { FS.mkdir('/usr/share/fonts'); } catch (_e) { /* already exists */ }
-  try { FS.mkdir('/usr/share/fonts/custom'); } catch (_e) { /* already exists */ }
+  _tryMkdir('/usr');
+  _tryMkdir('/usr/share');
+  _tryMkdir('/usr/share/fonts');
+  _tryMkdir('/usr/share/fonts/custom');
 
   var installed = 0;
   for (var i = 0; i < fonts.length; i++) {

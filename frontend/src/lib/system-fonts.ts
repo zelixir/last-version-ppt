@@ -19,7 +19,9 @@ const PREFERRED_SYSTEM_FONT_PATTERNS = [
   /ArialUnicode|Arial Unicode/i,
   /DejaVuSans/i,
 ]
-const MAX_SYSTEM_FONTS = 8
+// Keeping this list small avoids spending seconds uploading large font collections
+// into the worker while still covering common CJK fonts and one lightweight general fallback.
+const MAX_SYSTEM_FONTS_TO_LOAD = 8
 
 let cachedFontList: SystemFontInfo[] | null = null
 
@@ -68,10 +70,10 @@ function pickSystemFonts(fontList: SystemFontInfo[]) {
     .map(entry => entry.font)
 
   if (ranked.length > 0) {
-    return ranked.slice(0, MAX_SYSTEM_FONTS)
+    return ranked.slice(0, MAX_SYSTEM_FONTS_TO_LOAD)
   }
 
-  return fontList.slice(0, MAX_SYSTEM_FONTS)
+  return fontList.slice(0, MAX_SYSTEM_FONTS_TO_LOAD)
 }
 
 let fontsLoadedPromise: Promise<Array<{ name: string; data: ArrayBuffer }>> | null = null
