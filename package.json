@@ -9,6 +9,10 @@
     "start": "bun run --parallel start:server start:client",
     "start:server": "bun run --cwd backend start",
     "start:client": "bun run --cwd frontend build",
-    "build:exe": "bun run scripts/build-exe.ts"
+    "build:exe": "bun run scripts/build-exe.ts",
+    "test:render": "bun run scripts/puppeteer-render-test.ts"
+  },
+  "devDependencies": {
+    "puppeteer": "24.39.1"
   }
 }

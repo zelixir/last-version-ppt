@@ -5,6 +5,24 @@ import { capturePreviewImages, uploadPreviewImages } from './lib/preview-image-g
 import { runProjectPreview } from './lib/project-preview'
 import type { PreviewPresentation } from './types'
 
+type RenderPhase = 'idle' | 'running' | 'done' | 'error'
+
+interface PreviewImageTestState {
+  projectId: string
+  phase: RenderPhase
+  status: string
+  images: string[]
+  previewLogs: string[]
+  slideCount: number
+  updatedAt: string
+}
+
+declare global {
+  interface Window {
+    __PREVIEW_IMAGE_TEST_STATE__?: PreviewImageTestState
+  }
+}
+
 function readInitialProjectId() {
   return new URLSearchParams(window.location.search).get('projectId')?.trim() ?? ''
 }
@@ -19,17 +37,21 @@ function PreviewImageTestPage() {
   const [images, setImages] = useState<string[]>([])
   const [status, setStatus] = useState('请输入项目编号，然后点击“开始生成”。')
   const [loading, setLoading] = useState(false)
+  const [phase, setPhase] = useState<RenderPhase>('idle')
   const canRun = projectId.trim().length > 0 && !loading
+  const previewLogs = preview?.logs ?? []
   const pageCountText = useMemo(() => preview ? `共生成 ${preview.slides.length} 页，已经转成 ${images.length} 张预览图。` : '', [images.length, preview])
 
   const generateImages = useCallback(async (targetProjectId = projectId) => {
     const nextProjectId = targetProjectId.trim()
     if (!nextProjectId) {
+      setPhase('error')
       setStatus('请先填写项目编号。')
       return
     }
 
     setLoading(true)
+    setPhase('running')
     setStatus('正在读取脚本并生成预览图，请稍等…')
     setImages([])
 
@@ -43,6 +65,7 @@ function PreviewImageTestPage() {
       const capturedImages = await capturePreviewImages(rendered.pptxData, progress => setStatus(progress.message))
       const uploadedImages = await uploadPreviewImages(nextProjectId, capturedImages, progress => setStatus(progress.message))
       setImages(uploadedImages)
+      setPhase('done')
       setStatus(`生成完成，项目 ${nextProjectId} 的预览图已经准备好了。`)
       const nextUrl = new URL(window.location.href)
       nextUrl.searchParams.set('projectId', nextProjectId)
@@ -50,6 +73,7 @@ function PreviewImageTestPage() {
     } catch (error) {
       setPreview(null)
       setImages([])
+      setPhase('error')
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
@@ -61,8 +85,20 @@ function PreviewImageTestPage() {
     void generateImages(projectId)
   }, [generateImages, projectId])
 
+  useEffect(() => {
+    window.__PREVIEW_IMAGE_TEST_STATE__ = {
+      projectId: projectId.trim(),
+      phase,
+      status,
+      images,
+      previewLogs,
+      slideCount: preview?.slides.length ?? 0,
+      updatedAt: new Date().toISOString(),
+    }
+  }, [images, phase, preview?.slides.length, previewLogs, projectId, status])
+
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100">
+    <main data-render-phase={phase} className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100">
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="space-y-3">
           <h1 className="text-3xl font-semibold">预览出图测试</h1>
@@ -94,6 +130,17 @@ function PreviewImageTestPage() {
           <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3 text-sm text-slate-300">{status}</div>
           {pageCountText && <div className="mt-3 text-xs text-slate-400">{pageCountText}</div>}
         </section>
+
+        {previewLogs.length > 0 && (
+          <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5">
+            <div className="mb-3 text-sm font-medium text-white">脚本输出记录</div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs leading-6 text-slate-300">
+                {previewLogs.join('\n')}
+              </pre>
+            </div>
+          </section>
+        )}
 
         {images.length > 0 && (
           <section className="space-y-4">

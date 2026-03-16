@@ -3,6 +3,24 @@ interface SystemFontInfo {
   size: number
 }
 
+const bundledFonts = [
+  { name: 'last-version-ppt-cjk-subset.otf', url: '/fonts/last-version-ppt-cjk-subset.otf' },
+]
+const PREFERRED_SYSTEM_FONT_PATTERNS = [
+  /NotoSansCJK/i,
+  /NotoSerifCJK/i,
+  /SourceHan/i,
+  /Microsoft-YaHei|Microsoft YaHei|msyh/i,
+  /SimHei|SimSun|NSimSun/i,
+  /PingFang|Heiti/i,
+  /WenQuanYi/i,
+  /Sarasa/i,
+  /DroidSansFallback/i,
+  /ArialUnicode|Arial Unicode/i,
+  /DejaVuSans/i,
+]
+const MAX_SYSTEM_FONTS = 8
+
 let cachedFontList: SystemFontInfo[] | null = null
 
 export async function fetchSystemFontList(): Promise<SystemFontInfo[]> {
@@ -29,16 +47,51 @@ export async function fetchSystemFontData(fontName: string): Promise<ArrayBuffer
   }
 }
 
+async function fetchBundledFontData(url: string): Promise<ArrayBuffer | null> {
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return null
+    return await response.arrayBuffer()
+  } catch {
+    return null
+  }
+}
+
+function pickSystemFonts(fontList: SystemFontInfo[]) {
+  const ranked = fontList
+    .map(font => ({
+      font,
+      priority: PREFERRED_SYSTEM_FONT_PATTERNS.findIndex(pattern => pattern.test(font.name)),
+    }))
+    .filter(entry => entry.priority >= 0)
+    .sort((a, b) => a.priority - b.priority || a.font.name.localeCompare(b.font.name))
+    .map(entry => entry.font)
+
+  if (ranked.length > 0) {
+    return ranked.slice(0, MAX_SYSTEM_FONTS)
+  }
+
+  return fontList.slice(0, MAX_SYSTEM_FONTS)
+}
+
 let fontsLoadedPromise: Promise<Array<{ name: string; data: ArrayBuffer }>> | null = null
 
 export function loadSystemFonts(): Promise<Array<{ name: string; data: ArrayBuffer }>> {
   if (fontsLoadedPromise) return fontsLoadedPromise
 
   fontsLoadedPromise = (async () => {
-    const fontList = await fetchSystemFontList()
-    if (!fontList.length) return []
-
     const loaded: Array<{ name: string; data: ArrayBuffer }> = []
+    const seenNames = new Set<string>()
+
+    for (const font of bundledFonts) {
+      const data = await fetchBundledFontData(font.url)
+      if (!data) continue
+      loaded.push({ name: font.name, data })
+      seenNames.add(font.name)
+    }
+
+    const fontList = pickSystemFonts(await fetchSystemFontList())
+    if (!fontList.length) return loaded
 
     // Load fonts in parallel batches to avoid overwhelming the server
     const BATCH_SIZE = 4
@@ -46,8 +99,11 @@ export function loadSystemFonts(): Promise<Array<{ name: string; data: ArrayBuff
       const batch = fontList.slice(i, i + BATCH_SIZE)
       const results = await Promise.allSettled(
         batch.map(async (font) => {
+          if (seenNames.has(font.name)) return
           const data = await fetchSystemFontData(font.name)
-          if (data) loaded.push({ name: font.name, data })
+          if (!data) return
+          loaded.push({ name: font.name, data })
+          seenNames.add(font.name)
         }),
       )
       // Continue even if some fail
