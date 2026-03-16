@@ -18,24 +18,6 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.1"
   },
-  "overrides": {
-    "@ai-sdk/gateway": "https://registry.npmjs.org/@ai-sdk/gateway/-/gateway-3.0.66.tgz",
-    "@ai-sdk/provider": "https://registry.npmjs.org/@ai-sdk/provider/-/provider-3.0.8.tgz",
-    "@ai-sdk/provider-utils": "https://registry.npmjs.org/@ai-sdk/provider-utils/-/provider-utils-4.0.19.tgz",
-    "@opentelemetry/api": "https://registry.npmjs.org/@opentelemetry/api/-/api-1.9.0.tgz",
-    "@standard-schema/spec": "https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz",
-    "@types/react": "https://registry.npmjs.org/@types/react/-/react-19.2.14.tgz",
-    "@types/react-dom": "https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.3.tgz",
-    "@vercel/oidc": "https://registry.npmjs.org/@vercel/oidc/-/oidc-3.1.0.tgz",
-    "ai": "https://registry.npmjs.org/ai/-/ai-6.0.116.tgz",
-    "csstype": "https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz",
-    "eventsource-parser": "https://registry.npmjs.org/eventsource-parser/-/eventsource-parser-3.0.6.tgz",
-    "json-schema": "https://registry.npmjs.org/json-schema/-/json-schema-0.4.0.tgz",
-    "swr": "https://registry.npmjs.org/swr/-/swr-2.4.1.tgz",
-    "throttleit": "https://registry.npmjs.org/throttleit/-/throttleit-2.1.0.tgz",
-    "use-sync-external-store": "https://registry.npmjs.org/use-sync-external-store/-/use-sync-external-store-1.6.0.tgz",
-    "zod": "https://registry.npmjs.org/zod/-/zod-4.3.6.tgz"
-  },
   "dependencies": {
     "@ai-sdk/react": "https://registry.npmjs.org/@ai-sdk/react/-/react-3.0.110.tgz",
     "@matbee/libreoffice-converter": "2.5.0",
