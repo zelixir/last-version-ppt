@@ -41,3 +41,9 @@ test('PPTXGENJS_GUIDE explains the correct line break usage', () => {
   assert.match(PPTXGENJS_GUIDE, /富文本分段换行/);
   assert.match(PPTXGENJS_GUIDE, /breakLine: true/);
 });
+
+test('PPTXGENJS_GUIDE 提醒中文内容指定可用中文字体', () => {
+  assert.match(PPTXGENJS_GUIDE, /Noto Sans CJK SC/);
+  assert.match(PPTXGENJS_GUIDE, /WenQuanYi Zen Hei/);
+  assert.match(PPTXGENJS_GUIDE, /fontFace/);
+});

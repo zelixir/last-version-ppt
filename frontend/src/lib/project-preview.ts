@@ -1,5 +1,6 @@
 import PptxGenJS from 'pptxgenjs'
 import type { PreviewElement, PreviewPresentation, PreviewSlide } from '../types'
+import { getPreferredPresentationFont } from './system-fonts'
 
 export interface ProjectPreviewRunResult {
   presentation: PreviewPresentation
@@ -162,12 +163,22 @@ export async function runProjectPreview(projectId: string, code: string): Promis
 
   const pptx = new PptxGenJS()
   pptx.layout = 'LAYOUT_WIDE'
+  ;(pptx as any).lang = 'zh-CN'
+
+  const defaultFontFace = await getPreferredPresentationFont()
+  if (defaultFontFace) {
+    pptx.theme = { ...(pptx.theme ?? {}), headFontFace: defaultFontFace, bodyFontFace: defaultFontFace }
+    logs.push(`预览默认中文字体：${defaultFontFace}`)
+  } else {
+    logs.push('预览未找到明确的中文字体，将继续使用系统默认字体')
+  }
 
   const context = {
     pptx,
     pptxgenjs: PptxGenJS,
     getResourceUrl: (fileName: string) => buildProjectResourceUrl(projectId, fileName),
     log: (...args: unknown[]) => logs.push(args.map(arg => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ')),
+    defaultFontFace,
   }
 
   const output = await build(context)

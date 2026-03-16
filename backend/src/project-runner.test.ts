@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { rmSync, writeFileSync } from 'fs';
 
-import { runProject } from './project-runner.ts';
+import { pickPreferredChineseFontFamily, runProject } from './project-runner.ts';
 import { createProjectFiles, getProjectDir, resolveProjectFile } from './storage.ts';
 
 async function withTestProject(run: (projectId: string) => Promise<void> | void) {
@@ -68,4 +68,13 @@ test('runProject 提供的 PPT 脚本运行环境与指南示例一致', async (
     assert.ok(runtimeInfo.resourceUrl.endsWith('%E5%B0%81%E9%9D%A2%20%E5%9B%BE.png'));
     assert.equal(runtimeInfo.resourcePath, resolveProjectFile(projectId, 'cover.png'));
   });
+});
+
+test('pickPreferredChineseFontFamily 优先选择常见中文字体', () => {
+  const preferred = pickPreferredChineseFontFamily([
+    { name: 'Example.ttf', filePath: '/tmp/Example.ttf', size: 1, families: ['Arial', 'Noto Sans CJK SC'] },
+    { name: 'Other.ttf', filePath: '/tmp/Other.ttf', size: 1, families: ['WenQuanYi Zen Hei'] },
+  ]);
+
+  assert.equal(preferred, 'Noto Sans CJK SC');
 });

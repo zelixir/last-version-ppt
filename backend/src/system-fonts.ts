@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import path from 'path';
 
@@ -33,9 +34,50 @@ function getSystemFontDirs(): string[] {
   return dirs.filter(dir => existsSync(dir));
 }
 
-function collectFontFiles(dir: string, maxDepth = 3, currentDepth = 0): Array<{ name: string; filePath: string; size: number }> {
+export interface SystemFontRecord {
+  name: string;
+  filePath: string;
+  size: number;
+  families: string[];
+}
+
+export function stripFontFileExtension(fileName: string): string {
+  return fileName.replace(/\.[^.]+$/u, '');
+}
+
+export function parseFontFamiliesFromFcScanOutput(output: string): string[] {
+  const seen = new Set<string>();
+  return output
+    .split(/\r?\n/u)
+    .flatMap(line => line.split('|'))
+    .map(name => name.trim())
+    .filter(name => {
+      if (!name || seen.has(name)) return false;
+      seen.add(name);
+      return true;
+    });
+}
+
+function readFontFamilies(filePath: string, fileName: string): string[] {
+  const fallback = [stripFontFileExtension(fileName)];
+  if (process.platform !== 'linux') return fallback;
+
+  try {
+    const output = execFileSync(
+      'fc-scan',
+      ['--format', '%{family[0]}|%{family[1]}|%{family[2]}\n', filePath],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    const families = parseFontFamiliesFromFcScanOutput(output);
+    return families.length ? families : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function collectFontFiles(dir: string, maxDepth = 3, currentDepth = 0): SystemFontRecord[] {
   if (currentDepth > maxDepth) return [];
-  const results: Array<{ name: string; filePath: string; size: number }> = [];
+  const results: SystemFontRecord[] = [];
 
   try {
     const entries = readdirSync(dir, { withFileTypes: true });
@@ -47,7 +89,12 @@ function collectFontFiles(dir: string, maxDepth = 3, currentDepth = 0): Array<{ 
       } else if (entry.isFile() && FONT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
         try {
           const stat = statSync(fullPath);
-          results.push({ name: entry.name, filePath: fullPath, size: stat.size });
+          results.push({
+            name: entry.name,
+            filePath: fullPath,
+            size: stat.size,
+            families: readFontFamilies(fullPath, entry.name),
+          });
         } catch { /* skip unreadable files */ }
       }
     }
@@ -56,13 +103,13 @@ function collectFontFiles(dir: string, maxDepth = 3, currentDepth = 0): Array<{ 
   return results;
 }
 
-let cachedFontList: Array<{ name: string; filePath: string; size: number }> | null = null;
+let cachedFontList: SystemFontRecord[] | null = null;
 
-export function listSystemFonts(): Array<{ name: string; filePath: string; size: number }> {
+export function listSystemFonts(): SystemFontRecord[] {
   if (cachedFontList) return cachedFontList;
 
   const dirs = getSystemFontDirs();
-  const allFonts: Array<{ name: string; filePath: string; size: number }> = [];
+  const allFonts: SystemFontRecord[] = [];
 
   for (const dir of dirs) {
     allFonts.push(...collectFontFiles(dir));

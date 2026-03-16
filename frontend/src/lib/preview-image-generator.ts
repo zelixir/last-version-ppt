@@ -46,6 +46,7 @@ async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus
   if (onProgress) sharedProgressListeners.add(onProgress)
 
   if (!sharedConverterPromise) {
+    console.info('[Preview] 将使用 @matbee/libreoffice-converter 生成高保真预览图')
     // Start loading system fonts in parallel with converter initialization
     const fontsPromise = loadSystemFonts()
 
@@ -62,11 +63,16 @@ async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus
         // access its internal Worker instance as a temporary workaround until
         // the library provides an official mechanism.
         try {
-          await fontsPromise
+          const fonts = await fontsPromise
           const worker = (converter as any).worker as Worker | undefined
-          if (worker) await uploadFontsToWorker(worker)
-        } catch {
-          // Font loading is best-effort; continue without fonts
+          if (worker && fonts.length) {
+            console.info(`[Preview] 准备把 ${fonts.length} 个系统字体文件交给 LibreOffice`)
+            await uploadFontsToWorker(worker)
+          } else {
+            console.warn('[Preview] 当前没有可交给 LibreOffice 的系统字体文件')
+          }
+        } catch (error) {
+          console.warn('[Preview] 系统字体未能成功装入 LibreOffice，将继续尝试渲染', error)
         }
         return converter
       })
@@ -119,6 +125,7 @@ export async function capturePreviewImages(
 ) {
   const converter = await getPreviewConverter(onProgress)
   const pageCount = await converter.getPageCount(pptxData, { inputFormat: 'pptx' })
+  console.info(`[Preview] LibreOffice 已识别到 ${pageCount} 页，开始逐页渲染`)
   const images: Blob[] = []
 
   for (let index = 0; index < pageCount; index += 1) {

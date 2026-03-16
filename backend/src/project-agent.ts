@@ -181,6 +181,8 @@ export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimo
     '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
     '必须尽量完整实现用户要的 PPT 内容，不能只给最小骨架或占位内容。',
     '在你认为已经完成时，必须先调用 run-project 检查脚本是否能运行；如果失败，要继续修复直到成功或明确说明阻塞原因。',
+    '涉及预览图或页面渲染时，只能基于 @matbee/libreoffice-converter 来实现，不允许改用其他渲染库、截图方案或备用渲染链路。',
+    '如果页面里有中文，优先在 PPT 脚本里明确写出 fontFace，并使用运行环境里存在的中文字体，例如 Noto Sans CJK SC 或 WenQuanYi Zen Hei；不要假设默认西文字体一定能显示汉字。',
     '如果你要在代码、文案或文本内容里表达换行，必须直接写真正的换行，不要把换行写成两个字符的“\\n”。',
     '如果用户问你“你能做什么”或“怎么用”，请按下面的能力清单，用自然中文做简短介绍，不要展开成长文：',
     buildToolCapabilitySummary(enabledToolNames),

@@ -3,6 +3,7 @@ import { createContext, Script } from 'node:vm';
 import path from 'path';
 import PptxGenJS from 'pptxgenjs';
 import { getProjectDir, resolveProjectFile } from './storage.ts';
+import { listSystemFonts } from './system-fonts.ts';
 
 export interface RunProjectOptions {
   projectId: string;
@@ -22,6 +23,30 @@ function extractBuildFunction(moduleExports: any): ((context: any) => Promise<un
   if (moduleExports && typeof moduleExports.default === 'function') return moduleExports.default;
   if (moduleExports && typeof moduleExports.buildPresentation === 'function') return moduleExports.buildPresentation;
   return null;
+}
+
+const PREFERRED_CHINESE_FONT_FAMILIES = [
+  'Noto Sans CJK SC',
+  'Noto Sans CJK TC',
+  'Noto Sans CJK JP',
+  'Noto Serif CJK SC',
+  'WenQuanYi Zen Hei',
+  'Microsoft YaHei',
+  'SimSun',
+  'PingFang SC',
+] as const;
+
+function normalizeFontFamilyName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+export function pickPreferredChineseFontFamily(fonts = listSystemFonts()): string | null {
+  const allFamilies = fonts.flatMap(font => font.families);
+  for (const candidate of PREFERRED_CHINESE_FONT_FAMILIES) {
+    const match = allFamilies.find(family => normalizeFontFamilyName(family) === normalizeFontFamilyName(candidate));
+    if (match) return match;
+  }
+  return allFamilies.find(family => /cjk|han|hei|song|fang|kai|ming|gothic|明|黑|宋|楷/u.test(family)) ?? null;
 }
 
 export async function runProject({ projectId }: RunProjectOptions): Promise<RunProjectResult> {
@@ -52,6 +77,13 @@ export async function runProject({ projectId }: RunProjectOptions): Promise<RunP
 
     const pptx = new PptxGenJS();
     pptx.layout = 'LAYOUT_WIDE';
+    (pptx as any).lang = 'zh-CN';
+
+    const defaultFontFace = pickPreferredChineseFontFamily();
+    if (defaultFontFace) {
+      pptx.theme = { ...(pptx.theme ?? {}), headFontFace: defaultFontFace, bodyFontFace: defaultFontFace };
+      logs.push(`默认中文字体：${defaultFontFace}`);
+    }
 
     const context = {
       pptx,
@@ -62,6 +94,7 @@ export async function runProject({ projectId }: RunProjectOptions): Promise<RunP
       projectId,
       projectDir,
       path,
+      defaultFontFace,
     };
 
     const output = await buildPresentation(context);

@@ -795,7 +795,7 @@ const app = new Elysia()
   })
   .get('/api/system-fonts', () => {
     const fonts = listSystemFonts();
-    return { fonts: fonts.map(f => ({ name: f.name, size: f.size })) };
+    return { fonts: fonts.map(f => ({ name: f.name, size: f.size, families: f.families })) };
   })
   .get('/api/system-fonts/data', ({ query }) => {
     const name = String((query as any).name ?? '');
