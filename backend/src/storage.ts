@@ -154,7 +154,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     bold: true,
     color: '1D4ED8'
   });
-  body.addText('把最重要的结果放在这里。', {
+  body.addText('先放最关键结果。', {
     ...textOptions,
     x: 6.32,
     y: 2.52,
@@ -173,7 +173,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     bold: true,
     color: '0F172A'
   });
-  body.addText('写清负责人、时间和结果。', {
+  body.addText('写清时间和负责人。', {
     ...textOptions,
     x: 6.32,
     y: 5.1,

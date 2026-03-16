@@ -1,39 +1,97 @@
 #!/usr/bin/env bun
 
+import puppeteer from 'puppeteer';
 import {
   PPT_TEXT_CHAR_WIDTH_FACTOR,
+  PPT_TEXT_FULL_WIDTH_EM,
   PPT_TEXT_LINE_HEIGHT_FACTOR,
   PPT_TEXT_SAFE_HEIGHT_PADDING,
+  PPT_TEXT_SAFE_WIDTH_RATIO,
   calculateMaxCharsPerLine,
+  calculateSafeSingleLineWidthPx,
   calculateSafeTextBoxHeight,
+  estimateTextWidthPx,
   recommendSingleLineChars,
 } from '../backend/src/ppt-text-layout.ts';
 
-const fontSizes = [88, 72, 56, 48];
+const fontFileUrl = new URL('../frontend/public/fonts/last-version-ppt-cjk-subset.otf', import.meta.url).href;
+const browserExecutablePath = Bun.which('google-chrome') ?? Bun.which('chromium') ?? Bun.which('chromium-browser');
+
 const sampleBoxes = [
-  { label: '封面副标题', width: 11.56, fontSize: 56 },
-  { label: '目录说明', width: 6.98, fontSize: 48 },
-  { label: '正文右侧说明', width: 5.16, fontSize: 48 },
-  { label: '正文三行列表', width: 5.24, fontSize: 48, lines: 3 },
+  { label: '封面副标题', width: 11.56, fontSize: 56, text: '请告诉智能助手，这份演示稿要讲什么。' },
+  { label: '目录说明', width: 6.98, fontSize: 48, text: '先讲清主题和要解决的问题。' },
+  { label: '目录说明（渲染）', width: 6.98, fontSize: 48, text: '说明这份演示稿要讲什么。' },
+  { label: '正文右侧说明', width: 5.16, fontSize: 48, text: '写清时间和负责人。' },
+  { label: '渲染右侧说明', width: 5.2, fontSize: 48, text: '截图后可检查排版。' },
 ];
 
-console.log('PptxGenJS 默认文本尺寸计算');
-console.log(`- 行高公式：fontSize × ${PPT_TEXT_LINE_HEIGHT_FACTOR} ÷ 100 × 行数`);
-console.log(`- 安全高度：理论高度 + ${PPT_TEXT_SAFE_HEIGHT_PADDING.toFixed(2)} 英寸`);
-console.log(`- 单行容字：floor(floor(w × 72) × ${PPT_TEXT_CHAR_WIDTH_FACTOR} ÷ fontSize)`);
-console.log('');
+if (!browserExecutablePath) {
+  throw new Error('没有找到可用浏览器，请先安装 google-chrome 或 chromium。');
+}
 
-console.table(fontSizes.map(fontSize => ({
-  fontSize,
-  theoryHeight: calculateSafeTextBoxHeight(fontSize, 1, 0),
-  safeHeight: calculateSafeTextBoxHeight(fontSize),
-})));
+const browser = await puppeteer.launch({
+  headless: true,
+  executablePath: browserExecutablePath,
+  args: ['--no-sandbox', '--disable-setuid-sandbox'],
+});
 
-console.table(sampleBoxes.map(item => ({
-  label: item.label,
-  width: item.width,
-  fontSize: item.fontSize,
-  maxChars: calculateMaxCharsPerLine(item.width, item.fontSize),
-  safeChars: recommendSingleLineChars(item.width, item.fontSize),
-  safeHeight: calculateSafeTextBoxHeight(item.fontSize, item.lines ?? 1),
-})));
+try {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 });
+  await page.setContent(`<!doctype html><html><head><style>
+    @font-face {
+      font-family: 'LastVersionPptCjkUi';
+      src: url('${fontFileUrl}') format('opentype');
+      font-display: block;
+    }
+    body { margin: 0; font-family: 'LastVersionPptCjkUi', 'Noto Sans CJK SC', sans-serif; }
+  </style></head><body></body></html>`);
+
+  const measurements = await page.evaluate(async sampleBoxes => {
+    await document.fonts.ready;
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('无法创建 canvas 上下文');
+
+    return sampleBoxes.map(item => {
+      context.font = `${item.fontSize}px "LastVersionPptCjkUi", "Noto Sans CJK SC", sans-serif`;
+      const measuredWidthPx = context.measureText(item.text).width;
+      const measuredCjkWidthPx = context.measureText('汉').width;
+      return {
+        ...item,
+        measuredWidthPx,
+        measuredCjkWidthPx,
+      };
+    });
+  }, sampleBoxes);
+
+  console.log('PptxGenJS 默认文本尺寸计算');
+  console.log(`- 行高公式：fontSize × ${PPT_TEXT_LINE_HEIGHT_FACTOR} ÷ 100 × 行数`);
+  console.log(`- 安全高度：理论高度 + ${PPT_TEXT_SAFE_HEIGHT_PADDING.toFixed(2)} 英寸`);
+  console.log(`- Canvas 实测：中文和全角标点约为 ${PPT_TEXT_FULL_WIDTH_EM.toFixed(2)} × fontSize`);
+  console.log(`- 估算公式：maxChars = floor(floor(w × 72) × ${PPT_TEXT_CHAR_WIDTH_FACTOR} ÷ fontSize)`);
+  console.log(`- 严格校验：measureText(text).width <= w × 96 × ${PPT_TEXT_SAFE_WIDTH_RATIO.toFixed(2)}`);
+  console.log('');
+
+  console.table([88, 72, 56, 48].map(fontSize => ({
+    fontSize,
+    theoryHeight: calculateSafeTextBoxHeight(fontSize, 1, 0),
+    safeHeight: calculateSafeTextBoxHeight(fontSize),
+    measuredCjkWidthPx: measurements.find(item => item.fontSize === fontSize)?.measuredCjkWidthPx ?? '',
+  })));
+
+  console.table(measurements.map(item => ({
+    label: item.label,
+    text: item.text,
+    width: item.width,
+    fontSize: item.fontSize,
+    measuredWidthPx: Number(item.measuredWidthPx.toFixed(2)),
+    estimatedWidthPx: estimateTextWidthPx(item.text, item.fontSize),
+    safeWidthPx: calculateSafeSingleLineWidthPx(item.width),
+    maxChars: calculateMaxCharsPerLine(item.width, item.fontSize),
+    safeChars: recommendSingleLineChars(item.width, item.fontSize),
+    fitsSingleLine: item.measuredWidthPx <= calculateSafeSingleLineWidthPx(item.width),
+  })));
+} finally {
+  await browser.close();
+}
