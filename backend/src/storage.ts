@@ -3,40 +3,180 @@ import { homedir } from 'os';
 import path from 'path';
 
 export const APP_FOLDER_NAME = 'last-version-ppt';
-export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentation({ pptx, getResourceUrl, log }) {
+export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentation({ pptx, log }) {
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'last-version-ppt';
   pptx.subject = '自动生成演示文稿';
   pptx.title = '新的演示文稿';
 
-  const slide = pptx.addSlide();
-  slide.background = { color: 'F8FAFC' };
-  slide.addText('新的演示文稿', {
-    x: 0.8,
-    y: 0.68,
-    w: 11,
-    h: 1.28,
+  const page = {
+    left: 0.72,
+    width: 11.56,
+    titleTop: 0.52,
+    sectionTop: 1.42,
+  };
+  const textBox = { margin: 0, breakLine: false };
+
+  const cover = pptx.addSlide();
+  cover.background = { color: '0F172A' };
+  cover.addText('新的演示文稿', {
+    ...textBox,
+    x: page.left,
+    y: 0.76,
+    w: page.width,
+    h: 1.3,
     fontSize: 88,
+    bold: true,
+    color: 'FFFFFF'
+  });
+  cover.addText('请在右侧告诉智能助手，你想做什么样的演示稿。', {
+    ...textBox,
+    x: page.left,
+    y: 2.18,
+    w: page.width,
+    h: 0.9,
+    fontSize: 56,
+    color: 'CBD5E1'
+  });
+  cover.addText('如果有图片、表格或资料，也可以先上传，再说明想放到哪一页。', {
+    ...textBox,
+    x: page.left,
+    y: 3.4,
+    w: page.width,
+    h: 0.82,
+    fontSize: 48,
+    color: 'E2E8F0'
+  });
+
+  const agenda = pptx.addSlide();
+  agenda.background = { color: 'F8FAFC' };
+  agenda.addText('这份演示稿会按下面的结构继续补全', {
+    ...textBox,
+    x: page.left,
+    y: page.titleTop,
+    w: page.width,
+    h: 0.86,
+    fontSize: 72,
     bold: true,
     color: '0F172A'
   });
-  slide.addText('请在右侧告诉智能助手，你想做什么样的演示稿。', {
-    x: 0.8,
-    y: 1.96,
-    w: 11,
-    h: 1.72,
+  [
+    { no: '01', title: '封面', desc: '先讲清主题、对象和这次要解决的问题。' },
+    { no: '02', title: '目录', desc: '把章节顺序列出来，方便快速理解整份内容。' },
+    { no: '03', title: '正文', desc: '按重点内容展开说明，再补数据、方案和下一步。' },
+  ].forEach((item, index) => {
+    const y = page.sectionTop + index * 1.62;
+    agenda.addText(item.no, {
+      ...textBox,
+      x: page.left,
+      y,
+      w: 0.9,
+      h: 0.58,
+      fontSize: 56,
+      bold: true,
+      color: '2563EB'
+    });
+    agenda.addText(item.title, {
+      ...textBox,
+      x: 1.9,
+      y: y + 0.04,
+      w: 2.6,
+      h: 0.5,
+      fontSize: 48,
+      bold: true,
+      color: '0F172A'
+    });
+    agenda.addText(item.desc, {
+      ...textBox,
+      x: 4.94,
+      y: y + 0.04,
+      w: 6.98,
+      h: 0.46,
+      fontSize: 48,
+      color: '475569'
+    });
+  });
+
+  const body = pptx.addSlide();
+  body.background = { color: 'FFFFFF' };
+  body.addText('你可以继续这样完善正文', {
+    ...textBox,
+    x: page.left,
+    y: page.titleTop,
+    w: page.width,
+    h: 0.86,
+    fontSize: 72,
+    bold: true,
+    color: '0F172A'
+  });
+  body.addShape(pptx.ShapeType.roundRect, {
+    x: page.left,
+    y: 1.56,
+    w: 5.4,
+    h: 3.82,
+    rectRadius: 0.08,
+    fill: { color: 'F8FAFC' },
+    line: { color: 'E2E8F0', pt: 1 }
+  });
+  body.addText('核心信息', {
+    ...textBox,
+    x: page.left,
+    y: 1.56,
+    w: 3.4,
+    h: 0.58,
     fontSize: 56,
+    bold: true,
+    color: '0F172A'
+  });
+  body.addText('• 这一页写结论\\n• 下一行补原因\\n• 最后一行写动作', {
+    ...textBox,
+    x: page.left,
+    y: 2.34,
+    w: 5.24,
+    h: 1.86,
+    fontSize: 48,
     color: '334155'
   });
-  slide.addText('如果需要插图，请先上传资源，再告诉智能助手放到哪一页、哪个位置。', {
-    x: 0.8,
-    y: 4.08,
-    w: 11,
-    h: 1.6,
+  body.addText('关键数字', {
+    ...textBox,
+    x: 6.32,
+    y: 1.56,
+    w: 2.7,
+    h: 0.58,
+    fontSize: 56,
+    bold: true,
+    color: '1D4ED8'
+  });
+  body.addText('把最想让人记住的结果放在这里。', {
+    ...textBox,
+    x: 6.32,
+    y: 2.34,
+    w: 5.2,
+    h: 1.1,
+    fontSize: 48,
+    color: '1E3A8A'
+  });
+  body.addText('下一步动作', {
+    ...textBox,
+    x: 6.32,
+    y: 4.1,
+    w: 3.2,
+    h: 0.58,
+    fontSize: 56,
+    bold: true,
+    color: '0F172A'
+  });
+  body.addText('说明负责人、时间和预期结果，整页会更完整。', {
+    ...textBox,
+    x: 6.32,
+    y: 4.88,
+    w: 5.16,
+    h: 1.1,
     fontSize: 48,
     color: '475569'
   });
-  log('模板已创建，等待继续完善这份 PPT');
+
+  log('模板已创建，默认包含封面、目录和正文 3 页结构');
 };
 `;
 

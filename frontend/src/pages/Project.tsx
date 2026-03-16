@@ -156,6 +156,9 @@ export default function Project() {
   const projectRef = useRef<ProjectSummary | null>(null)
   const selectedFileNameRef = useRef<string | null>(selectedFileName)
   const editorDirtyRef = useRef(editorDirty)
+  const previewRefreshPromiseRef = useRef<Promise<void> | null>(null)
+  const previewRefreshQueuedRef = useRef(false)
+  const previewRefreshRunIdRef = useRef(0)
 
   useEffect(() => {
     selectedModelIdRef.current = selectedModelId
@@ -257,39 +260,69 @@ export default function Project() {
     })
   }
 
-  const refreshPreview = async () => {
+  const runPreviewRefreshOnce = async (runId: number) => {
+    const targetProjectKey = projectKeyRef.current
+    const isStale = () => projectKeyRef.current !== targetProjectKey || previewRefreshRunIdRef.current !== runId
+
     try {
       setPreviewLoading(true)
       setPreviewError(null)
       setPreviewImageError(null)
       setPreviewImageStatus('正在读取脚本…')
       setPreviewImages([])
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/content?fileName=${encodeURIComponent('index.js')}`)
+      const response = await fetch(`/api/projects/${encodeURIComponent(targetProjectKey)}/files/content?fileName=${encodeURIComponent('index.js')}`)
       if (!response.ok) throw new Error('加载 PPT 脚本失败')
       const data = await response.json() as { content: string }
+      if (isStale()) return
       setPreviewImageStatus('正在生成 PPT…')
-      const rendered = await runProjectPreview(projectKey, data.content)
+      const rendered = await runProjectPreview(targetProjectKey, data.content)
+      if (isStale()) return
       setPreview(rendered.presentation)
       setSelectedSlideIndex(0)
       setPreviewImageLoading(true)
       try {
         const generatedImages = await capturePreviewImages(rendered.pptxData, progress => setPreviewImageStatus(progress.message))
-        setPreviewImages(await uploadPreviewImages(projectKey, generatedImages, progress => setPreviewImageStatus(progress.message)))
+        if (isStale()) return
+        setPreviewImages(await uploadPreviewImages(targetProjectKey, generatedImages, progress => setPreviewImageStatus(progress.message)))
       } catch (error) {
+        if (isStale()) return
         setPreviewImageError(error instanceof Error ? error.message : String(error))
       } finally {
+        if (isStale()) return
         setPreviewImageLoading(false)
         setPreviewImageStatus(null)
       }
     } catch (err) {
+      if (isStale()) return
       setPreview(null)
       setPreviewImages([])
       setPreviewError(err instanceof Error ? err.message : String(err))
       setPreviewImageLoading(false)
       setPreviewImageStatus(null)
     } finally {
+      if (isStale()) return
       setPreviewLoading(false)
     }
+  }
+
+  const refreshPreview = async () => {
+    previewRefreshQueuedRef.current = true
+    if (previewRefreshPromiseRef.current) return await previewRefreshPromiseRef.current
+
+    const runner = (async () => {
+      while (previewRefreshQueuedRef.current) {
+        previewRefreshQueuedRef.current = false
+        const runId = previewRefreshRunIdRef.current + 1
+        previewRefreshRunIdRef.current = runId
+        await runPreviewRefreshOnce(runId)
+      }
+    })()
+
+    previewRefreshPromiseRef.current = runner.finally(() => {
+      previewRefreshPromiseRef.current = null
+    })
+
+    return await previewRefreshPromiseRef.current
   }
 
   const loadTextFileByName = async (fileName: string) => {

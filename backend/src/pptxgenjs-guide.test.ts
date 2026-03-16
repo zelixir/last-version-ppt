@@ -31,8 +31,11 @@ test('PPTXGENJS_GUIDE matches the actual runtime shape of pptx and pptxgenjs', (
 test('PPTXGENJS_GUIDE recommends the updated default text sizes', () => {
   assert.match(PPTXGENJS_GUIDE, /封面主标题 88、页标题 72、副标题 56、正文 48/);
   assert.match(PPTXGENJS_GUIDE, /fontSize: 88/);
+  assert.match(PPTXGENJS_GUIDE, /fontSize: 72/);
   assert.match(PPTXGENJS_GUIDE, /fontSize: 56/);
   assert.match(PPTXGENJS_GUIDE, /fontSize: 48/);
+  assert.match(PPTXGENJS_GUIDE, /margin: 0/);
+  assert.match(PPTXGENJS_GUIDE, /左右各 0\.72 英寸边距/);
 });
 
 test('PPTXGENJS_GUIDE explains the correct line break usage', () => {

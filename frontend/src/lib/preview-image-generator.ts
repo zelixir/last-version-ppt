@@ -17,6 +17,8 @@ interface UploadedPreviewImage {
 
 let sharedConverterPromise: Promise<WorkerBrowserConverter> | null = null
 const sharedProgressListeners = new Set<(progress: PreviewProgressStatus) => void>()
+let pendingPreviewTaskCount = 0
+let previewTaskQueue: Promise<void> = Promise.resolve()
 
 function emitProgress(progress: PreviewProgressStatus) {
   sharedProgressListeners.forEach(listener => listener(progress))
@@ -85,6 +87,32 @@ async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus
   }
 }
 
+async function runPreviewTask<T>(
+  task: () => Promise<T>,
+  onProgress?: (progress: PreviewProgressStatus) => void,
+) {
+  const shouldWait = pendingPreviewTaskCount > 0
+  pendingPreviewTaskCount += 1
+  if (shouldWait) {
+    onProgress?.({ message: '前一个预览还在处理，马上就会继续…' })
+  }
+
+  const previousTask = previewTaskQueue
+  let releaseCurrentTask = () => {}
+  previewTaskQueue = new Promise(resolve => {
+    releaseCurrentTask = resolve
+  })
+
+  await previousTask.catch(() => undefined)
+
+  try {
+    return await task()
+  } finally {
+    pendingPreviewTaskCount = Math.max(0, pendingPreviewTaskCount - 1)
+    releaseCurrentTask()
+  }
+}
+
 async function imageDataToPngBlob(data: Uint8Array, width: number, height: number) {
   if (isPngData(data)) {
     return new Blob([Uint8Array.from(data)], { type: 'image/png' })
@@ -117,23 +145,25 @@ export async function capturePreviewImages(
   pptxData: Uint8Array,
   onProgress?: (progress: PreviewProgressStatus) => void,
 ) {
-  const converter = await getPreviewConverter(onProgress)
-  const pageCount = await converter.getPageCount(pptxData, { inputFormat: 'pptx' })
-  const images: Blob[] = []
+  return await runPreviewTask(async () => {
+    const converter = await getPreviewConverter(onProgress)
+    const pageCount = await converter.getPageCount(pptxData, { inputFormat: 'pptx' })
+    const images: Blob[] = []
 
-  for (let index = 0; index < pageCount; index += 1) {
-    const currentPage = index + 1
-    onProgress?.({
-      message: `正在生成第 ${currentPage} / ${pageCount} 页高保真预览图…`,
-      percent: Math.round((currentPage / Math.max(pageCount, 1)) * 100),
-    })
-    const preview = await converter.renderPageViaConvert(pptxData, { inputFormat: 'pptx' }, index, PREVIEW_WIDTH)
-    images.push(preview.isPng || isPngData(preview.data)
-      ? new Blob([Uint8Array.from(preview.data)], { type: 'image/png' })
-      : await imageDataToPngBlob(preview.data, preview.width, preview.height))
-  }
+    for (let index = 0; index < pageCount; index += 1) {
+      const currentPage = index + 1
+      onProgress?.({
+        message: `正在生成第 ${currentPage} / ${pageCount} 页高保真预览图…`,
+        percent: Math.round((currentPage / Math.max(pageCount, 1)) * 100),
+      })
+      const preview = await converter.renderPageViaConvert(pptxData, { inputFormat: 'pptx' }, index, PREVIEW_WIDTH)
+      images.push(preview.isPng || isPngData(preview.data)
+        ? new Blob([Uint8Array.from(preview.data)], { type: 'image/png' })
+        : await imageDataToPngBlob(preview.data, preview.width, preview.height))
+    }
 
-  return images
+    return images
+  }, onProgress)
 }
 
 export async function uploadPreviewImages(
