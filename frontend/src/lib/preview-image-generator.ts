@@ -4,6 +4,7 @@ import { uploadFontsToWorker, loadSystemFonts } from './system-fonts'
 const LIBREOFFICE_WORKER_PATH = '/libreoffice/font-worker-wrapper.js'
 const PREVIEW_WIDTH = 1600
 const PREVIEW_ENGINE_INIT_TIMEOUT_MS = 30_000
+const PREVIEW_ENGINE_MAX_INIT_ATTEMPTS = 2
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 
 export interface PreviewProgressStatus {
@@ -91,7 +92,7 @@ async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus
   if (onProgress) sharedProgressListeners.add(onProgress)
 
   try {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 0; attempt < PREVIEW_ENGINE_MAX_INIT_ATTEMPTS; attempt += 1) {
       if (!sharedConverterPromise) {
         sharedConverterPromise = createPreviewConverterPromise()
       }

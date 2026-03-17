@@ -40,7 +40,6 @@ import { exampleApiKeys } from './project-support.ts';
 import { buildAttachmentDisposition } from './http-headers.ts';
 import {
   buildRenamedProjectId,
-  buildProjectId,
   buildUniqueProjectId,
   copyProjectDirectory,
   createProjectFiles,

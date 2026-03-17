@@ -3,6 +3,7 @@ import { homedir } from 'os';
 import path from 'path';
 
 export const APP_FOLDER_NAME = 'last-version-ppt';
+const MAX_PROJECT_ID_SUFFIX = 10_000;
 export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentation({ pptx, measureText, log }) {
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'last-version-ppt';
@@ -211,7 +212,7 @@ export function buildUniqueProjectId(
     return baseProjectId;
   }
 
-  for (let suffix = 2; suffix < 10_000; suffix += 1) {
+  for (let suffix = 2; suffix < MAX_PROJECT_ID_SUFFIX; suffix += 1) {
     const candidateProjectId = `${baseProjectId}-${`${suffix}`.padStart(2, '0')}`;
     if (isAvailable(candidateProjectId)) {
       return candidateProjectId;
