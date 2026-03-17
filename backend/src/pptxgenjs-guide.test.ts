@@ -37,10 +37,10 @@ test('PPTXGENJS_GUIDE recommends the updated default text sizes', () => {
   assert.match(PPTXGENJS_GUIDE, /fontSize × 1\.67 ÷ 100 × 行数/);
   assert.match(PPTXGENJS_GUIDE, /safeH = h \+ 0\.02/);
   assert.match(PPTXGENJS_GUIDE, /measureText\(text\)\.width; 再确认 widthPx <= w × 96 × 0\.96/);
-  assert.match(PPTXGENJS_GUIDE, /约 0\.75 × fontSize 的宽度来算/);
-  assert.match(PPTXGENJS_GUIDE, /safeChars = maxChars - 2/);
-  assert.match(PPTXGENJS_GUIDE, /目录说明框 w 6\.98、fontSize 48 时理论上限约 18 字，但示例请控制在 16 字以内/);
-  assert.match(PPTXGENJS_GUIDE, /正文右侧说明框 w 5\.16、fontSize 48 时理论上限约 13 字，示例文案建议控制在 11 字以内/);
+  assert.match(PPTXGENJS_GUIDE, /约 1\.00 × fontSize 的宽度来算/);
+  assert.match(PPTXGENJS_GUIDE, /当前 recommendSingleLineChars 和 maxChars 一致，因为固定预留字符现在就是 0/);
+  assert.match(PPTXGENJS_GUIDE, /目录说明框 w 6\.98、fontSize 48 时，按安全宽度折算约 13 字/);
+  assert.match(PPTXGENJS_GUIDE, /正文右侧说明框 w 5\.16、fontSize 48 时，按安全宽度折算约 9 字/);
   assert.match(PPTXGENJS_GUIDE, /margin: 0/);
   assert.match(PPTXGENJS_GUIDE, /左右各 0\.72 英寸边距/);
   assert.match(PPTXGENJS_GUIDE, /先放最关键结果/);

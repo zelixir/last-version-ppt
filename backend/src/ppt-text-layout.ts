@@ -1,10 +1,12 @@
 export const PPT_TEXT_LINE_HEIGHT_FACTOR = 1.67;
-export const PPT_TEXT_CHAR_WIDTH_FACTOR = 1.78;
+// 1.28 = 96px/in × 0.96 safe width ratio ÷ 72pt/in, matching the canvas check
+// for full-width Chinese characters at roughly 1.00 × fontSize.
+export const PPT_TEXT_CHAR_WIDTH_FACTOR = 1.28;
 export const PPT_TEXT_SAFE_HEIGHT_PADDING = 0.02;
-export const PPT_TEXT_SAFE_SINGLE_LINE_RESERVED_CHARS = 2;
+export const PPT_TEXT_SAFE_SINGLE_LINE_RESERVED_CHARS = 0;
 export const PPT_CHARACTERS_PER_INCH = 72;
 export const PPT_TEXT_PIXELS_PER_INCH = 96;
-export const PPT_TEXT_FULL_WIDTH_EM = 0.75;
+export const PPT_TEXT_FULL_WIDTH_EM = 1;
 export const PPT_TEXT_ASCII_LETTER_EM = 0.67;
 export const PPT_TEXT_ASCII_DIGIT_EM = 0.56;
 export const PPT_TEXT_BULLET_EM = 0.35;
@@ -33,6 +35,13 @@ export function recommendSingleLineChars(width: number, fontSize: number, reserv
   return Math.max(1, calculateMaxCharsPerLine(width, fontSize) - reservedChars);
 }
 
+/**
+ * Estimate a character's width in em for the preview font stack used by the
+ * project's layout checks. Chinese characters and full-width punctuation are
+ * treated as 1em, while ASCII letters, digits, bullets, and spaces are
+ * narrower. These values are only for fast layout estimation; final checks
+ * should still use canvas.measureText() with the real font stack.
+ */
 function estimateCharacterWidthEm(character: string): number {
   if (character === '•') return PPT_TEXT_BULLET_EM;
   if (/\s/u.test(character)) return PPT_TEXT_SPACE_EM;

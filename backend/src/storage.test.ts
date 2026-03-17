@@ -27,7 +27,7 @@ test('DEFAULT_INDEX_JS uses the verified three-page default template', () => {
   assert.match(DEFAULT_INDEX_JS, /正文/);
   assert.match(DEFAULT_INDEX_JS, /先讲清主题和要解决的问题/);
   assert.match(DEFAULT_INDEX_JS, /把章节顺序列出来方便理解/);
-  assert.match(DEFAULT_INDEX_JS, /按重点展开说明并补后续动作/);
+  assert.match(DEFAULT_INDEX_JS, /按重点展开并写动作/);
   assert.match(DEFAULT_INDEX_JS, /写清时间和负责人/);
   assert.match(DEFAULT_INDEX_JS, /默认包含封面、目录和正文 3 页结构/);
 });
@@ -39,7 +39,7 @@ test('DEFAULT_INDEX_JS keeps single-line sample text within the safe character b
   for (const text of [
     '先讲清主题和要解决的问题。',
     '把章节顺序列出来方便理解。',
-    '按重点展开说明并补后续动作。',
+    '按重点展开并写动作。',
   ]) {
     assert.ok(text.length <= agendaSafeChars, `${text} should fit into the agenda description box`);
   }

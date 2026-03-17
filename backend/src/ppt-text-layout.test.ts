@@ -25,20 +25,20 @@ test('PptxGenJS text box heights follow the verified line-height formula', () =>
 });
 
 test('PptxGenJS single-line character estimates match the default template widths', () => {
-  assert.equal(PPT_TEXT_CHAR_WIDTH_FACTOR, 1.78);
-  assert.equal(PPT_TEXT_FULL_WIDTH_EM, 0.75);
-  assert.equal(PPT_TEXT_SAFE_SINGLE_LINE_RESERVED_CHARS, 2);
-  assert.equal(calculateMaxCharsPerLine(11.56, 56), 26);
-  assert.equal(calculateMaxCharsPerLine(6.98, 48), 18);
-  assert.equal(calculateMaxCharsPerLine(5.16, 48), 13);
-  assert.equal(recommendSingleLineChars(11.56, 56), 24);
-  assert.equal(recommendSingleLineChars(6.98, 48), 16);
-  assert.equal(recommendSingleLineChars(5.16, 48), 11);
+  assert.equal(PPT_TEXT_CHAR_WIDTH_FACTOR, 1.28);
+  assert.equal(PPT_TEXT_FULL_WIDTH_EM, 1);
+  assert.equal(PPT_TEXT_SAFE_SINGLE_LINE_RESERVED_CHARS, 0);
+  assert.equal(calculateMaxCharsPerLine(11.56, 56), 19);
+  assert.equal(calculateMaxCharsPerLine(6.98, 48), 13);
+  assert.equal(calculateMaxCharsPerLine(5.16, 48), 9);
+  assert.equal(recommendSingleLineChars(11.56, 56), 19);
+  assert.equal(recommendSingleLineChars(6.98, 48), 13);
+  assert.equal(recommendSingleLineChars(5.16, 48), 9);
 });
 
 test('Canvas-derived width estimates keep the default single-line examples within the safe width', () => {
-  assert.equal(estimateTextWidthPx('先讲清主题和要解决的问题。', 48), 468);
-  assert.equal(estimateTextWidthPx('写清时间和负责人。', 48), 324);
+  assert.equal(estimateTextWidthPx('先讲清主题和要解决的问题。', 48), 624);
+  assert.equal(estimateTextWidthPx('写清时间和负责人。', 48), 432);
   assert.equal(calculateSafeSingleLineWidthPx(5.16), 475);
   assert.ok(doesTextFitSingleLine('先讲清主题和要解决的问题。', 6.98, 48));
   assert.ok(doesTextFitSingleLine('写清时间和负责人。', 5.16, 48));

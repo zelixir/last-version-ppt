@@ -4,7 +4,6 @@ import {
   PPT_TEXT_LINE_HEIGHT_FACTOR,
   PPT_TEXT_SAFE_WIDTH_RATIO,
   PPT_TEXT_SAFE_HEIGHT_PADDING,
-  calculateMaxCharsPerLine,
   calculateSafeTextBoxHeight,
   recommendSingleLineChars,
 } from './ppt-text-layout.ts';
@@ -14,9 +13,7 @@ const PAGE_TITLE_HEIGHT = calculateSafeTextBoxHeight(72);
 const SECTION_TITLE_HEIGHT = calculateSafeTextBoxHeight(56);
 const BODY_TEXT_HEIGHT = calculateSafeTextBoxHeight(48);
 const THREE_LINE_BODY_HEIGHT = calculateSafeTextBoxHeight(48, 3);
-const AGENDA_DESC_MAX_CHARS = calculateMaxCharsPerLine(6.98, 48);
 const AGENDA_DESC_SAFE_CHARS = recommendSingleLineChars(6.98, 48);
-const BODY_SIDE_TEXT_MAX_CHARS = calculateMaxCharsPerLine(5.16, 48);
 const BODY_SIDE_TEXT_SAFE_CHARS = recommendSingleLineChars(5.16, 48);
 
 export const PPTXGENJS_GUIDE = [
@@ -82,10 +79,10 @@ export const PPTXGENJS_GUIDE = [
    '   - 本项目默认建议：封面主标题 88、页标题 72、副标题 56、正文 48；需要更密的内容时，优先加大文本框高度和宽度，再考虑把正文降到 40。',
    `   - 文本框理论高度公式：h = fontSize × ${PPT_TEXT_LINE_HEIGHT_FACTOR} ÷ 100 × 行数（单位：英寸，和 PptxGenJS 内部的 LINEH_MODIFIER 一致）。`,
    `   - 示例安全高度公式：safeH = h + ${PPT_TEXT_SAFE_HEIGHT_PADDING.toFixed(2)}，再向上取两位小数；也就是 88→${COVER_TITLE_HEIGHT}、72→${PAGE_TITLE_HEIGHT}、56→${SECTION_TITLE_HEIGHT}、48→${BODY_TEXT_HEIGHT}，48 号字三行正文至少 ${THREE_LINE_BODY_HEIGHT}。`,
-    `   - 先用浏览器里的 canvas 做严格校验：ctx.font = "\${fontSize}px LastVersionPptCjkUi"; const widthPx = ctx.measureText(text).width; 再确认 widthPx <= w × 96 × ${PPT_TEXT_SAFE_WIDTH_RATIO.toFixed(2)}。`,
-    `   - 估算时可先按中文和全角标点约 ${PPT_TEXT_FULL_WIDTH_EM.toFixed(2)} × fontSize 的宽度来算，所以单行容字公式可写成 maxChars = floor(floor(w × 72) × ${PPT_TEXT_CHAR_WIDTH_FACTOR} ÷ fontSize)。`,
-     `   - 示例稳妥上限：safeChars = maxChars - 2；例如目录说明框 w 6.98、fontSize 48 时理论上限约 ${AGENDA_DESC_MAX_CHARS} 字，但示例请控制在 ${AGENDA_DESC_SAFE_CHARS} 字以内更稳妥。`,
-     `   - 正文右侧说明框 w 5.16、fontSize 48 时理论上限约 ${BODY_SIDE_TEXT_MAX_CHARS} 字，示例文案建议控制在 ${BODY_SIDE_TEXT_SAFE_CHARS} 字以内，避免被 PowerPoint 自动换行。`,
+    `   - 先用浏览器里的 canvas 做严格校验：ctx.font = "\${fontSize}px 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif"; const widthPx = ctx.measureText(text).width; 再确认 widthPx <= w × 96 × ${PPT_TEXT_SAFE_WIDTH_RATIO.toFixed(2)}。`,
+    `   - 估算时可先按中文和全角标点约 ${PPT_TEXT_FULL_WIDTH_EM.toFixed(2)} × fontSize 的宽度来算，所以单行容字公式可写成 maxChars = floor(floor(w × 72) × ${PPT_TEXT_CHAR_WIDTH_FACTOR} ÷ fontSize)。这个公式已经按 ${PPT_TEXT_SAFE_WIDTH_RATIO.toFixed(2)} 的安全宽度折算；当前 recommendSingleLineChars 和 maxChars 一致，因为固定预留字符现在就是 0。`,
+     `   - 目录说明框 w 6.98、fontSize 48 时，按安全宽度折算约 ${AGENDA_DESC_SAFE_CHARS} 字；示例文案请不要超过这个数量。`,
+     `   - 正文右侧说明框 w 5.16、fontSize 48 时，按安全宽度折算约 ${BODY_SIDE_TEXT_SAFE_CHARS} 字；示例文案建议控制在这个数量以内，避免被 PowerPoint 自动换行。`,
    '   - 尺寸建议：默认留出左右各 0.72 英寸边距，大标题和正文文本框建议显式设置 margin: 0；不要依赖默认内边距。',
    '4. 标题示例：',
    `   slide.addText('年度经营复盘', { margin: 0, x: 0.72, y: 0.52, w: 11.56, h: ${PAGE_TITLE_HEIGHT}, fontSize: 72, bold: true, color: '0F172A' });`,

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { readFileSync } from 'fs';
 import puppeteer from 'puppeteer';
 import {
   PPT_TEXT_CHAR_WIDTH_FACTOR,
@@ -14,8 +15,10 @@ import {
   recommendSingleLineChars,
 } from '../backend/src/ppt-text-layout.ts';
 
-const fontFileUrl = new URL('../frontend/public/fonts/last-version-ppt-cjk-subset.otf', import.meta.url).href;
+const fontFilePath = new URL('../frontend/public/fonts/last-version-ppt-cjk-subset.otf', import.meta.url);
+const fontFileDataUrl = `data:font/otf;base64,${readFileSync(fontFilePath).toString('base64')}`;
 const browserExecutablePath = Bun.which('google-chrome') ?? Bun.which('chromium') ?? Bun.which('chromium-browser');
+const canvasFontFamily = '_LastVersionPptCanvasSubset';
 
 const sampleBoxes = [
   { label: '封面副标题', width: 11.56, fontSize: 56, text: '请告诉智能助手，这份演示稿要讲什么。' },
@@ -40,21 +43,22 @@ try {
   await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 });
   await page.setContent(`<!doctype html><html><head><style>
     @font-face {
-      font-family: 'LastVersionPptCjkUi';
-      src: url('${fontFileUrl}') format('opentype');
+      font-family: '${canvasFontFamily}';
+      src: url('${fontFileDataUrl}') format('opentype');
       font-display: block;
     }
-    body { margin: 0; font-family: 'LastVersionPptCjkUi', 'Noto Sans CJK SC', sans-serif; }
+    body { margin: 0; font-family: '${canvasFontFamily}', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif; }
   </style></head><body></body></html>`);
 
-  const measurements = await page.evaluate(async sampleBoxes => {
-    await document.fonts.ready;
+  const measurements = await page.evaluate(async ({ sampleBoxes, fontFamily }) => {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     if (!context) throw new Error('无法创建 canvas 上下文');
 
-    return sampleBoxes.map(item => {
-      context.font = `${item.fontSize}px "LastVersionPptCjkUi", "Noto Sans CJK SC", sans-serif`;
+    return await Promise.all(sampleBoxes.map(async item => {
+      await document.fonts.load(`${item.fontSize}px "${fontFamily}"`);
+      await document.fonts.ready;
+      context.font = `${item.fontSize}px "${fontFamily}", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`;
       const measuredWidthPx = context.measureText(item.text).width;
       const measuredCjkWidthPx = context.measureText('汉').width;
       return {
@@ -62,8 +66,8 @@ try {
         measuredWidthPx,
         measuredCjkWidthPx,
       };
-    });
-  }, sampleBoxes);
+    }));
+  }, { sampleBoxes, fontFamily: canvasFontFamily });
 
   console.log('PptxGenJS 默认文本尺寸计算');
   console.log(`- 行高公式：fontSize × ${PPT_TEXT_LINE_HEIGHT_FACTOR} ÷ 100 × 行数`);
