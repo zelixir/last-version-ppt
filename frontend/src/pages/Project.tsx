@@ -10,7 +10,7 @@ import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
-import { capturePreviewImages, resetPreviewEngine, uploadPreviewImages, warmupPreviewEngine } from '../lib/preview-image-generator'
+import { capturePreviewImages, uploadPreviewImages, warmupPreviewEngine } from '../lib/preview-image-generator'
 import { runProjectPreview } from '../lib/project-preview'
 import { readStoredSelectedModelId, writeStoredSelectedModelId } from '../lib/selected-model-storage'
 
@@ -149,6 +149,7 @@ export default function Project() {
   const projectRef = useRef<ProjectSummary | null>(null)
   const selectedFileNameRef = useRef<string | null>(selectedFileName)
   const editorDirtyRef = useRef(editorDirty)
+  const editorValueRef = useRef(editorValue)
   const previewRefreshPromiseRef = useRef<Promise<void> | null>(null)
   const previewRefreshQueuedRef = useRef(false)
   const previewRefreshRunIdRef = useRef(0)
@@ -172,6 +173,10 @@ export default function Project() {
   useEffect(() => {
     editorDirtyRef.current = editorDirty
   }, [editorDirty])
+
+  useEffect(() => {
+    editorValueRef.current = editorValue
+  }, [editorValue])
 
   useEffect(() => {
     const initialNavigationState = initialNavigationStateRef.current
@@ -366,10 +371,6 @@ export default function Project() {
         console.error(err)
         setPageError(err instanceof Error ? err.message : String(err))
       })
-
-    return () => {
-      resetPreviewEngine()
-    }
   }, [projectId])
 
   useEffect(() => {
@@ -469,12 +470,17 @@ export default function Project() {
     return () => window.removeEventListener('keydown', handler)
   }, [selectedFileName, project])
 
-  const saveCurrentTextFile = async () => {
-    if (!selectedFile || selectedFile.kind !== 'text') return
-    const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}/files/content`, {
+  const saveCurrentTextFile = async (content = editorValueRef.current) => {
+    const currentFileName = selectedFileNameRef.current
+    const currentFile = currentFileName
+      ? projectRef.current?.files.find(file => file.name === currentFileName) ?? null
+      : null
+    if (!currentFile || currentFile.kind !== 'text') return
+
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectKeyRef.current)}/files/content`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName: selectedFile.name, content: editorValue }),
+      body: JSON.stringify({ fileName: currentFile.name, content }),
     })
     if (!response.ok) {
       const data = await response.json().catch(() => null)
@@ -482,7 +488,7 @@ export default function Project() {
     }
     setEditorDirty(false)
     await fetchProject()
-    if (selectedFile.name === 'index.js') await refreshPreview()
+    if (currentFile.name === 'index.js') await refreshPreview()
   }
 
   const deleteSelectedFile = async () => {
@@ -786,7 +792,7 @@ export default function Project() {
                                 onChange={value => { setEditorValue(value ?? ''); setEditorDirty(true) }}
                                 onMount={(editor, monaco) => {
                                   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-                                    void saveCurrentTextFile().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+                                    void saveCurrentTextFile(editor.getValue()).catch(err => setPageError(err instanceof Error ? err.message : String(err)))
                                   })
                                 }}
                                 language={selectedFile.name.endsWith('.json') ? 'json' : selectedFile.name.endsWith('.md') ? 'markdown' : selectedFile.name.endsWith('.css') ? 'css' : selectedFile.name.endsWith('.html') ? 'html' : 'javascript'}
