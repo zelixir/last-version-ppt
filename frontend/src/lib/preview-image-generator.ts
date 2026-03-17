@@ -3,6 +3,7 @@ import { uploadFontsToWorker, loadSystemFonts } from './system-fonts'
 
 const LIBREOFFICE_WORKER_PATH = '/libreoffice/font-worker-wrapper.js'
 const PREVIEW_WIDTH = 1600
+const PREVIEW_ENGINE_INIT_TIMEOUT_MS = 30_000
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 
 export interface PreviewProgressStatus {
@@ -44,47 +45,81 @@ function phaseToMessage(progress: WasmLoadProgress) {
   }
 }
 
+function createPreviewConverterPromise() {
+  const fontsPromise = loadSystemFonts()
+  const converter = new WorkerBrowserConverter({
+    ...createWasmPaths('/wasm/'),
+    browserWorkerJs: LIBREOFFICE_WORKER_PATH,
+    onProgress: progress => emitProgress({ message: phaseToMessage(progress), percent: progress.percent }),
+  })
+
+  return converter.initialize()
+    .then(async () => {
+      try {
+        await fontsPromise
+        const worker = (converter as any).worker as Worker | undefined
+        if (worker) await uploadFontsToWorker(worker)
+      } catch {
+        // Font loading is best-effort; continue without fonts
+      }
+      return converter
+    })
+    .catch(error => {
+      sharedConverterPromise = null
+      throw error
+    })
+}
+
+async function waitForPreviewConverter(converterPromise: Promise<WorkerBrowserConverter>) {
+  let timeoutId = 0
+
+  try {
+    return await Promise.race([
+      converterPromise,
+      new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error('高保真预览引擎启动超时，请稍后重试'))
+        }, PREVIEW_ENGINE_INIT_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
 async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus) => void) {
   if (onProgress) sharedProgressListeners.add(onProgress)
 
-  if (!sharedConverterPromise) {
-    // Start loading system fonts in parallel with converter initialization
-    const fontsPromise = loadSystemFonts()
-
-    const converter = new WorkerBrowserConverter({
-      ...createWasmPaths('/wasm/'),
-      browserWorkerJs: LIBREOFFICE_WORKER_PATH,
-      onProgress: progress => emitProgress({ message: phaseToMessage(progress), percent: progress.percent }),
-    })
-
-    sharedConverterPromise = converter.initialize()
-      .then(async () => {
-        // After init, upload system fonts into the WASM virtual filesystem.
-        // NOTE: WorkerBrowserConverter does not expose a public font API, so we
-        // access its internal Worker instance as a temporary workaround until
-        // the library provides an official mechanism.
-        try {
-          await fontsPromise
-          const worker = (converter as any).worker as Worker | undefined
-          if (worker) await uploadFontsToWorker(worker)
-        } catch {
-          // Font loading is best-effort; continue without fonts
-        }
-        return converter
-      })
-      .catch(error => {
-        sharedConverterPromise = null
-        throw error
-      })
-  }
-
   try {
-    const converter = await sharedConverterPromise
-    onProgress?.({ message: '高保真预览引擎已经准备好了', percent: 100 })
-    return converter
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (!sharedConverterPromise) {
+        sharedConverterPromise = createPreviewConverterPromise()
+      }
+
+      try {
+        const converter = await waitForPreviewConverter(sharedConverterPromise)
+        onProgress?.({ message: '高保真预览引擎已经准备好了', percent: 100 })
+        return converter
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const shouldRetry = attempt === 0 && message.includes('启动超时')
+        sharedConverterPromise = null
+        if (shouldRetry) {
+          onProgress?.({ message: '预览引擎刚才没有顺利启动，正在重新准备…' })
+          continue
+        }
+        throw error
+      }
+    }
+
+    throw new Error('高保真预览引擎暂时不可用，请稍后重试')
   } finally {
     if (onProgress) sharedProgressListeners.delete(onProgress)
   }
+}
+
+export function resetPreviewEngine() {
+  sharedConverterPromise = null
 }
 
 export async function warmupPreviewEngine(onProgress?: (progress: PreviewProgressStatus) => void) {

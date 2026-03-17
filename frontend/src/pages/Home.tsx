@@ -7,6 +7,7 @@ import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
 import { warmupPreviewEngine } from '../lib/preview-image-generator'
+import { readStoredSelectedModelId, writeStoredSelectedModelId } from '../lib/selected-model-storage'
 
 const PLACEHOLDERS = [
   '做一个 8 页的产品介绍 PPT，风格科技感强，包含时间线与功能亮点。',
@@ -20,7 +21,7 @@ export default function Home() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null)
   const [models, setModels] = useState<AiModel[]>([])
-  const [selectedModelId, setSelectedModelId] = useState<number | null>(null)
+  const [selectedModelId, setSelectedModelId] = useState<number | null>(() => readStoredSelectedModelId())
   const [placeholderSeed, setPlaceholderSeed] = useState(() => Math.floor(Math.random() * PLACEHOLDERS.length))
   const [requirement, setRequirement] = useState(() => PLACEHOLDERS[placeholderSeed % PLACEHOLDERS.length])
   const [loading, setLoading] = useState(false)
@@ -85,6 +86,10 @@ export default function Home() {
     fetchStatus()
     fetchModels()
   }, [])
+
+  useEffect(() => {
+    writeStoredSelectedModelId(selectedModelId)
+  }, [selectedModelId])
 
   const createProject = async () => {
     if (!requirement.trim() || loading) return

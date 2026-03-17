@@ -11,7 +11,7 @@ import { runProject } from './project-runner.ts';
 import { APPLY_PATCH_AGENT_INSTRUCTIONS, APPLY_PATCH_TOOL_DESCRIPTION, applyLegacySearchReplace, applyProjectPatch } from './apply-patch.ts';
 import {
   buildRenamedProjectId,
-  buildProjectId,
+  buildUniqueProjectId,
   copyProjectDirectory,
   createProjectFiles,
   getProjectDir,
@@ -36,6 +36,10 @@ function summarizeToolEvent(toolName: string, details: string, success = true): 
 function countTextLines(value: string): number {
   if (!value) return 0;
   return value.split(/\r?\n/).length;
+}
+
+function isProjectIdAvailable(projectId: string) {
+  return !getProjectById(projectId) && !existsSync(getProjectDir(projectId));
 }
 
 export type ProjectAgentStreamEvent =
@@ -250,7 +254,7 @@ function buildProjectTools(options: {
       inputSchema: z.object({ name: z.string(), requirement: z.string().optional() }),
       execute: async ({ name, requirement }) => {
         emitter.start('create-project', { name, requirement });
-        const newId = buildProjectId(name);
+        const newId = buildUniqueProjectId(name, isProjectIdAvailable);
         createProjectFiles(newId);
         createProjectRecord({ id: newId, name: sanitizeProjectName(name), sourcePrompt: requirement ?? '', chatHistory: [] });
         options.setProjectId(newId);
@@ -264,7 +268,7 @@ function buildProjectTools(options: {
       execute: async ({ name }) => {
         emitter.start('clone-project', { name });
         const currentProjectId = options.getProjectId();
-        const newId = buildProjectId(name);
+        const newId = buildUniqueProjectId(name, isProjectIdAvailable);
         copyProjectDirectory(currentProjectId, newId);
         const current = ensureProject(currentProjectId);
         createProjectRecord({

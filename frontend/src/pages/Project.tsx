@@ -10,8 +10,9 @@ import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
-import { capturePreviewImages, uploadPreviewImages, warmupPreviewEngine } from '../lib/preview-image-generator'
+import { capturePreviewImages, resetPreviewEngine, uploadPreviewImages, warmupPreviewEngine } from '../lib/preview-image-generator'
 import { runProjectPreview } from '../lib/project-preview'
+import { readStoredSelectedModelId, writeStoredSelectedModelId } from '../lib/selected-model-storage'
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
   text: '文本',
@@ -45,7 +46,6 @@ type NavigationState = { autoPrompt?: string; suggestedModelId?: number }
 
 const SHOW_SCRIPT_STORAGE_KEY = 'last-version-ppt:show-script'
 const CHAT_WIDTH_STORAGE_KEY = 'last-version-ppt:chat-width'
-const SELECTED_MODEL_STORAGE_KEY = 'last-version-ppt:selected-model-id'
 const PROJECT_TAB_STORAGE_KEY_PREFIX = 'last-version-ppt:project-tab:'
 const PROMPT_HISTORY_STORAGE_KEY_PREFIX = 'last-version-ppt:prompt-history:'
 const MIN_CHAT_PANEL_WIDTH = 320
@@ -78,13 +78,6 @@ function readStoredPromptHistory(projectKey: string): string[] {
   } catch {
     return []
   }
-}
-
-function readStoredSelectedModelId() {
-  const rawValue = window.localStorage.getItem(SELECTED_MODEL_STORAGE_KEY)
-  if (!rawValue) return null
-  const value = Number(rawValue)
-  return Number.isInteger(value) && value > 0 ? value : null
 }
 
 function readNavigationState(locationState: unknown): NavigationState | null {
@@ -373,6 +366,10 @@ export default function Project() {
         console.error(err)
         setPageError(err instanceof Error ? err.message : String(err))
       })
+
+    return () => {
+      resetPreviewEngine()
+    }
   }, [projectId])
 
   useEffect(() => {
@@ -454,8 +451,7 @@ export default function Project() {
   }, [chatPanelWidth])
 
   useEffect(() => {
-    if (selectedModelId === null) return
-    window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, String(selectedModelId))
+    writeStoredSelectedModelId(selectedModelId)
   }, [selectedModelId])
 
   useEffect(() => {
@@ -788,6 +784,11 @@ export default function Project() {
                               <Editor
                                 value={editorValue}
                                 onChange={value => { setEditorValue(value ?? ''); setEditorDirty(true) }}
+                                onMount={(editor, monaco) => {
+                                  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+                                    void saveCurrentTextFile().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+                                  })
+                                }}
                                 language={selectedFile.name.endsWith('.json') ? 'json' : selectedFile.name.endsWith('.md') ? 'markdown' : selectedFile.name.endsWith('.css') ? 'css' : selectedFile.name.endsWith('.html') ? 'html' : 'javascript'}
                                 theme="vs-dark"
                                 options={{ minimap: { enabled: false }, fontSize: 14, wordWrap: 'on', automaticLayout: true }}

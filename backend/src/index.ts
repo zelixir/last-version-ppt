@@ -41,6 +41,7 @@ import { buildAttachmentDisposition } from './http-headers.ts';
 import {
   buildRenamedProjectId,
   buildProjectId,
+  buildUniqueProjectId,
   copyProjectDirectory,
   createProjectFiles,
   deleteProjectDirectory,
@@ -228,6 +229,10 @@ type ProjectFileWatchEvent = {
   change: 'change' | 'rename';
   updatedAt: string;
 };
+
+function isProjectIdAvailable(projectId: string) {
+  return !getProjectById(projectId) && !existsSync(getProjectDir(projectId));
+}
 
 type ProjectWatchState = {
   watcher: FSWatcher;
@@ -560,7 +565,7 @@ const app = new Elysia()
 
     if (!derivedName) return errorResponse('请填写项目名称，或提供需求和模型以自动命名');
 
-    const projectId = buildProjectId(derivedName);
+    const projectId = buildUniqueProjectId(derivedName, isProjectIdAvailable);
     createProjectFiles(projectId);
     createProjectRecord({
       id: projectId,
@@ -576,7 +581,7 @@ const app = new Elysia()
     const source = getProjectById(params.id);
     if (!source) return new Response('Not found', { status: 404 });
     const name = sanitizeProjectName(((body as any).name ?? source.name) as string);
-    const projectId = buildProjectId(name);
+    const projectId = buildUniqueProjectId(name, isProjectIdAvailable);
     copyProjectDirectory(source.id, projectId);
     createProjectRecord({
       id: projectId,
