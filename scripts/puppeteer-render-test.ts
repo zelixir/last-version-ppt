@@ -6,7 +6,10 @@ import path from 'path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { fileURLToPath } from 'url';
 import puppeteer, { type ConsoleMessage, type Page } from 'puppeteer';
-import { calculateSafeTextBoxHeight } from '../backend/src/ppt-text-layout.ts';
+import {
+  PPT_TEXT_SAFE_WIDTH_RATIO,
+  calculateSafeTextBoxHeight,
+} from '../backend/src/ppt-text-layout.ts';
 
 interface RenderPageState {
   projectId: string;
@@ -47,6 +50,19 @@ const PAGE_TITLE_HEIGHT = calculateSafeTextBoxHeight(72);
 const SECTION_TITLE_HEIGHT = calculateSafeTextBoxHeight(56);
 const BODY_TEXT_HEIGHT = calculateSafeTextBoxHeight(48);
 const THREE_LINE_BODY_HEIGHT = calculateSafeTextBoxHeight(48, 3);
+const canvasFontFamily = '_LastVersionPptCanvasSubset';
+const canvasFontPath = '/fonts/last-version-ppt-cjk-subset.otf';
+const canvasTextChecks = [
+  { label: '默认目录说明 1', text: '先讲清主题和要解决的问题。', width: 6.98, fontSize: 48 },
+  { label: '默认目录说明 2', text: '把章节顺序列出来方便理解。', width: 6.98, fontSize: 48 },
+  { label: '默认目录说明 3', text: '按重点展开并写动作。', width: 6.98, fontSize: 48 },
+  { label: '默认正文右侧 1', text: '先放最关键结果。', width: 5.2, fontSize: 48 },
+  { label: '默认正文右侧 2', text: '写清时间和负责人。', width: 5.16, fontSize: 48 },
+  { label: '渲染目录说明 1', text: '说明这份演示稿要讲什么。', width: 6.98, fontSize: 48 },
+  { label: '渲染目录说明 2', text: '把章节顺序列清楚。', width: 6.98, fontSize: 48 },
+  { label: '渲染目录说明 3', text: '用正文页检查字号排版。', width: 6.98, fontSize: 48 },
+  { label: '渲染正文右侧', text: '截图后可检查排版。', width: 5.2, fontSize: 48 },
+] as const;
 
 function parseArgs(argv: string[]): RunOptions {
   let outputDir = defaultOutputDir;
@@ -309,7 +325,7 @@ function buildSampleProjectScript() {
     bold: true,
     color: '1D4ED8'
   });
-  body.addText('截图保存后，就能确认排版。', {
+  body.addText('截图后可检查排版。', {
     ...baseTextStyle,
     x: 6.32,
     y: 2.52,
@@ -464,6 +480,42 @@ async function waitForRenderResult(page: Page, timeoutMs: number) {
   return await page.evaluate(() => window.__PREVIEW_IMAGE_TEST_STATE__ || null) as RenderPageState | null;
 }
 
+async function saveCanvasMetrics(page: Page, outputDir: string, sessionLog: (message: string) => void) {
+  await page.setViewport({ width: 1200, height: 800, deviceScaleFactor: 1 });
+  await page.setContent(`<!doctype html><html><head><style>
+    @font-face {
+      font-family: '${canvasFontFamily}';
+      src: url('${new URL(canvasFontPath, serverOrigin).toString()}') format('opentype');
+      font-display: block;
+    }
+    body { margin: 0; font-family: '${canvasFontFamily}', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif; }
+  </style></head><body></body></html>`);
+  const results = await page.evaluate(({ checks, safeWidthRatio, fontFamily }) => {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('无法创建 canvas 上下文');
+    return Promise.all(checks.map(async item => {
+      await document.fonts.load(`${item.fontSize}px "${fontFamily}"`);
+      await document.fonts.ready;
+      context.font = `${item.fontSize}px "${fontFamily}", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`;
+      const widthPx = context.measureText(item.text).width;
+      const maxWidthPx = Math.floor(item.width * 96 * safeWidthRatio);
+      return {
+        ...item,
+        widthPx,
+        maxWidthPx,
+        fitsSingleLine: widthPx <= maxWidthPx,
+      };
+    }));
+  }, { checks: canvasTextChecks, safeWidthRatio: PPT_TEXT_SAFE_WIDTH_RATIO, fontFamily: canvasFontFamily });
+  writeFileSync(path.join(outputDir, 'canvas-text-metrics.json'), JSON.stringify(results, null, 2), 'utf8');
+  const failed = results.filter(item => !item.fitsSingleLine);
+  if (failed.length > 0) {
+    throw new Error(`以下文案超过单行安全宽度：${failed.map(item => `${item.label}(${item.widthPx}/${item.maxWidthPx})`).join('、')}`);
+  }
+  sessionLog(`Canvas 校验完成：${results.length} 条单行文案均不超过 ${PPT_TEXT_SAFE_WIDTH_RATIO.toFixed(2)} 安全宽度。`);
+}
+
 async function saveImages(outputDir: string, imageUrls: string[], sessionLog: (message: string) => void) {
   const filePaths: string[] = [];
 
@@ -540,6 +592,7 @@ async function run() {
 
     const page = await browser.newPage();
     attachPageLogging(page, outputDir);
+    await saveCanvasMetrics(page, outputDir, sessionLog);
 
     const pageUrl = `${serverOrigin}/preview-image-test.html?projectId=${encodeURIComponent(project.id)}`;
     sessionLog(`正在打开页面：${pageUrl}`);

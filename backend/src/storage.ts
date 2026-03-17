@@ -70,7 +70,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
   [
     { no: '01', title: '封面', desc: '先讲清主题和要解决的问题。' },
     { no: '02', title: '目录', desc: '把章节顺序列出来方便理解。' },
-    { no: '03', title: '正文', desc: '按重点展开说明并补后续动作。' },
+    { no: '03', title: '正文', desc: '按重点展开并写动作。' },
   ].forEach((item, index) => {
     const y = page.sectionTop + index * 1.62;
     agenda.addText(item.no, {
@@ -154,7 +154,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     bold: true,
     color: '1D4ED8'
   });
-  body.addText('把最重要的结果放在这里。', {
+  body.addText('先放最关键结果。', {
     ...textOptions,
     x: 6.32,
     y: 2.52,
@@ -173,7 +173,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     bold: true,
     color: '0F172A'
   });
-  body.addText('写清负责人、时间和结果。', {
+  body.addText('写清时间和负责人。', {
     ...textOptions,
     x: 6.32,
     y: 5.1,
