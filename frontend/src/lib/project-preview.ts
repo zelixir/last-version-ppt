@@ -11,6 +11,76 @@ const PROJECT_FILE_API_PREFIX = '/api/projects'
 export const DEFAULT_PPT_LAYOUT = 'LAYOUT_WIDE'
 export const DEFAULT_PPT_WIDTH = 13.333
 export const DEFAULT_PPT_HEIGHT = 7.5
+const PPT_TEXT_PIXELS_PER_INCH = 96
+const PPT_TEXT_SAFE_WIDTH_RATIO = 0.96
+const PPT_TEXT_LINE_HEIGHT_FACTOR = 1.67
+const PPT_TEXT_SAFE_HEIGHT_PADDING = 0.02
+const DEFAULT_MEASURE_TEXT_FALLBACK_FONTS = [
+  'LastVersionPptCjkUi',
+  'Microsoft YaHei',
+  'PingFang SC',
+  'Noto Sans CJK SC',
+  'sans-serif',
+]
+
+let textMeasureCanvas: HTMLCanvasElement | null = null
+
+function roundUpToHundredth(value: number): number {
+  return Math.ceil(value * 100) / 100
+}
+
+function calculateSafeSingleLineWidthPx(width: number): number {
+  return Math.floor(width * PPT_TEXT_PIXELS_PER_INCH * PPT_TEXT_SAFE_WIDTH_RATIO)
+}
+
+function buildCanvasFontStack(fontFace: string): string {
+  const fontNames = [fontFace, ...DEFAULT_MEASURE_TEXT_FALLBACK_FONTS]
+    .filter(Boolean)
+    .filter((font, index, list) => list.indexOf(font) === index)
+    .map(font => `"${font}"`)
+  return fontNames.join(', ')
+}
+
+function getTextMeasureContext(): CanvasRenderingContext2D {
+  if (!textMeasureCanvas) {
+    textMeasureCanvas = document.createElement('canvas')
+  }
+  const context = textMeasureCanvas.getContext('2d')
+  if (!context) {
+    throw new Error('当前浏览器无法创建文字测量画布，请稍后再试')
+  }
+  return context
+}
+
+function splitMeasuredLines(context: CanvasRenderingContext2D, text: string, maxWidthPx?: number): Array<{ text: string; width: number }> {
+  const paragraphs = text.split(/\r?\n/u)
+  return paragraphs.flatMap(paragraph => {
+    if (!paragraph) return [{ text: '', width: 0 }]
+    if (!Number.isFinite(maxWidthPx) || !maxWidthPx || maxWidthPx <= 0) {
+      return [{ text: paragraph, width: context.measureText(paragraph).width }]
+    }
+
+    const lines: Array<{ text: string; width: number }> = []
+    let currentText = ''
+    let currentWidth = 0
+
+    for (const character of Array.from(paragraph)) {
+      const nextText = currentText + character
+      const nextWidth = context.measureText(nextText).width
+      if (currentText && nextWidth > maxWidthPx) {
+        lines.push({ text: currentText, width: currentWidth })
+        currentText = character
+        currentWidth = context.measureText(character).width
+        continue
+      }
+      currentText = nextText
+      currentWidth = nextWidth
+    }
+
+    lines.push({ text: currentText, width: currentWidth })
+    return lines
+  })
+}
 
 function buildProjectResourceUrl(projectId: string, fileName: string) {
   return `${PROJECT_FILE_API_PREFIX}/${encodeURIComponent(projectId)}/files/raw?fileName=${encodeURIComponent(fileName)}`
@@ -166,11 +236,45 @@ export async function runProjectPreview(projectId: string, code: string): Promis
   const pptx = new PptxGenJS()
   pptx.layout = DEFAULT_PPT_LAYOUT
 
+  const measureText = async (
+    text: string,
+    options: { fontSize: number; fontFace: string; width?: number; padding?: number },
+  ) => {
+    const fontFace = typeof options?.fontFace === 'string' ? options.fontFace.trim() : ''
+    if (!fontFace) {
+      throw new Error('measureText 需要传入真实字体名，例如 Noto Sans CJK SC')
+    }
+
+    const fontSize = typeof options?.fontSize === 'number' ? options.fontSize : 0
+    const width = typeof options?.width === 'number' ? options.width : undefined
+    const padding = typeof options?.padding === 'number' ? options.padding : PPT_TEXT_SAFE_HEIGHT_PADDING
+
+    const context = getTextMeasureContext()
+    const fontStack = buildCanvasFontStack(fontFace)
+    await document.fonts.load(`${fontSize}px ${fontStack}`)
+    await document.fonts.ready
+    context.font = `${fontSize}px ${fontStack}`
+
+    const lines = splitMeasuredLines(context, text, width ? calculateSafeSingleLineWidthPx(width) : undefined)
+    const maxWidthPx = lines.reduce((max, line) => Math.max(max, line.width), 0)
+    const lineCount = Math.max(1, lines.length)
+    const height = roundUpToHundredth((fontSize * PPT_TEXT_LINE_HEIGHT_FACTOR * lineCount) / 100)
+    return {
+      width: maxWidthPx,
+      widthInches: roundUpToHundredth(maxWidthPx / PPT_TEXT_PIXELS_PER_INCH),
+      height,
+      safeHeight: roundUpToHundredth(height + padding),
+      lineHeight: roundUpToHundredth((fontSize * PPT_TEXT_LINE_HEIGHT_FACTOR) / 100),
+      lines: lineCount,
+    }
+  }
+
   const context = {
     pptx,
     pptxgenjs: PptxGenJS,
     getResourceUrl: (fileName: string) => buildProjectResourceUrl(projectId, fileName),
     log: (...args: unknown[]) => logs.push(args.map(arg => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ')),
+    measureText,
   }
 
   const output = await build(context)
