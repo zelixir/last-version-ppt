@@ -19,7 +19,7 @@ test('runProject 提供的 PPT 脚本运行环境与指南示例一致', async (
   await withTestProject(async projectId => {
     writeFileSync(
       resolveProjectFile(projectId, 'index.js'),
-      `module.exports = async function buildPresentation({ pptx, pptxgenjs, getResourceUrl, getResourcePath, log, projectId, projectDir, path }) {
+      `module.exports = async function buildPresentation({ pptx, pptxgenjs, getResourceUrl, getResourcePath, measureText, log, projectId, projectDir, path }) {
   if (typeof pptxgenjs !== 'function') throw new Error('pptxgenjs 应该是构造函数');
   if (!(pptx instanceof pptxgenjs)) throw new Error('pptx 应该是 pptxgenjs 的实例');
   if (pptxgenjs.ShapeType !== undefined) throw new Error('pptxgenjs 上不应直接提供 ShapeType');
@@ -31,12 +31,15 @@ test('runProject 提供的 PPT 脚本运行环境与指南示例一致', async (
   if (!('LAYOUT_WIDE' in pptx.LAYOUTS) || !('LAYOUT_16x9' in pptx.LAYOUTS) || !('LAYOUT_4x3' in pptx.LAYOUTS)) {
     throw new Error('缺少预期的布局常量');
   }
-  if (typeof getResourceUrl !== 'function' || typeof getResourcePath !== 'function' || typeof log !== 'function') {
+  if (typeof getResourceUrl !== 'function' || typeof getResourcePath !== 'function' || typeof measureText !== 'function' || typeof log !== 'function') {
     throw new Error('上下文函数缺失');
   }
   if (typeof projectId !== 'string' || typeof projectDir !== 'string' || typeof path?.join !== 'function') {
     throw new Error('项目信息缺失');
   }
+
+  const measured = measureText('新的演示文稿', { fontSize: 88, fontFace: 'Noto Sans CJK SC', width: 11.56 });
+  if (typeof measured?.width !== 'number' || measured.width <= 0) throw new Error('measureText 不可用');
 
   pptx.layout = 'LAYOUT_16x9';
   const cover = pptx.addSlide();
@@ -45,8 +48,9 @@ test('runProject 提供的 PPT 脚本运行环境与指南示例一致', async (
   chartSlide.addChart(pptx.ChartType.bar, [{ name: '示例', labels: ['一月', '二月'], values: [1, 2] }], { x: 0.5, y: 0.5, w: 4, h: 2.5, showLegend: false });
   log(JSON.stringify({
     resourceUrl: getResourceUrl('封面 图.png'),
-    resourcePath: getResourcePath('cover.png'),
-    layout: pptx.layout,
+     resourcePath: getResourcePath('cover.png'),
+     measureWidth: measured.width,
+     layout: pptx.layout,
     shapeType: pptx.ShapeType.roundRect,
     chartType: pptx.ChartType.bar
   }));
@@ -62,6 +66,7 @@ test('runProject 提供的 PPT 脚本运行环境与指南示例一致', async (
 
     const runtimeInfo = JSON.parse(result.logs.at(-1) ?? '{}');
     assert.equal(runtimeInfo.layout, 'LAYOUT_16x9');
+    assert.ok(runtimeInfo.measureWidth > 0);
     assert.equal(runtimeInfo.shapeType, 'roundRect');
     assert.equal(runtimeInfo.chartType, 'bar');
     assert.match(runtimeInfo.resourceUrl, new RegExp(`^http://localhost:3101/${projectId}/`));

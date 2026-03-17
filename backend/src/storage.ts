@@ -15,9 +15,10 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     titleTop: 0.52,
     sectionTop: 1.42,
   };
-  const textOptions = { margin: 0, breakLine: false };
-  const addMeasuredText = (slide, text, options) => {
-    const metrics = measureText(text, { fontSize: options.fontSize, width: options.w });
+  const fontFace = 'Noto Sans CJK SC';
+  const textOptions = { fontFace, margin: 0, breakLine: false };
+  const addMeasuredText = async (slide, text, options) => {
+    const metrics = await measureText(text, { fontSize: options.fontSize, fontFace, width: options.w });
     slide.addText(text, { ...textOptions, ...options, h: metrics.safeHeight });
     return metrics;
   };
@@ -25,7 +26,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
   const cover = pptx.addSlide();
   cover.background = { color: '0F172A' };
   let coverCursorY = 0.76;
-  const coverTitle = addMeasuredText(cover, '新的演示文稿', {
+  const coverTitle = await addMeasuredText(cover, '新的演示文稿', {
     x: page.left,
     y: coverCursorY,
     w: page.width,
@@ -34,7 +35,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: 'FFFFFF'
   });
   coverCursorY += coverTitle.safeHeight + 0.44;
-  const coverSubtitle = addMeasuredText(cover, '请告诉智能助手，这份演示稿要讲什么。', {
+  const coverSubtitle = await addMeasuredText(cover, '请告诉智能助手，这份演示稿要讲什么。', {
     x: page.left,
     y: coverCursorY,
     w: page.width,
@@ -42,7 +43,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: 'CBD5E1'
   });
   coverCursorY += coverSubtitle.safeHeight + 0.28;
-  addMeasuredText(cover, '有图片、表格或资料时，也可以先上传再说明。', {
+  await addMeasuredText(cover, '有图片、表格或资料时，也可以先上传再说明。', {
     x: page.left,
     y: coverCursorY,
     w: page.width,
@@ -52,7 +53,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
 
   const agenda = pptx.addSlide();
   agenda.background = { color: 'F8FAFC' };
-  addMeasuredText(agenda, '这份演示稿会按下面的结构继续补全', {
+  await addMeasuredText(agenda, '这份演示稿会按下面的结构继续补全', {
     x: page.left,
     y: page.titleTop,
     w: page.width,
@@ -60,13 +61,13 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     bold: true,
     color: '0F172A'
   });
-  [
+  for (const [index, item] of [
     { no: '01', title: '封面', desc: '先讲清主题和要解决的问题。' },
     { no: '02', title: '目录', desc: '把章节顺序列出来方便理解。' },
     { no: '03', title: '正文', desc: '按重点展开并写动作。' },
-  ].forEach((item, index) => {
+  ].entries()) {
     const y = page.sectionTop + index * 1.62;
-    const noMetrics = addMeasuredText(agenda, item.no, {
+    const noMetrics = await addMeasuredText(agenda, item.no, {
       x: page.left,
       y,
       w: 0.9,
@@ -74,26 +75,28 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
       bold: true,
       color: '2563EB'
     });
-    addMeasuredText(agenda, item.title, {
+    const titleMetrics = await measureText(item.title, { fontSize: 48, fontFace, width: 2.6 });
+    await addMeasuredText(agenda, item.title, {
       x: 1.9,
-      y: y + Math.max(0, (noMetrics.safeHeight - measureText(item.title, { fontSize: 48, width: 2.6 }).safeHeight) / 2),
+      y: y + Math.max(0, (noMetrics.safeHeight - titleMetrics.safeHeight) / 2),
       w: 2.6,
       fontSize: 48,
       bold: true,
       color: '0F172A'
     });
-    addMeasuredText(agenda, item.desc, {
+    const descMetrics = await measureText(item.desc, { fontSize: 48, fontFace, width: 6.98 });
+    await addMeasuredText(agenda, item.desc, {
       x: 4.94,
-      y: y + Math.max(0, (noMetrics.safeHeight - measureText(item.desc, { fontSize: 48, width: 6.98 }).safeHeight) / 2),
+      y: y + Math.max(0, (noMetrics.safeHeight - descMetrics.safeHeight) / 2),
       w: 6.98,
       fontSize: 48,
       color: '475569'
     });
-  });
+  }
 
   const body = pptx.addSlide();
   body.background = { color: 'FFFFFF' };
-  addMeasuredText(body, '你可以继续这样完善正文', {
+  await addMeasuredText(body, '你可以继续这样完善正文', {
     x: page.left,
     y: page.titleTop,
     w: page.width,
@@ -110,7 +113,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     fill: { color: 'F8FAFC' },
     line: { color: 'E2E8F0', pt: 1 }
   });
-  addMeasuredText(body, '核心信息', {
+  await addMeasuredText(body, '核心信息', {
     x: page.left,
     y: 1.56,
     w: 3.4,
@@ -118,14 +121,14 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     bold: true,
     color: '0F172A'
   });
-  addMeasuredText(body, '• 这一页写结论\\n• 下一行补原因\\n• 最后一行写动作', {
+  await addMeasuredText(body, '• 这一页写结论\\n• 下一行补原因\\n• 最后一行写动作', {
     x: page.left,
     y: 2.52,
     w: 5.24,
     fontSize: 48,
     color: '334155'
   });
-  const bodyKeyNumber = addMeasuredText(body, '关键数字', {
+  const bodyKeyNumber = await addMeasuredText(body, '关键数字', {
     x: 6.32,
     y: 1.56,
     w: 2.7,
@@ -134,7 +137,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '1D4ED8'
   });
   const keyResultY = 1.56 + bodyKeyNumber.safeHeight + 0.12;
-  const keyResult = addMeasuredText(body, '先放最关键结果。', {
+  const keyResult = await addMeasuredText(body, '先放最关键结果。', {
     x: 6.32,
     y: keyResultY,
     w: 5.2,
@@ -142,7 +145,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '1E3A8A'
   });
   const nextActionY = keyResultY + keyResult.safeHeight + 0.78;
-  const nextAction = addMeasuredText(body, '下一步动作', {
+  const nextAction = await addMeasuredText(body, '下一步动作', {
     x: 6.32,
     y: nextActionY,
     w: 3.2,
@@ -150,7 +153,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     bold: true,
     color: '0F172A'
   });
-  addMeasuredText(body, '写清时间和负责人。', {
+  await addMeasuredText(body, '写清时间和负责人。', {
     x: 6.32,
     y: nextActionY + nextAction.safeHeight + 0.12,
     w: 5.16,

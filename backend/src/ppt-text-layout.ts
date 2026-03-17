@@ -15,6 +15,7 @@ export const PPT_TEXT_SAFE_WIDTH_RATIO = 0.96;
 
 export interface MeasureTextOptions {
   fontSize: number;
+  fontFace: string;
   width?: number;
   padding?: number;
 }

@@ -12,15 +12,14 @@ test('buildRenamedProjectId keeps version suffix', () => {
 });
 
 test('DEFAULT_INDEX_JS uses the verified three-page default template', () => {
+  assert.match(DEFAULT_INDEX_JS, /measureText/);
+  assert.match(DEFAULT_INDEX_JS, /await addMeasuredText/);
+  assert.match(DEFAULT_INDEX_JS, /const fontFace = 'Noto Sans CJK SC'/);
+  assert.match(DEFAULT_INDEX_JS, /fontFace, margin: 0/);
   assert.match(DEFAULT_INDEX_JS, /fontSize: 88/);
   assert.match(DEFAULT_INDEX_JS, /fontSize: 72/);
   assert.match(DEFAULT_INDEX_JS, /fontSize: 56/);
   assert.match(DEFAULT_INDEX_JS, /fontSize: 48/);
-  assert.match(DEFAULT_INDEX_JS, /h: 1\.49/);
-  assert.match(DEFAULT_INDEX_JS, /h: 1\.23/);
-  assert.match(DEFAULT_INDEX_JS, /h: 0\.96/);
-  assert.match(DEFAULT_INDEX_JS, /h: 0\.83/);
-  assert.match(DEFAULT_INDEX_JS, /h: 2\.43/);
   assert.match(DEFAULT_INDEX_JS, /margin: 0/);
   assert.match(DEFAULT_INDEX_JS, /封面/);
   assert.match(DEFAULT_INDEX_JS, /目录/);
