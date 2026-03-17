@@ -13,6 +13,21 @@ export const PPT_TEXT_BULLET_EM = 0.35;
 export const PPT_TEXT_SPACE_EM = 0.28;
 export const PPT_TEXT_SAFE_WIDTH_RATIO = 0.96;
 
+export interface MeasureTextOptions {
+  fontSize: number;
+  width?: number;
+  padding?: number;
+}
+
+export interface MeasureTextResult {
+  width: number;
+  widthInches: number;
+  height: number;
+  safeHeight: number;
+  lineHeight: number;
+  lines: number;
+}
+
 function roundUpToHundredth(value: number): number {
   return Math.ceil(value * 100) / 100;
 }
@@ -55,10 +70,55 @@ export function estimateTextWidthPx(text: string, fontSize: number): number {
   return totalWidthEm * fontSize;
 }
 
+function splitMeasuredLines(text: string, fontSize: number, maxWidthPx?: number): Array<{ text: string; width: number }> {
+  const paragraphs = text.split(/\r?\n/u);
+  return paragraphs.flatMap(paragraph => {
+    if (!paragraph) return [{ text: '', width: 0 }];
+
+    if (!Number.isFinite(maxWidthPx) || !maxWidthPx || maxWidthPx <= 0) {
+      return [{ text: paragraph, width: estimateTextWidthPx(paragraph, fontSize) }];
+    }
+
+    const lines: Array<{ text: string; width: number }> = [];
+    let currentText = '';
+    let currentWidth = 0;
+
+    for (const character of Array.from(paragraph)) {
+      const characterWidth = estimateCharacterWidthEm(character) * fontSize;
+      if (currentText && currentWidth + characterWidth > maxWidthPx) {
+        lines.push({ text: currentText, width: currentWidth });
+        currentText = character;
+        currentWidth = characterWidth;
+        continue;
+      }
+
+      currentText += character;
+      currentWidth += characterWidth;
+    }
+
+    lines.push({ text: currentText, width: currentWidth });
+    return lines;
+  });
+}
+
 export function calculateSafeSingleLineWidthPx(width: number, safeWidthRatio = PPT_TEXT_SAFE_WIDTH_RATIO): number {
   return Math.floor(width * PPT_TEXT_PIXELS_PER_INCH * safeWidthRatio);
 }
 
 export function doesTextFitSingleLine(text: string, width: number, fontSize: number, safeWidthRatio = PPT_TEXT_SAFE_WIDTH_RATIO): boolean {
   return estimateTextWidthPx(text, fontSize) <= calculateSafeSingleLineWidthPx(width, safeWidthRatio);
+}
+
+export function measureText(text: string, { fontSize, width, padding = PPT_TEXT_SAFE_HEIGHT_PADDING }: MeasureTextOptions): MeasureTextResult {
+  const lines = splitMeasuredLines(text, fontSize, width ? calculateSafeSingleLineWidthPx(width) : undefined);
+  const maxWidthPx = lines.reduce((max, line) => Math.max(max, line.width), 0);
+  const lineCount = Math.max(1, lines.length);
+  return {
+    width: maxWidthPx,
+    widthInches: roundUpToHundredth(maxWidthPx / PPT_TEXT_PIXELS_PER_INCH),
+    height: calculateTextBoxHeight(fontSize, lineCount),
+    safeHeight: calculateSafeTextBoxHeight(fontSize, lineCount, padding),
+    lineHeight: calculateTextBoxHeight(fontSize),
+    lines: lineCount,
+  };
 }

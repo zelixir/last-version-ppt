@@ -1,16 +1,9 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';
-import { calculateSafeTextBoxHeight } from './ppt-text-layout.ts';
-
-const COVER_TITLE_HEIGHT = calculateSafeTextBoxHeight(88);
-const PAGE_TITLE_HEIGHT = calculateSafeTextBoxHeight(72);
-const SECTION_TITLE_HEIGHT = calculateSafeTextBoxHeight(56);
-const BODY_TEXT_HEIGHT = calculateSafeTextBoxHeight(48);
-const THREE_LINE_BODY_HEIGHT = calculateSafeTextBoxHeight(48, 3);
 
 export const APP_FOLDER_NAME = 'last-version-ppt';
-export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentation({ pptx, log }) {
+export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentation({ pptx, measureText, log }) {
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'last-version-ppt';
   pptx.subject = '自动生成演示文稿';
@@ -23,46 +16,46 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     sectionTop: 1.42,
   };
   const textOptions = { margin: 0, breakLine: false };
+  const addMeasuredText = (slide, text, options) => {
+    const metrics = measureText(text, { fontSize: options.fontSize, width: options.w });
+    slide.addText(text, { ...textOptions, ...options, h: metrics.safeHeight });
+    return metrics;
+  };
 
   const cover = pptx.addSlide();
   cover.background = { color: '0F172A' };
-  cover.addText('新的演示文稿', {
-    ...textOptions,
+  let coverCursorY = 0.76;
+  const coverTitle = addMeasuredText(cover, '新的演示文稿', {
     x: page.left,
-    y: 0.76,
+    y: coverCursorY,
     w: page.width,
-    h: ${COVER_TITLE_HEIGHT},
     fontSize: 88,
     bold: true,
     color: 'FFFFFF'
   });
-  cover.addText('请告诉智能助手，这份演示稿要讲什么。', {
-    ...textOptions,
+  coverCursorY += coverTitle.safeHeight + 0.44;
+  const coverSubtitle = addMeasuredText(cover, '请告诉智能助手，这份演示稿要讲什么。', {
     x: page.left,
-    y: 2.18,
+    y: coverCursorY,
     w: page.width,
-    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     color: 'CBD5E1'
   });
-  cover.addText('有图片、表格或资料时，也可以先上传再说明。', {
-    ...textOptions,
+  coverCursorY += coverSubtitle.safeHeight + 0.28;
+  addMeasuredText(cover, '有图片、表格或资料时，也可以先上传再说明。', {
     x: page.left,
-    y: 3.42,
+    y: coverCursorY,
     w: page.width,
-    h: ${BODY_TEXT_HEIGHT},
     fontSize: 48,
     color: 'E2E8F0'
   });
 
   const agenda = pptx.addSlide();
   agenda.background = { color: 'F8FAFC' };
-  agenda.addText('这份演示稿会按下面的结构继续补全', {
-    ...textOptions,
+  addMeasuredText(agenda, '这份演示稿会按下面的结构继续补全', {
     x: page.left,
     y: page.titleTop,
     w: page.width,
-    h: ${PAGE_TITLE_HEIGHT},
     fontSize: 72,
     bold: true,
     color: '0F172A'
@@ -73,32 +66,26 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     { no: '03', title: '正文', desc: '按重点展开并写动作。' },
   ].forEach((item, index) => {
     const y = page.sectionTop + index * 1.62;
-    agenda.addText(item.no, {
-      ...textOptions,
+    const noMetrics = addMeasuredText(agenda, item.no, {
       x: page.left,
       y,
       w: 0.9,
-      h: ${SECTION_TITLE_HEIGHT},
       fontSize: 56,
       bold: true,
       color: '2563EB'
     });
-    agenda.addText(item.title, {
-      ...textOptions,
+    addMeasuredText(agenda, item.title, {
       x: 1.9,
-      y: y + 0.04,
+      y: y + Math.max(0, (noMetrics.safeHeight - measureText(item.title, { fontSize: 48, width: 2.6 }).safeHeight) / 2),
       w: 2.6,
-      h: ${BODY_TEXT_HEIGHT},
       fontSize: 48,
       bold: true,
       color: '0F172A'
     });
-    agenda.addText(item.desc, {
-      ...textOptions,
+    addMeasuredText(agenda, item.desc, {
       x: 4.94,
-      y: y + 0.04,
+      y: y + Math.max(0, (noMetrics.safeHeight - measureText(item.desc, { fontSize: 48, width: 6.98 }).safeHeight) / 2),
       w: 6.98,
-      h: ${BODY_TEXT_HEIGHT},
       fontSize: 48,
       color: '475569'
     });
@@ -106,12 +93,10 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
 
   const body = pptx.addSlide();
   body.background = { color: 'FFFFFF' };
-  body.addText('你可以继续这样完善正文', {
-    ...textOptions,
+  addMeasuredText(body, '你可以继续这样完善正文', {
     x: page.left,
     y: page.titleTop,
     w: page.width,
-    h: ${PAGE_TITLE_HEIGHT},
     fontSize: 72,
     bold: true,
     color: '0F172A'
@@ -125,60 +110,50 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     fill: { color: 'F8FAFC' },
     line: { color: 'E2E8F0', pt: 1 }
   });
-  body.addText('核心信息', {
-    ...textOptions,
+  addMeasuredText(body, '核心信息', {
     x: page.left,
     y: 1.56,
     w: 3.4,
-    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     bold: true,
     color: '0F172A'
   });
-  body.addText('• 这一页写结论\\n• 下一行补原因\\n• 最后一行写动作', {
-    ...textOptions,
+  addMeasuredText(body, '• 这一页写结论\\n• 下一行补原因\\n• 最后一行写动作', {
     x: page.left,
     y: 2.52,
     w: 5.24,
-    h: ${THREE_LINE_BODY_HEIGHT},
     fontSize: 48,
     color: '334155'
   });
-  body.addText('关键数字', {
-    ...textOptions,
+  const bodyKeyNumber = addMeasuredText(body, '关键数字', {
     x: 6.32,
     y: 1.56,
     w: 2.7,
-    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     bold: true,
     color: '1D4ED8'
   });
-  body.addText('先放最关键结果。', {
-    ...textOptions,
+  const keyResultY = 1.56 + bodyKeyNumber.safeHeight + 0.12;
+  const keyResult = addMeasuredText(body, '先放最关键结果。', {
     x: 6.32,
-    y: 2.52,
+    y: keyResultY,
     w: 5.2,
-    h: ${BODY_TEXT_HEIGHT},
     fontSize: 48,
     color: '1E3A8A'
   });
-  body.addText('下一步动作', {
-    ...textOptions,
+  const nextActionY = keyResultY + keyResult.safeHeight + 0.78;
+  const nextAction = addMeasuredText(body, '下一步动作', {
     x: 6.32,
-    y: 4.14,
+    y: nextActionY,
     w: 3.2,
-    h: ${SECTION_TITLE_HEIGHT},
     fontSize: 56,
     bold: true,
     color: '0F172A'
   });
-  body.addText('写清时间和负责人。', {
-    ...textOptions,
+  addMeasuredText(body, '写清时间和负责人。', {
     x: 6.32,
-    y: 5.1,
+    y: nextActionY + nextAction.safeHeight + 0.12,
     w: 5.16,
-    h: ${BODY_TEXT_HEIGHT},
     fontSize: 48,
     color: '475569'
   });

@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { createContext, Script } from 'node:vm';
 import path from 'path';
 import PptxGenJS from 'pptxgenjs';
+import { measureText } from './ppt-text-layout.ts';
 import { getProjectDir, resolveProjectFile } from './storage.ts';
 
 export interface RunProjectOptions {
@@ -59,6 +60,7 @@ export async function runProject({ projectId }: RunProjectOptions): Promise<RunP
       getResourceUrl: (fileName: string) => `http://localhost:3101/${projectId}/${encodeURIComponent(fileName)}`,
       getResourcePath: (fileName: string) => resolveProjectFile(projectId, fileName),
       log: (...args: unknown[]) => logs.push(args.map(arg => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ')),
+      measureText,
       projectId,
       projectDir,
       path,
