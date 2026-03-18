@@ -45,14 +45,6 @@ function emit(progress: LOProgress) {
   _progressListeners.forEach(fn => fn(progress))
 }
 
-export function addProgressListener(fn: (p: LOProgress) => void) {
-  _progressListeners.add(fn)
-}
-
-export function removeProgressListener(fn: (p: LOProgress) => void) {
-  _progressListeners.delete(fn)
-}
-
 // ─── 阶段 → 中文描述 ────────────────────────────────────────────────
 
 function phaseToMessage(progress: WasmLoadProgress): string {
