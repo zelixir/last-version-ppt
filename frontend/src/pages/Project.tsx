@@ -364,13 +364,26 @@ export default function Project() {
   }
 
   useEffect(() => {
-    void warmupPreviewEngine()
-    Promise.all([fetchProject(), fetchModels()])
-      .then(() => refreshPreview())
-      .catch(err => {
-        console.error(err)
-        setPageError(err instanceof Error ? err.message : String(err))
-      })
+    if (!projectKey) return
+
+    let cancelled = false
+    const bootstrapTimer = window.setTimeout(() => {
+      Promise.all([warmupPreviewEngine(), fetchProject(), fetchModels()])
+        .then(() => {
+          if (cancelled) return
+          return refreshPreview()
+        })
+        .catch(err => {
+          if (cancelled) return
+          console.error(err)
+          setPageError(err instanceof Error ? err.message : String(err))
+        })
+    }, 0)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(bootstrapTimer)
+    }
   }, [projectId])
 
   useEffect(() => {
