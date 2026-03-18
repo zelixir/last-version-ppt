@@ -295,8 +295,25 @@ async function run() {
   }
 
   let backendProcess: ChildProcessWithoutNullStreams | null = null;
-  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
   const results: Array<{ scenario: string; ok: boolean; detail: string }> = [];
+
+  // ── 浏览器启动辅助函数 ────────────────────────
+  const browserExe = resolveBrowserExecutablePath();
+  const browserArgs: string[] = [];
+  if (process.platform === 'linux' && process.env.PUPPETEER_DISABLE_SANDBOX !== '0') {
+    browserArgs.push('--no-sandbox', '--disable-setuid-sandbox');
+  }
+
+  async function launchBrowser() {
+    if (browserExe) sessionLog(`浏览器路径：${browserExe}`);
+    return await puppeteer.launch({
+      headless: true,
+      defaultViewport: { width: 1600, height: 1200, deviceScaleFactor: 1 },
+      executablePath: browserExe,
+      args: browserArgs,
+      protocolTimeout: options.timeoutMs,
+    });
+  }
 
   try {
     backendProcess = startBackend(outputDir);
@@ -304,20 +321,7 @@ async function run() {
 
     const project = await createProject(sessionLog);
     sessionLog(`测试项目 ID：${project.id}`);
-
-    // ── 启动浏览器 ────────────────────────
-    const browserExe = resolveBrowserExecutablePath();
-    if (browserExe) sessionLog(`浏览器路径：${browserExe}`);
-    const browserArgs: string[] = [];
-    if (process.platform === 'linux' && process.env.PUPPETEER_DISABLE_SANDBOX !== '0') {
-      browserArgs.push('--no-sandbox', '--disable-setuid-sandbox');
-    }
-    browser = await puppeteer.launch({
-      headless: true,
-      defaultViewport: { width: 1600, height: 1200, deviceScaleFactor: 1 },
-      executablePath: browserExe,
-      args: browserArgs,
-    });
+    const testUrl = `${serverOrigin}/preview-image-test.html?projectId=${encodeURIComponent(project.id)}`;
 
     // ────────────────────────────────────────────────────────────
     // 场景 1：直接打开 preview-image-test 页（等同于直接访问项目）
@@ -325,18 +329,21 @@ async function run() {
     {
       const scenarioDir = ensureDir(path.join(outputDir, 'scenario-1-direct'));
       sessionLog('======== 场景 1：直接打开测试页 ========');
-      const page = await browser.newPage();
-      attachPageLogging(page, scenarioDir);
-      const url = `${serverOrigin}/preview-image-test.html?projectId=${encodeURIComponent(project.id)}`;
-      sessionLog(`打开：${url}`);
-      await page.goto(url, { waitUntil: 'networkidle2', timeout: options.timeoutMs });
-      const state = await waitForTestPageResult(page, options.timeoutMs);
-      await page.screenshot({ path: path.join(scenarioDir, 'screenshot.png'), fullPage: true });
-      writeFileSync(path.join(scenarioDir, 'state.json'), JSON.stringify(state, null, 2), 'utf8');
-      const ok = state?.phase === 'done' && state.images.length > 0;
-      results.push({ scenario: '直接打开测试页', ok, detail: state?.status ?? '无状态' });
-      sessionLog(`场景 1 结果：${ok ? '✅ 通过' : '❌ 失败'} — ${state?.status}`);
-      await page.close();
+      const browser = await launchBrowser();
+      try {
+        const page = await browser.newPage();
+        attachPageLogging(page, scenarioDir);
+        sessionLog(`打开：${testUrl}`);
+        await page.goto(testUrl, { waitUntil: 'networkidle2', timeout: options.timeoutMs });
+        const state = await waitForTestPageResult(page, options.timeoutMs);
+        await page.screenshot({ path: path.join(scenarioDir, 'screenshot.png'), fullPage: true });
+        writeFileSync(path.join(scenarioDir, 'state.json'), JSON.stringify(state, null, 2), 'utf8');
+        const ok = state?.phase === 'done' && state.images.length > 0;
+        results.push({ scenario: '直接打开测试页', ok, detail: state?.status ?? '无状态' });
+        sessionLog(`场景 1 结果：${ok ? '✅ 通过' : '❌ 失败'} — ${state?.status}`);
+      } finally {
+        await browser.close().catch(() => null);
+      }
     }
 
     // ────────────────────────────────────────────────────────────
@@ -345,26 +352,27 @@ async function run() {
     {
       const scenarioDir = ensureDir(path.join(outputDir, 'scenario-2-refresh'));
       sessionLog('======== 场景 2：打开后刷新页面 ========');
-      const page = await browser.newPage();
-      attachPageLogging(page, scenarioDir);
-      const url = `${serverOrigin}/preview-image-test.html?projectId=${encodeURIComponent(project.id)}`;
-      sessionLog(`打开：${url}`);
-      await page.goto(url, { waitUntil: 'networkidle2', timeout: options.timeoutMs });
-      // 等第一次完成
-      const firstState = await waitForTestPageResult(page, options.timeoutMs);
-      sessionLog(`第一次渲染结果：${firstState?.status}`);
-      await page.screenshot({ path: path.join(scenarioDir, 'before-refresh.png'), fullPage: true });
+      const browser = await launchBrowser();
+      try {
+        const page = await browser.newPage();
+        attachPageLogging(page, scenarioDir);
+        sessionLog(`打开：${testUrl}`);
+        await page.goto(testUrl, { waitUntil: 'networkidle2', timeout: options.timeoutMs });
+        const firstState = await waitForTestPageResult(page, options.timeoutMs);
+        sessionLog(`第一次渲染结果：${firstState?.status}`);
+        await page.screenshot({ path: path.join(scenarioDir, 'before-refresh.png'), fullPage: true });
 
-      // 刷新
-      sessionLog('正在刷新页面…');
-      await page.reload({ waitUntil: 'networkidle2', timeout: options.timeoutMs });
-      const state = await waitForTestPageResult(page, options.timeoutMs);
-      await page.screenshot({ path: path.join(scenarioDir, 'after-refresh.png'), fullPage: true });
-      writeFileSync(path.join(scenarioDir, 'state.json'), JSON.stringify(state, null, 2), 'utf8');
-      const ok = state?.phase === 'done' && state.images.length > 0;
-      results.push({ scenario: '刷新后重新生成', ok, detail: state?.status ?? '无状态' });
-      sessionLog(`场景 2 结果：${ok ? '✅ 通过' : '❌ 失败'} — ${state?.status}`);
-      await page.close();
+        sessionLog('正在刷新页面…');
+        await page.reload({ waitUntil: 'networkidle2', timeout: options.timeoutMs });
+        const state = await waitForTestPageResult(page, options.timeoutMs);
+        await page.screenshot({ path: path.join(scenarioDir, 'after-refresh.png'), fullPage: true });
+        writeFileSync(path.join(scenarioDir, 'state.json'), JSON.stringify(state, null, 2), 'utf8');
+        const ok = state?.phase === 'done' && state.images.length > 0;
+        results.push({ scenario: '刷新后重新生成', ok, detail: state?.status ?? '无状态' });
+        sessionLog(`场景 2 结果：${ok ? '✅ 通过' : '❌ 失败'} — ${state?.status}`);
+      } finally {
+        await browser.close().catch(() => null);
+      }
     }
 
     // ────────────────────────────────────────────────────────────
@@ -373,23 +381,25 @@ async function run() {
     {
       const scenarioDir = ensureDir(path.join(outputDir, 'scenario-3-home-then-project'));
       sessionLog('======== 场景 3：先打开主页再跳转到项目 ========');
-      const page = await browser.newPage();
-      attachPageLogging(page, scenarioDir);
-      sessionLog('打开主页…');
-      await page.goto(serverOrigin, { waitUntil: 'networkidle2', timeout: 30_000 });
-      await page.screenshot({ path: path.join(scenarioDir, 'home.png'), fullPage: true });
+      const browser = await launchBrowser();
+      try {
+        const page = await browser.newPage();
+        attachPageLogging(page, scenarioDir);
+        sessionLog('打开主页…');
+        await page.goto(serverOrigin, { waitUntil: 'networkidle2', timeout: 30_000 });
+        await page.screenshot({ path: path.join(scenarioDir, 'home.png'), fullPage: true });
 
-      // 直接导航到 preview-image-test 页（模拟从主页跳转到项目的场景）
-      const url = `${serverOrigin}/preview-image-test.html?projectId=${encodeURIComponent(project.id)}`;
-      sessionLog(`跳转到：${url}`);
-      await page.goto(url, { waitUntil: 'networkidle2', timeout: options.timeoutMs });
-      const state = await waitForTestPageResult(page, options.timeoutMs);
-      await page.screenshot({ path: path.join(scenarioDir, 'project.png'), fullPage: true });
-      writeFileSync(path.join(scenarioDir, 'state.json'), JSON.stringify(state, null, 2), 'utf8');
-      const ok = state?.phase === 'done' && state.images.length > 0;
-      results.push({ scenario: '主页跳转到项目', ok, detail: state?.status ?? '无状态' });
-      sessionLog(`场景 3 结果：${ok ? '✅ 通过' : '❌ 失败'} — ${state?.status}`);
-      await page.close();
+        sessionLog(`跳转到：${testUrl}`);
+        await page.goto(testUrl, { waitUntil: 'networkidle2', timeout: options.timeoutMs });
+        const state = await waitForTestPageResult(page, options.timeoutMs);
+        await page.screenshot({ path: path.join(scenarioDir, 'project.png'), fullPage: true });
+        writeFileSync(path.join(scenarioDir, 'state.json'), JSON.stringify(state, null, 2), 'utf8');
+        const ok = state?.phase === 'done' && state.images.length > 0;
+        results.push({ scenario: '主页跳转到项目', ok, detail: state?.status ?? '无状态' });
+        sessionLog(`场景 3 结果：${ok ? '✅ 通过' : '❌ 失败'} — ${state?.status}`);
+      } finally {
+        await browser.close().catch(() => null);
+      }
     }
 
     // ── 汇总 ────────────────────────────
@@ -409,7 +419,6 @@ async function run() {
     }
     sessionLog('全部场景通过！');
   } finally {
-    if (browser) await browser.close().catch(() => null);
     await stopProcess(backendProcess, sessionLog);
   }
 }
