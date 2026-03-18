@@ -10,7 +10,7 @@ import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
-import { capturePreviewImages, uploadPreviewImages, warmupPreviewEngine } from '../lib/preview-image-generator'
+import { capturePreviewImages, uploadPreviewImages } from '../lib/preview-image-generator'
 import { runProjectPreview } from '../lib/project-preview'
 import { readStoredSelectedModelId, writeStoredSelectedModelId } from '../lib/selected-model-storage'
 
@@ -364,13 +364,24 @@ export default function Project() {
   }
 
   useEffect(() => {
-    void warmupPreviewEngine()
+    let cancelled = false
+
     Promise.all([fetchProject(), fetchModels()])
-      .then(() => refreshPreview())
+      .then(async () => {
+        if (cancelled) return
+        await refreshPreview()
+      })
       .catch(err => {
+        if (cancelled) return
         console.error(err)
         setPageError(err instanceof Error ? err.message : String(err))
       })
+
+    return () => {
+      cancelled = true
+      previewRefreshQueuedRef.current = false
+      previewRefreshRunIdRef.current += 1
+    }
   }, [projectId])
 
   useEffect(() => {
