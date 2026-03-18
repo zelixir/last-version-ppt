@@ -17,8 +17,9 @@ const PPT_TEXT_SAFE_WIDTH_RATIO = 0.96
 const PPT_TEXT_LINE_HEIGHT_FACTOR = 1.67
 const PPT_TEXT_SAFE_HEIGHT_PADDING = 0.02
 const PPT_POINT_TO_PIXEL_RATIO = PPT_TEXT_PIXELS_PER_INCH / PPT_POINTS_PER_INCH
+// The bundled UI subset font is intentionally excluded here because it does not
+// cover every demo string used in PPT templates, which can skew canvas metrics.
 const DEFAULT_MEASURE_TEXT_FALLBACK_FONTS = [
-  'LastVersionPptCjkUi',
   'Microsoft YaHei',
   'PingFang SC',
   'Noto Sans CJK SC',
@@ -54,12 +55,18 @@ function getTextMeasureContext(): CanvasRenderingContext2D {
   return context
 }
 
+function measureRenderedTextWidth(context: CanvasRenderingContext2D, text: string): number {
+  const metrics = context.measureText(text)
+  const actualBoundingWidth = Math.abs(metrics.actualBoundingBoxLeft || 0) + Math.abs(metrics.actualBoundingBoxRight || 0)
+  return Math.max(metrics.width, actualBoundingWidth)
+}
+
 function splitMeasuredLines(context: CanvasRenderingContext2D, text: string, maxWidthPx?: number): Array<{ text: string; width: number }> {
   const paragraphs = text.split(/\r?\n/u)
   return paragraphs.flatMap(paragraph => {
     if (!paragraph) return [{ text: '', width: 0 }]
     if (!Number.isFinite(maxWidthPx) || !maxWidthPx || maxWidthPx <= 0) {
-      return [{ text: paragraph, width: context.measureText(paragraph).width }]
+      return [{ text: paragraph, width: measureRenderedTextWidth(context, paragraph) }]
     }
 
     const lines: Array<{ text: string; width: number }> = []
@@ -68,11 +75,11 @@ function splitMeasuredLines(context: CanvasRenderingContext2D, text: string, max
 
     for (const character of Array.from(paragraph)) {
       const nextText = currentText + character
-      const nextWidth = context.measureText(nextText).width
+      const nextWidth = measureRenderedTextWidth(context, nextText)
       if (currentText && nextWidth > maxWidthPx) {
         lines.push({ text: currentText, width: currentWidth })
         currentText = character
-        currentWidth = context.measureText(character).width
+        currentWidth = measureRenderedTextWidth(context, character)
         continue
       }
       currentText = nextText
