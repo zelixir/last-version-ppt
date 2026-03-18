@@ -3,6 +3,7 @@ import { homedir } from 'os';
 import path from 'path';
 
 export const APP_FOLDER_NAME = 'last-version-ppt';
+const MAX_PROJECT_ID_SUFFIX = 10_000;
 export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentation({ pptx, measureText, log }) {
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'last-version-ppt';
@@ -62,9 +63,9 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '0F172A'
   });
   for (const [index, item] of [
-    { no: '01', title: '封面', desc: '先讲清主题和要解决的问题。' },
-    { no: '02', title: '目录', desc: '把章节顺序列出来方便理解。' },
-    { no: '03', title: '正文', desc: '按重点展开并写动作。' },
+    { no: '01', title: '封面', desc: '讲清主题重点。' },
+    { no: '02', title: '目录', desc: '列出章节顺序。' },
+    { no: '03', title: '正文', desc: '展开重点动作。' },
   ].entries()) {
     const y = page.sectionTop + index * 1.62;
     const noMetrics = await addMeasuredText(agenda, item.no, {
@@ -137,7 +138,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '1D4ED8'
   });
   const keyResultY = 1.56 + bodyKeyNumber.safeHeight + 0.12;
-  const keyResult = await addMeasuredText(body, '先放最关键结果。', {
+  const keyResult = await addMeasuredText(body, '先放关键结果。', {
     x: 6.32,
     y: keyResultY,
     w: 5.2,
@@ -153,7 +154,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     bold: true,
     color: '0F172A'
   });
-  await addMeasuredText(body, '写清时间和负责人。', {
+  await addMeasuredText(body, '写清时间安排。', {
     x: 6.32,
     y: nextActionY + nextAction.safeHeight + 0.12,
     w: 5.16,
@@ -199,6 +200,26 @@ export function sanitizeProjectName(input: string): string {
 
 export function buildProjectId(name: string, date = new Date()): string {
   return `${formatDateYYYYMMDD(date)}_${sanitizeProjectName(name)}`;
+}
+
+export function buildUniqueProjectId(
+  name: string,
+  isAvailable: (projectId: string) => boolean,
+  date = new Date(),
+): string {
+  const baseProjectId = buildProjectId(name, date);
+  if (isAvailable(baseProjectId)) {
+    return baseProjectId;
+  }
+
+  for (let suffix = 2; suffix < MAX_PROJECT_ID_SUFFIX; suffix += 1) {
+    const candidateProjectId = `${baseProjectId}-${`${suffix}`.padStart(2, '0')}`;
+    if (isAvailable(candidateProjectId)) {
+      return candidateProjectId;
+    }
+  }
+
+  throw new Error('项目编号生成失败，请稍后重试');
 }
 
 export function buildRenamedProjectId(projectId: string, name: string): string {

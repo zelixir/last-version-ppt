@@ -6,6 +6,7 @@ import {
   PPT_TEXT_CHAR_WIDTH_FACTOR,
   PPT_TEXT_FULL_WIDTH_EM,
   PPT_TEXT_LINE_HEIGHT_FACTOR,
+  PPT_POINT_TO_PIXEL_RATIO,
   PPT_TEXT_SAFE_HEIGHT_PADDING,
   PPT_TEXT_SAFE_WIDTH_RATIO,
   calculateMaxCharsPerLine,
@@ -22,9 +23,9 @@ const canvasFontFamily = '_LastVersionPptCanvasSubset';
 
 const sampleBoxes = [
   { label: '封面副标题', width: 11.56, fontSize: 56, text: '请告诉智能助手，这份演示稿要讲什么。' },
-  { label: '目录说明', width: 6.98, fontSize: 48, text: '先讲清主题和要解决的问题。' },
+  { label: '目录说明', width: 6.98, fontSize: 48, text: '讲清主题重点。' },
   { label: '目录说明（渲染）', width: 6.98, fontSize: 48, text: '说明这份演示稿要讲什么。' },
-  { label: '正文右侧说明', width: 5.16, fontSize: 48, text: '写清时间和负责人。' },
+  { label: '正文右侧说明', width: 5.16, fontSize: 48, text: '写清时间安排。' },
   { label: '渲染右侧说明', width: 5.2, fontSize: 48, text: '截图后可检查排版。' },
 ];
 
@@ -50,15 +51,16 @@ try {
     body { margin: 0; font-family: '${canvasFontFamily}', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif; }
   </style></head><body></body></html>`);
 
-  const measurements = await page.evaluate(async ({ sampleBoxes, fontFamily }) => {
+  const measurements = await page.evaluate(async ({ sampleBoxes, fontFamily, pointToPixelRatio }) => {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     if (!context) throw new Error('无法创建 canvas 上下文');
 
     return await Promise.all(sampleBoxes.map(async item => {
-      await document.fonts.load(`${item.fontSize}px "${fontFamily}"`);
+      const fontSizePx = item.fontSize * pointToPixelRatio;
+      await document.fonts.load(`${fontSizePx}px "${fontFamily}"`);
       await document.fonts.ready;
-      context.font = `${item.fontSize}px "${fontFamily}", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`;
+      context.font = `${fontSizePx}px "${fontFamily}", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`;
       const measuredWidthPx = context.measureText(item.text).width;
       const measuredCjkWidthPx = context.measureText('汉').width;
       return {
@@ -67,7 +69,7 @@ try {
         measuredCjkWidthPx,
       };
     }));
-  }, { sampleBoxes, fontFamily: canvasFontFamily });
+  }, { sampleBoxes, fontFamily: canvasFontFamily, pointToPixelRatio: PPT_POINT_TO_PIXEL_RATIO });
 
   console.log('PptxGenJS 默认文本尺寸计算');
   console.log(`- 行高公式：fontSize × ${PPT_TEXT_LINE_HEIGHT_FACTOR} ÷ 100 × 行数`);

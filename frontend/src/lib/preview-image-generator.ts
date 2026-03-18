@@ -44,41 +44,38 @@ function phaseToMessage(progress: WasmLoadProgress) {
   }
 }
 
+function createPreviewConverterPromise() {
+  const fontsPromise = loadSystemFonts()
+  const converter = new WorkerBrowserConverter({
+    ...createWasmPaths('/wasm/'),
+    browserWorkerJs: LIBREOFFICE_WORKER_PATH,
+    onProgress: progress => emitProgress({ message: phaseToMessage(progress), percent: progress.percent }),
+  })
+
+  return converter.initialize()
+    .then(async () => {
+      try {
+        await fontsPromise
+        const worker = (converter as any).worker as Worker | undefined
+        if (worker) await uploadFontsToWorker(worker)
+      } catch {
+        // Font loading is best-effort; continue without fonts
+      }
+      return converter
+    })
+    .catch(error => {
+      sharedConverterPromise = null
+      throw error
+    })
+}
+
 async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus) => void) {
   if (onProgress) sharedProgressListeners.add(onProgress)
 
-  if (!sharedConverterPromise) {
-    // Start loading system fonts in parallel with converter initialization
-    const fontsPromise = loadSystemFonts()
-
-    const converter = new WorkerBrowserConverter({
-      ...createWasmPaths('/wasm/'),
-      browserWorkerJs: LIBREOFFICE_WORKER_PATH,
-      onProgress: progress => emitProgress({ message: phaseToMessage(progress), percent: progress.percent }),
-    })
-
-    sharedConverterPromise = converter.initialize()
-      .then(async () => {
-        // After init, upload system fonts into the WASM virtual filesystem.
-        // NOTE: WorkerBrowserConverter does not expose a public font API, so we
-        // access its internal Worker instance as a temporary workaround until
-        // the library provides an official mechanism.
-        try {
-          await fontsPromise
-          const worker = (converter as any).worker as Worker | undefined
-          if (worker) await uploadFontsToWorker(worker)
-        } catch {
-          // Font loading is best-effort; continue without fonts
-        }
-        return converter
-      })
-      .catch(error => {
-        sharedConverterPromise = null
-        throw error
-      })
-  }
-
   try {
+    if (!sharedConverterPromise) {
+      sharedConverterPromise = createPreviewConverterPromise()
+    }
     const converter = await sharedConverterPromise
     onProgress?.({ message: '高保真预览引擎已经准备好了', percent: 100 })
     return converter

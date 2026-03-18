@@ -6,6 +6,7 @@ export const PPT_TEXT_SAFE_HEIGHT_PADDING = 0.02;
 export const PPT_TEXT_SAFE_SINGLE_LINE_RESERVED_CHARS = 0;
 export const PPT_CHARACTERS_PER_INCH = 72;
 export const PPT_TEXT_PIXELS_PER_INCH = 96;
+export const PPT_POINT_TO_PIXEL_RATIO = PPT_TEXT_PIXELS_PER_INCH / PPT_CHARACTERS_PER_INCH;
 export const PPT_TEXT_FULL_WIDTH_EM = 1;
 export const PPT_TEXT_ASCII_LETTER_EM = 0.67;
 export const PPT_TEXT_ASCII_DIGIT_EM = 0.56;
@@ -68,7 +69,7 @@ function estimateCharacterWidthEm(character: string): number {
 
 export function estimateTextWidthPx(text: string, fontSize: number): number {
   const totalWidthEm = Array.from(text).reduce((width, character) => width + estimateCharacterWidthEm(character), 0);
-  return totalWidthEm * fontSize;
+  return totalWidthEm * fontSize * PPT_POINT_TO_PIXEL_RATIO;
 }
 
 function splitMeasuredLines(text: string, fontSize: number, maxWidthPx?: number): Array<{ text: string; width: number }> {
@@ -85,7 +86,7 @@ function splitMeasuredLines(text: string, fontSize: number, maxWidthPx?: number)
     let currentWidth = 0;
 
     for (const character of Array.from(paragraph)) {
-      const characterWidth = estimateCharacterWidthEm(character) * fontSize;
+      const characterWidth = estimateCharacterWidthEm(character) * fontSize * PPT_POINT_TO_PIXEL_RATIO;
       if (currentText && currentWidth + characterWidth > maxWidthPx) {
         lines.push({ text: currentText, width: currentWidth });
         currentText = character;

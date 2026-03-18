@@ -12,9 +12,11 @@ export const DEFAULT_PPT_LAYOUT = 'LAYOUT_WIDE'
 export const DEFAULT_PPT_WIDTH = 13.333
 export const DEFAULT_PPT_HEIGHT = 7.5
 const PPT_TEXT_PIXELS_PER_INCH = 96
+const PPT_POINTS_PER_INCH = 72
 const PPT_TEXT_SAFE_WIDTH_RATIO = 0.96
 const PPT_TEXT_LINE_HEIGHT_FACTOR = 1.67
 const PPT_TEXT_SAFE_HEIGHT_PADDING = 0.02
+const PPT_POINT_TO_PIXEL_RATIO = PPT_TEXT_PIXELS_PER_INCH / PPT_POINTS_PER_INCH
 const DEFAULT_MEASURE_TEXT_FALLBACK_FONTS = [
   'LastVersionPptCjkUi',
   'Microsoft YaHei',
@@ -246,14 +248,15 @@ export async function runProjectPreview(projectId: string, code: string): Promis
     }
 
     const fontSize = typeof options?.fontSize === 'number' ? options.fontSize : 0
+    const fontSizePx = fontSize * PPT_POINT_TO_PIXEL_RATIO
     const width = typeof options?.width === 'number' ? options.width : undefined
     const padding = typeof options?.padding === 'number' ? options.padding : PPT_TEXT_SAFE_HEIGHT_PADDING
 
     const context = getTextMeasureContext()
     const fontStack = buildCanvasFontStack(fontFace)
-    await document.fonts.load(`${fontSize}px ${fontStack}`)
+    await document.fonts.load(`${fontSizePx}px ${fontStack}`)
     await document.fonts.ready
-    context.font = `${fontSize}px ${fontStack}`
+    context.font = `${fontSizePx}px ${fontStack}`
 
     const lines = splitMeasuredLines(context, text, width ? calculateSafeSingleLineWidthPx(width) : undefined)
     const maxWidthPx = lines.reduce((max, line) => Math.max(max, line.width), 0)
