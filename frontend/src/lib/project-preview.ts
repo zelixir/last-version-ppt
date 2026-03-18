@@ -18,7 +18,8 @@ const PPT_TEXT_LINE_HEIGHT_FACTOR = 1.67
 const PPT_TEXT_SAFE_HEIGHT_PADDING = 0.02
 const PPT_POINT_TO_PIXEL_RATIO = PPT_TEXT_PIXELS_PER_INCH / PPT_POINTS_PER_INCH
 // The bundled UI subset font is intentionally excluded here because it does not
-// cover every demo string used in PPT templates, which can skew canvas metrics.
+// fully cover demo strings such as “讲清主题重点。” and “写清时间安排。”,
+// which can skew canvas metrics and line wrapping.
 const DEFAULT_MEASURE_TEXT_FALLBACK_FONTS = [
   'Microsoft YaHei',
   'PingFang SC',
@@ -55,6 +56,12 @@ function getTextMeasureContext(): CanvasRenderingContext2D {
   return context
 }
 
+/**
+ * Canvas returns both an advance width (`metrics.width`) and a rendered glyph
+ * bounding box. Some fallback fonts can report a wider bounding box than the
+ * advance width, so line wrapping uses the larger value to avoid under-sizing
+ * text boxes.
+ */
 function measureRenderedTextWidth(context: CanvasRenderingContext2D, text: string): number {
   const metrics = context.measureText(text)
   const actualBoundingWidth = Math.abs(metrics.actualBoundingBoxLeft || 0) + Math.abs(metrics.actualBoundingBoxRight || 0)

@@ -5,7 +5,7 @@ import puppeteer from 'puppeteer'
 
 import { PPT_POINT_TO_PIXEL_RATIO } from '../backend/src/ppt-text-layout.ts'
 
-const browserExecutablePath = Bun.which('google-chrome') ?? Bun.which('chromium') ?? Bun.which('chromium-browser')
+const browserPath = Bun.which('google-chrome') ?? Bun.which('chromium') ?? Bun.which('chromium-browser')
 const canvasFontStack = '"Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif'
 const widthTolerancePx = 16
 
@@ -16,11 +16,11 @@ const testCases = [
 ]
 
 test('canvas 单行文字图片的像素宽度与 measureText 宽度保持接近', async () => {
-  assert.ok(browserExecutablePath, '没有找到可用浏览器，请先安装 google-chrome 或 chromium。')
+  assert.ok(browserPath, '没有找到可用浏览器，请先安装 google-chrome 或 chromium。')
 
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: browserExecutablePath,
+    executablePath: browserPath,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   })
 
