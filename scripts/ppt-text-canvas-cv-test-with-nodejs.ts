@@ -104,7 +104,7 @@ function parseArgs(argv: string[]): RunOptions {
       fontPath: readRequiredArg(argv, '--font-path'),
       fontFileName: readRequiredArg(argv, '--font-file-name'),
       outputFile: readRequiredArg(argv, '--output-file'),
-      renderWidth: Number.parseInt(readRequiredArg(argv, '--render-width'), 10),
+      renderWidth: parsePositiveInteger(readRequiredArg(argv, '--render-width'), '--render-width'),
       logFile: readRequiredArg(argv, '--log-file'),
     }
   }
@@ -126,10 +126,7 @@ function parseArgs(argv: string[]): RunOptions {
       continue
     }
     if (arg === '--timeout-ms') {
-      const rawValue = readArgValue(argv, index, '--timeout-ms')
-      const value = Number(rawValue)
-      if (!Number.isFinite(value) || value <= 0) throw new Error('请为 --timeout-ms 提供有效的正整数')
-      timeoutMs = value
+      timeoutMs = parsePositiveInteger(readArgValue(argv, index, '--timeout-ms'), '--timeout-ms')
       index += 1
       continue
     }
@@ -153,6 +150,12 @@ function readRequiredArg(argv: string[], flag: string) {
 function readArgValue(argv: string[], index: number, flag: string) {
   const value = argv[index + 1]
   if (!value || value.startsWith('--')) throw new Error(`缺少 ${flag} 的参数值`)
+  return value
+}
+
+function parsePositiveInteger(rawValue: string, flag: string) {
+  const value = Number(rawValue)
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`请为 ${flag} 提供有效的正整数`)
   return value
 }
 
