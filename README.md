@@ -1,7 +1,5 @@
 # last-version-ppt
 
-基于 `zelixir/terminal-agent` 框架迁移而来的本地 AI 应用骨架。
-
 当前版本已经移除终端 / SSH / 命令审批相关工具，保留以下能力：
 
 - Bun + Elysia 后端框架
