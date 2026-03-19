@@ -2,3 +2,4 @@ node_modules
 *.db
 backend/exec-output/
 dist/
+out/
