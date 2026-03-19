@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import path from 'path'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { fileURLToPath } from 'url'
@@ -36,7 +36,7 @@ interface FontAsset {
   buffer: Buffer
   dataUrl: string
   size: number
-  sourceUrl: string
+  sourcePath: string
 }
 
 interface BoundingBox {
@@ -69,6 +69,7 @@ const repoRoot = path.join(__dirname, '..')
 const frontendDir = path.join(repoRoot, 'frontend')
 const frontendDistDir = path.join(frontendDir, 'dist')
 const backendDir = path.join(repoRoot, 'backend')
+const bundledFontPath = path.join(repoRoot, 'scripts', 'assets', 'NotoSansCJKsc-Regular.otf')
 const serverOrigin = 'http://127.0.0.1:3101'
 const PROCESS_KILL_TIMEOUT_MS = 5_000
 const PPT_POINT_TO_PIXEL_RATIO = 96 / 72
@@ -80,7 +81,6 @@ const FONT_SIZE_PT = 48
 const FONT_SIZE_PX = FONT_SIZE_PT * PPT_POINT_TO_PIXEL_RATIO
 const PPT_IMAGE_WIDTH = 1600
 const PPT_IMAGE_HEIGHT = Math.round(PPT_IMAGE_WIDTH * 9 / 16)
-const FONT_DOWNLOAD_URL = 'https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf'
 const FONT_FILE_NAME = 'NotoSansCJKsc-Regular.otf'
 const FONT_FAMILY = 'Noto Sans CJK SC'
 const FONT_MIME_TYPE = 'font/otf'
@@ -162,7 +162,10 @@ function resolveBrowserExecutablePath(): string | undefined {
         '/usr/bin/chromium-browser',
       ]
 
-  return candidates.find(candidate => typeof candidate === 'string' && existsSync(candidate))
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && existsSync(candidate)) return candidate
+  }
+  return undefined
 }
 
 function ensureDir(dir: string): string {
@@ -237,18 +240,16 @@ async function readJson<T>(response: Response): Promise<T> {
   return await response.json() as T
 }
 
-async function downloadFont(outputDir: string, sessionLog: (message: string) => void): Promise<FontAsset> {
+async function prepareBundledFont(outputDir: string, sessionLog: (message: string) => void): Promise<FontAsset> {
+  if (!existsSync(bundledFontPath)) {
+    throw new Error(`仓库内缺少测试字体：${bundledFontPath}`)
+  }
   const fontsDir = ensureDir(path.join(outputDir, 'fonts'))
   const filePath = path.join(fontsDir, FONT_FILE_NAME)
-
-  sessionLog(`正在下载测试字体：${FONT_DOWNLOAD_URL}`)
-  const response = await fetch(FONT_DOWNLOAD_URL)
-  if (!response.ok) {
-    throw new Error(`下载测试字体失败：${response.status} ${response.statusText}`)
-  }
-  const buffer = Buffer.from(await response.arrayBuffer())
-  writeFileSync(filePath, buffer)
-  sessionLog(`测试字体已保存：${filePath}`)
+  copyFileSync(bundledFontPath, filePath)
+  const buffer = readFileSync(filePath)
+  sessionLog(`已使用仓库内置测试字体：${bundledFontPath}`)
+  sessionLog(`测试字体已复制到输出目录：${filePath}`)
 
   return {
     fileName: FONT_FILE_NAME,
@@ -258,7 +259,7 @@ async function downloadFont(outputDir: string, sessionLog: (message: string) => 
     buffer,
     dataUrl: `data:${FONT_MIME_TYPE};base64,${buffer.toString('base64')}`,
     size: buffer.length,
-    sourceUrl: FONT_DOWNLOAD_URL,
+    sourcePath: bundledFontPath,
   }
 }
 
@@ -306,7 +307,7 @@ function startBackend(outputDir: string) {
     cwd: backendDir,
     env: { ...process.env, NO_OPEN_BROWSER: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
-  }) as ChildProcessWithoutNullStreams
+  }) as unknown as ChildProcessWithoutNullStreams
 
   child.stdout.on('data', chunk => stdoutLog(chunk.toString()))
   child.stderr.on('data', chunk => stderrLog(chunk.toString()))
@@ -407,7 +408,8 @@ function attachPageLogging(page: Page, outputDir: string, prefix: string) {
     browserConsoleLog(formatConsoleMessage(message, values))
   })
   page.on('pageerror', error => {
-    browserErrorLog(`[${new Date().toISOString()}] [pageerror] ${error.stack || error.message}`)
+    const message = error instanceof Error ? error.stack || error.message : String(error)
+    browserErrorLog(`[${new Date().toISOString()}] [pageerror] ${message}`)
   })
   page.on('request', request => {
     networkLog(`[${new Date().toISOString()}] [request] ${request.method()} ${shortenUrl(request.url())}`)
@@ -824,7 +826,7 @@ function buildComparisonReport(args: {
           <div>结论：<span class="ok">${args.comparison.ok ? 'Canvas 与 PPT 的文字宽度已经对齐' : 'Canvas 与 PPT 的文字宽度仍有明显偏差'}</span></div>
           <div>测试字体：${args.font.family}</div>
           <div>字体文件：<code>${args.font.filePath}</code></div>
-          <div>字体来源：<code>${args.font.sourceUrl}</code></div>
+          <div>字体来源：<code>${args.font.sourcePath}</code></div>
           <div>测试文案：${args.text}</div>
           <div>输出目录：<code>${args.outputDir}</code></div>
         </div>
@@ -868,13 +870,13 @@ async function run() {
   }
 
   sessionLog(`输出目录：${outputDir}`)
-  const font = await downloadFont(outputDir, sessionLog)
+  const font = await prepareBundledFont(outputDir, sessionLog)
   writeFileSync(path.join(outputDir, 'font.json'), JSON.stringify({
     fileName: font.fileName,
     family: font.family,
     filePath: font.filePath,
     size: font.size,
-    sourceUrl: font.sourceUrl,
+    sourcePath: font.sourcePath,
   }, null, 2), 'utf8')
 
   if (!options.skipBuild || !existsSync(path.join(frontendDistDir, 'index.html'))) {

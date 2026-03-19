@@ -105,7 +105,10 @@ function resolveBrowserExecutablePath(): string | undefined {
         '/usr/bin/microsoft-edge-stable',
       ];
 
-  return candidates.find(candidate => typeof candidate === 'string' && existsSync(candidate));
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && existsSync(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 function ensureDir(dir: string): string {
@@ -270,7 +273,8 @@ function attachPageLogging(page: Page, outputDir: string, prefix: string) {
     browserConsoleLog(formatConsoleMessage(message, values));
   });
   page.on('pageerror', error => {
-    browserErrorLog(`[${new Date().toISOString()}] [pageerror] ${error.stack || error.message}`);
+    const message = error instanceof Error ? error.stack || error.message : String(error);
+    browserErrorLog(`[${new Date().toISOString()}] [pageerror] ${message}`);
   });
   page.on('request', request => {
     if (request.method() === 'POST' && request.url().includes('/preview-images')) {
@@ -295,7 +299,7 @@ function startBackend(outputDir: string) {
     cwd: backendDir,
     env: { ...process.env, NO_OPEN_BROWSER: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
-  }) as ChildProcessWithoutNullStreams;
+  }) as unknown as ChildProcessWithoutNullStreams;
 
   child.stdout.on('data', chunk => stdoutLog(chunk.toString()));
   child.stderr.on('data', chunk => stderrLog(chunk.toString()));

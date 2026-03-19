@@ -83,6 +83,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         previewImageTest: path.resolve(__dirname, 'preview-image-test.html'),
+        pptTextWidthTest: path.resolve(__dirname, 'ppt-text-width-test.html'),
       },
     },
   },
