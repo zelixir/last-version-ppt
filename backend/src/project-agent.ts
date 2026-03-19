@@ -357,6 +357,7 @@ function buildProjectTools(options: {
           ok: runResult.ok,
           slideCount: runResult.slideCount,
           logs: includeLogs ? runResult.logs : undefined,
+          warnings: runResult.warnings,
           error: runResult.error,
         };
       },

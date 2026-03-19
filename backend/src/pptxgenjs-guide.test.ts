@@ -18,6 +18,7 @@ test('PPTXGENJS_GUIDE includes detailed examples and common APIs', () => {
 test('PPTXGENJS_GUIDE matches the actual runtime shape of pptx and pptxgenjs', () => {
   assert.match(PPTXGENJS_GUIDE, /pptxgenjs：PptxGenJS 构造函数本身/);
   assert.match(PPTXGENJS_GUIDE, /pptx instanceof pptxgenjs/);
+  assert.match(PPTXGENJS_GUIDE, /context\.assert\(condition, message\)/);
   assert.match(PPTXGENJS_GUIDE, /pptx\.ShapeType\.roundRect/);
   assert.match(PPTXGENJS_GUIDE, /pptx\.ChartType\.bar/);
   assert.match(PPTXGENJS_GUIDE, /LAYOUT_16x9/);
@@ -32,6 +33,9 @@ test('PPTXGENJS_GUIDE matches the actual runtime shape of pptx and pptxgenjs', (
 
 test('PPTXGENJS_GUIDE recommends the updated default text sizes', () => {
   assert.match(PPTXGENJS_GUIDE, /封面主标题 88、页标题 72、副标题 56、正文 48/);
+  assert.match(PPTXGENJS_GUIDE, /先判断这段文字是否允许自动换行/);
+  assert.match(PPTXGENJS_GUIDE, /后续文本的 y 都要由上一段测量结果推出来/);
+  assert.match(PPTXGENJS_GUIDE, /检查文字没有重叠、没有超出页面或自定义 box、以及单行文案没有发生非预期换行/);
   assert.match(PPTXGENJS_GUIDE, /fontSize: 88/);
   assert.match(PPTXGENJS_GUIDE, /fontSize: 72/);
   assert.match(PPTXGENJS_GUIDE, /fontSize: 56/);
@@ -46,6 +50,7 @@ test('PPTXGENJS_GUIDE recommends the updated default text sizes', () => {
   assert.match(PPTXGENJS_GUIDE, /margin: 0/);
   assert.match(PPTXGENJS_GUIDE, /左右各 0\.72 英寸边距/);
   assert.match(PPTXGENJS_GUIDE, /canvas 和真实字体名测量/);
+  assert.match(PPTXGENJS_GUIDE, /warnings/);
   assert.match(PPTXGENJS_GUIDE, /先放关键结果/);
   assert.match(PPTXGENJS_GUIDE, /写清时间安排/);
 });

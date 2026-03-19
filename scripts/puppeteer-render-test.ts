@@ -51,8 +51,7 @@ const PAGE_TITLE_HEIGHT = calculateSafeTextBoxHeight(72);
 const SECTION_TITLE_HEIGHT = calculateSafeTextBoxHeight(56);
 const BODY_TEXT_HEIGHT = calculateSafeTextBoxHeight(48);
 const THREE_LINE_BODY_HEIGHT = calculateSafeTextBoxHeight(48, 3);
-const canvasFontFamily = '_LastVersionPptCanvasSubset';
-const canvasFontPath = '/fonts/last-version-ppt-cjk-subset.otf';
+const canvasFontStack = '"Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif';
 const canvasTextChecks = [
   { label: '默认目录说明 1', text: '讲清主题重点。', width: 6.98, fontSize: 48 },
   { label: '默认目录说明 2', text: '列出章节顺序。', width: 6.98, fontSize: 48 },
@@ -487,23 +486,16 @@ async function waitForRenderResult(page: Page, timeoutMs: number) {
 
 async function saveCanvasMetrics(page: Page, outputDir: string, sessionLog: (message: string) => void) {
   await page.setViewport({ width: 1200, height: 800, deviceScaleFactor: 1 });
-  await page.setContent(`<!doctype html><html><head><style>
-    @font-face {
-      font-family: '${canvasFontFamily}';
-      src: url('${new URL(canvasFontPath, serverOrigin).toString()}') format('opentype');
-      font-display: block;
-    }
-    body { margin: 0; font-family: '${canvasFontFamily}', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif; }
-  </style></head><body></body></html>`);
-  const results = await page.evaluate(({ checks, safeWidthRatio, fontFamily, pointToPixelRatio }) => {
+  await page.setContent(`<!doctype html><html><head><style>body { margin: 0; font-family: ${canvasFontStack}; }</style></head><body></body></html>`);
+  const results = await page.evaluate(({ checks, safeWidthRatio, fontStack, pointToPixelRatio }) => {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     if (!context) throw new Error('无法创建 canvas 上下文');
     return Promise.all(checks.map(async item => {
       const fontSizePx = item.fontSize * pointToPixelRatio;
-      await document.fonts.load(`${fontSizePx}px "${fontFamily}"`);
+      await document.fonts.load(`${fontSizePx}px ${fontStack}`);
       await document.fonts.ready;
-      context.font = `${fontSizePx}px "${fontFamily}", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`;
+      context.font = `${fontSizePx}px ${fontStack}`;
       const widthPx = context.measureText(item.text).width;
       const maxWidthPx = Math.floor(item.width * 96 * safeWidthRatio);
       return {
@@ -513,7 +505,7 @@ async function saveCanvasMetrics(page: Page, outputDir: string, sessionLog: (mes
         fitsSingleLine: widthPx <= maxWidthPx,
       };
     }));
-  }, { checks: canvasTextChecks, safeWidthRatio: PPT_TEXT_SAFE_WIDTH_RATIO, fontFamily: canvasFontFamily, pointToPixelRatio: PPT_POINT_TO_PIXEL_RATIO });
+  }, { checks: canvasTextChecks, safeWidthRatio: PPT_TEXT_SAFE_WIDTH_RATIO, fontStack: canvasFontStack, pointToPixelRatio: PPT_POINT_TO_PIXEL_RATIO });
   writeFileSync(path.join(outputDir, 'canvas-text-metrics.json'), JSON.stringify(results, null, 2), 'utf8');
   const failed = results.filter(item => !item.fitsSingleLine);
   if (failed.length > 0) {

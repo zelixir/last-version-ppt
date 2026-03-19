@@ -22,6 +22,7 @@ test('buildUniqueProjectId adds a numeric suffix when the base id is already occ
 test('DEFAULT_INDEX_JS uses the verified three-page default template', () => {
   assert.match(DEFAULT_INDEX_JS, /measureText/);
   assert.match(DEFAULT_INDEX_JS, /await addMeasuredText/);
+  assert.match(DEFAULT_INDEX_JS, /assert/);
   assert.match(DEFAULT_INDEX_JS, /const fontFace = 'Noto Sans CJK SC'/);
   assert.match(DEFAULT_INDEX_JS, /fontFace, margin: 0/);
   assert.match(DEFAULT_INDEX_JS, /fontSize: 88/);
@@ -36,6 +37,8 @@ test('DEFAULT_INDEX_JS uses the verified three-page default template', () => {
   assert.match(DEFAULT_INDEX_JS, /列出章节顺序/);
   assert.match(DEFAULT_INDEX_JS, /展开重点动作/);
   assert.match(DEFAULT_INDEX_JS, /写清时间安排/);
+  assert.match(DEFAULT_INDEX_JS, /发生了非预期换行/);
+  assert.match(DEFAULT_INDEX_JS, /发生重叠/);
   assert.match(DEFAULT_INDEX_JS, /默认包含封面、目录和正文 3 页结构/);
 });
 

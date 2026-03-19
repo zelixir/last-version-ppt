@@ -3,6 +3,7 @@ import { createContext, Script } from 'node:vm';
 import path from 'path';
 import PptxGenJS from 'pptxgenjs';
 import { measureText } from './ppt-text-layout.ts';
+import { createScriptAssert } from './script-assert.ts';
 import { getProjectDir, resolveProjectFile } from './storage.ts';
 
 export interface RunProjectOptions {
@@ -13,6 +14,7 @@ export interface RunProjectOptions {
 export interface RunProjectResult {
   ok: boolean;
   logs: string[];
+  warnings: string[];
   slideCount: number;
   pptx?: PptxGenJS;
   error?: string;
@@ -28,6 +30,7 @@ function extractBuildFunction(moduleExports: any): ((context: any) => Promise<un
 export async function runProject({ projectId }: RunProjectOptions): Promise<RunProjectResult> {
   const code = readFileSync(resolveProjectFile(projectId, 'index.js'), 'utf8');
   const logs: string[] = [];
+  const warnings: string[] = [];
   const module = { exports: {} as any };
   const projectDir = getProjectDir(projectId);
 
@@ -53,6 +56,7 @@ export async function runProject({ projectId }: RunProjectOptions): Promise<RunP
 
     const pptx = new PptxGenJS();
     pptx.layout = 'LAYOUT_WIDE';
+    const assert = createScriptAssert(message => warnings.push(message));
 
     const context = {
       pptx,
@@ -60,6 +64,7 @@ export async function runProject({ projectId }: RunProjectOptions): Promise<RunP
       getResourceUrl: (fileName: string) => `http://localhost:3101/${projectId}/${encodeURIComponent(fileName)}`,
       getResourcePath: (fileName: string) => resolveProjectFile(projectId, fileName),
       log: (...args: unknown[]) => logs.push(args.map(arg => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ')),
+      assert,
       measureText,
       projectId,
       projectDir,
@@ -68,11 +73,12 @@ export async function runProject({ projectId }: RunProjectOptions): Promise<RunP
 
     const output = await buildPresentation(context);
     const finalPptx = output instanceof PptxGenJS ? output : pptx;
-    return { ok: true, logs, slideCount: (finalPptx as any)._slides?.length ?? 0, pptx: finalPptx };
+    return { ok: true, logs, warnings, slideCount: (finalPptx as any)._slides?.length ?? 0, pptx: finalPptx };
   } catch (error) {
     return {
       ok: false,
       logs,
+      warnings,
       slideCount: 0,
       error: error instanceof Error ? error.stack || error.message : String(error),
     };
