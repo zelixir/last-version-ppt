@@ -27,17 +27,17 @@ export function createScriptAssert(recordWarning: (message: string) => void): Sc
     return false;
   }) as ScriptAssert;
 
-  assert.equal = (actual, expected, message = `断言失败：期望 ${formatValue(actual)} === ${formatValue(expected)}`) => (
-    assert(Object.is(actual, expected), message)
+  assert.equal = (actual, expected, message) => (
+    assert(Object.is(actual, expected), message ?? `断言失败：期望 ${formatValue(expected)}，实际是 ${formatValue(actual)}`)
   );
-  assert.notEqual = (actual, expected, message = `断言失败：期望 ${formatValue(actual)} !== ${formatValue(expected)}`) => (
-    assert(!Object.is(actual, expected), message)
+  assert.notEqual = (actual, expected, message) => (
+    assert(!Object.is(actual, expected), message ?? `断言失败：不应为 ${formatValue(expected)}，实际是 ${formatValue(actual)}`)
   );
-  assert.lessThanOrEqual = (actual, expected, message = `断言失败：期望 ${formatValue(actual)} <= ${formatValue(expected)}`) => (
-    assert(actual <= expected, message)
+  assert.lessThanOrEqual = (actual, expected, message) => (
+    assert(actual <= expected, message ?? `断言失败：期望不大于 ${formatValue(expected)}，实际是 ${formatValue(actual)}`)
   );
-  assert.greaterThanOrEqual = (actual, expected, message = `断言失败：期望 ${formatValue(actual)} >= ${formatValue(expected)}`) => (
-    assert(actual >= expected, message)
+  assert.greaterThanOrEqual = (actual, expected, message) => (
+    assert(actual >= expected, message ?? `断言失败：期望不小于 ${formatValue(expected)}，实际是 ${formatValue(actual)}`)
   );
 
   return assert;
