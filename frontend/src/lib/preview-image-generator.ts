@@ -1,95 +1,17 @@
-import { WorkerBrowserConverter, createWasmPaths, type WasmLoadProgress } from '@matbee/libreoffice-converter/browser'
-import { uploadFontsToWorker, loadSystemFonts } from './system-fonts'
-
-const LIBREOFFICE_WORKER_PATH = '/libreoffice/font-worker-wrapper.js'
+import { getLibreOfficeConverter, type PreviewProgressStatus, warmupLibreOfficeEnvironment } from './libreoffice-env'
 const PREVIEW_WIDTH = 1600
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
-
-export interface PreviewProgressStatus {
-  message: string
-  percent?: number
-}
 
 interface UploadedPreviewImage {
   pageNumber: number
   url: string
 }
 
-let sharedConverterPromise: Promise<WorkerBrowserConverter> | null = null
-const sharedProgressListeners = new Set<(progress: PreviewProgressStatus) => void>()
 let pendingPreviewTaskCount = 0
 let previewTaskQueue: Promise<void> = Promise.resolve()
 
-function emitProgress(progress: PreviewProgressStatus) {
-  sharedProgressListeners.forEach(listener => listener(progress))
-}
-
-function phaseToMessage(progress: WasmLoadProgress) {
-  const percent = Number.isFinite(progress.percent) ? `（${Math.round(progress.percent)}%）` : ''
-  switch (progress.phase) {
-    case 'download-wasm':
-      return `正在下载高保真预览组件${percent}`
-    case 'download-data':
-      return `正在准备排版资源${percent}`
-    case 'compile':
-      return `正在启动预览引擎${percent}`
-    case 'filesystem':
-      return `正在整理预览环境${percent}`
-    case 'lok-init':
-      return `正在唤醒排版引擎${percent}`
-    case 'ready':
-      return '高保真预览引擎已经准备好了'
-    default:
-      return progress.message?.trim() || '正在准备高保真预览…'
-  }
-}
-
-function createPreviewConverterPromise() {
-  const fontsPromise = loadSystemFonts()
-  const converter = new WorkerBrowserConverter({
-    ...createWasmPaths('/wasm/'),
-    browserWorkerJs: LIBREOFFICE_WORKER_PATH,
-    onProgress: progress => emitProgress({ message: phaseToMessage(progress), percent: progress.percent }),
-  })
-
-  return converter.initialize()
-    .then(async () => {
-      try {
-        await fontsPromise
-        const worker = (converter as any).worker as Worker | undefined
-        if (worker) await uploadFontsToWorker(worker)
-      } catch {
-        // Font loading is best-effort; continue without fonts
-      }
-      return converter
-    })
-    .catch(error => {
-      sharedConverterPromise = null
-      throw error
-    })
-}
-
-async function getPreviewConverter(onProgress?: (progress: PreviewProgressStatus) => void) {
-  if (onProgress) sharedProgressListeners.add(onProgress)
-
-  try {
-    if (!sharedConverterPromise) {
-      sharedConverterPromise = createPreviewConverterPromise()
-    }
-    const converter = await sharedConverterPromise
-    onProgress?.({ message: '高保真预览引擎已经准备好了', percent: 100 })
-    return converter
-  } finally {
-    if (onProgress) sharedProgressListeners.delete(onProgress)
-  }
-}
-
 export async function warmupPreviewEngine(onProgress?: (progress: PreviewProgressStatus) => void) {
-  try {
-    await getPreviewConverter(onProgress)
-  } catch {
-    // Let the real preview flow surface initialization errors to the user.
-  }
+  await warmupLibreOfficeEnvironment(onProgress)
 }
 
 async function runPreviewTask<T>(
@@ -152,7 +74,7 @@ export async function capturePreviewImages(
   onProgress?: (progress: PreviewProgressStatus) => void,
 ) {
   return await runPreviewTask(async () => {
-    const converter = await getPreviewConverter(onProgress)
+    const converter = await getLibreOfficeConverter(onProgress)
     const pageCount = await converter.getPageCount(pptxData, { inputFormat: 'pptx' })
     const images: Blob[] = []
 
