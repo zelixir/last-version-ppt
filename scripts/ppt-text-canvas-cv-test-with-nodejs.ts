@@ -4,8 +4,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writ
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import puppeteer, { type ConsoleMessage, type Page } from 'puppeteer'
 
 interface MainRunOptions {
@@ -842,13 +841,16 @@ async function runNodejsPptRenderWorker(options: NodeRenderRunOptions) {
     process.stdout.write(`${line}\n`)
   }
 
-  const require = createRequire(import.meta.url)
-  const packageJsonPath = require.resolve('@matbee/libreoffice-converter/package.json')
-  const packageDir = path.dirname(packageJsonPath)
+  const packageDir = path.join(repoRoot, 'frontend', 'node_modules', '@matbee', 'libreoffice-converter')
+  if (!existsSync(packageDir)) {
+    throw new Error(`缺少 LibreOffice 依赖，请先执行 bun install --cwd frontend：${packageDir}`)
+  }
   print(`LibreOffice 包目录：${packageDir}`)
 
-  const { createConverter } = await import('@matbee/libreoffice-converter')
-  const wasmLoaderModule = await import('@matbee/libreoffice-converter/wasm/loader.cjs')
+  const converterModuleUrl = pathToFileURL(path.join(packageDir, 'dist', 'index.js')).href
+  const wasmLoaderModuleUrl = pathToFileURL(path.join(packageDir, 'wasm', 'loader.cjs')).href
+  const { createConverter } = await import(converterModuleUrl)
+  const wasmLoaderModule = await import(wasmLoaderModuleUrl)
   const wasmLoader = 'default' in wasmLoaderModule ? wasmLoaderModule.default : wasmLoaderModule
   const converter = await createConverter({
     wasmPath: path.join(packageDir, 'wasm'),
