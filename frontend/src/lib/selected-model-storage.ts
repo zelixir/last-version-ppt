@@ -7,6 +7,10 @@ export function readStoredSelectedModelId() {
   return Number.isInteger(value) && value > 0 ? value : null
 }
 
+export function getInitialSelectedModelId(preferredSelectedModelId?: number | null) {
+  return preferredSelectedModelId ?? readStoredSelectedModelId()
+}
+
 export function writeStoredSelectedModelId(selectedModelId: number | null) {
   if (selectedModelId === null) {
     window.localStorage.removeItem(SELECTED_MODEL_STORAGE_KEY)

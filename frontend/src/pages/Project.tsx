@@ -12,7 +12,7 @@ import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
 import { capturePreviewImages, uploadPreviewImages } from '../lib/preview-image-generator'
 import { runProjectPreview } from '../lib/project-preview'
-import { readStoredSelectedModelId, writeStoredSelectedModelId } from '../lib/selected-model-storage'
+import { getInitialSelectedModelId, readStoredSelectedModelId, writeStoredSelectedModelId } from '../lib/selected-model-storage'
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
   text: '文本',
@@ -104,7 +104,8 @@ export default function Project() {
   const projectKey = projectId ?? ''
   const navigate = useNavigate()
   const location = useLocation()
-  const initialNavigationStateRef = useRef<NavigationState | null>(readNavigationState(location.state))
+  const initialNavigationState = readNavigationState(location.state)
+  const initialNavigationStateRef = useRef<NavigationState | null>(initialNavigationState)
   const autoPromptRef = useRef<string | null>(initialNavigationStateRef.current?.autoPrompt ?? null)
   const autoModelRef = useRef<number | null>(initialNavigationStateRef.current?.suggestedModelId ?? null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -115,7 +116,7 @@ export default function Project() {
   const previewWheelAtRef = useRef(0)
   const [project, setProject] = useState<ProjectSummary | null>(null)
   const [models, setModels] = useState<AiModel[]>([])
-  const [selectedModelId, setSelectedModelId] = useState<number | null>(null)
+  const [selectedModelId, setSelectedModelId] = useState<number | null>(() => getInitialSelectedModelId(initialNavigationState?.suggestedModelId))
   const [activeTab, setActiveTab] = useState<'preview' | 'resources'>(() => readStoredProjectTab(projectKey))
   const [selectedSlideIndex, setSelectedSlideIndex] = useState(0)
   const [preview, setPreview] = useState<PreviewPresentation | null>(null)
