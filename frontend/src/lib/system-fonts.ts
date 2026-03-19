@@ -3,6 +3,17 @@ interface SystemFontInfo {
   size: number
 }
 
+interface FontTestConfig {
+  skipBundledFonts?: boolean
+  onlyFontNames?: string[]
+}
+
+declare global {
+  interface Window {
+    __LAST_VERSION_PPT_FONT_TEST__?: FontTestConfig
+  }
+}
+
 const bundledFonts = [
   { name: 'last-version-ppt-cjk-subset.otf', url: '/fonts/last-version-ppt-cjk-subset.otf' },
 ]
@@ -24,6 +35,11 @@ const PREFERRED_SYSTEM_FONT_PATTERNS = [
 const MAX_SYSTEM_FONTS_TO_LOAD = 8
 
 let cachedFontList: SystemFontInfo[] | null = null
+
+function readFontTestConfig(): FontTestConfig | null {
+  if (typeof window === 'undefined') return null
+  return window.__LAST_VERSION_PPT_FONT_TEST__ ?? null
+}
 
 export async function fetchSystemFontList(): Promise<SystemFontInfo[]> {
   if (cachedFontList) return cachedFontList
@@ -84,15 +100,20 @@ export function loadSystemFonts(): Promise<Array<{ name: string; data: ArrayBuff
   fontsLoadedPromise = (async () => {
     const loaded: Array<{ name: string; data: ArrayBuffer }> = []
     const seenNames = new Set<string>()
+    const fontTestConfig = readFontTestConfig()
+    const allowedFontNames = fontTestConfig?.onlyFontNames?.filter(Boolean) ?? []
 
-    for (const font of bundledFonts) {
-      const data = await fetchBundledFontData(font.url)
-      if (!data) continue
-      loaded.push({ name: font.name, data })
-      seenNames.add(font.name)
+    if (!fontTestConfig?.skipBundledFonts) {
+      for (const font of bundledFonts) {
+        const data = await fetchBundledFontData(font.url)
+        if (!data) continue
+        loaded.push({ name: font.name, data })
+        seenNames.add(font.name)
+      }
     }
 
     const fontList = pickSystemFonts(await fetchSystemFontList())
+      .filter(font => allowedFontNames.length === 0 || allowedFontNames.includes(font.name))
     if (!fontList.length) return loaded
 
     // Load fonts in parallel batches to avoid overwhelming the server
