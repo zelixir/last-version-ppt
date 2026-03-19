@@ -12,7 +12,7 @@
     "build:exe": "bun run scripts/build-exe.ts",
     "test:render": "bun run scripts/puppeteer-render-test.ts",
     "test:lok-init": "bun run scripts/puppeteer-lok-init-test.ts",
-    "test:text-width": "bun run scripts/ppt-text-canvas-cv-test.ts"
+    "test:text-width": "node scripts/ppt-text-canvas-cv-test-with-nodejs.ts"
   },
   "devDependencies": {
     "@types/node": "https://registry.npmjs.org/@types/node/-/node-25.4.0.tgz",
