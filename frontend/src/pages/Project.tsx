@@ -99,7 +99,9 @@ function readPendingAutoPrompt(projectKey: string): NavigationState | null {
     const parsed = JSON.parse(rawValue)
     if (!parsed || typeof parsed !== 'object') return null
     const autoPrompt = typeof parsed.autoPrompt === 'string' ? parsed.autoPrompt : undefined
-    const suggestedModelId = Number.isInteger(parsed.suggestedModelId) ? parsed.suggestedModelId : undefined
+    const suggestedModelId = typeof parsed.suggestedModelId === 'number' && Number.isInteger(parsed.suggestedModelId)
+      ? parsed.suggestedModelId
+      : undefined
     if (!autoPrompt && suggestedModelId === undefined) return null
     return { autoPrompt, suggestedModelId }
   } catch {
@@ -115,7 +117,7 @@ function readNavigationState(projectKey: string, locationState: unknown): Naviga
       ? window.history.state.usr
       : null
   const suggestedModelId = pendingAutoPrompt?.suggestedModelId
-    ?? (rawNavigationState && Number.isInteger((rawNavigationState as NavigationState).suggestedModelId)
+    ?? (rawNavigationState && typeof (rawNavigationState as NavigationState).suggestedModelId === 'number' && Number.isInteger((rawNavigationState as NavigationState).suggestedModelId)
       ? (rawNavigationState as NavigationState).suggestedModelId
       : undefined)
   if (!pendingAutoPrompt?.autoPrompt && suggestedModelId === undefined) return null
