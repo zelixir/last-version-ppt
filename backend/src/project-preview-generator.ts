@@ -1,4 +1,4 @@
-import { createConverter, rgbaToPng, type LibreOfficeWasmOptions } from '../../frontend/node_modules/@matbee/libreoffice-converter/dist/index.js';
+import { createConverter, rgbaToPng, type LibreOfficeWasmOptions } from '@matbee/libreoffice-converter';
 import { resolveLibreOfficeRuntime } from './libreoffice-runtime.ts';
 import { replaceProjectPreviewImages, type ProjectPreviewImageInfo } from './project-preview-cache.ts';
 

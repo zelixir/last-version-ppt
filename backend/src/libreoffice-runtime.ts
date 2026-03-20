@@ -4,7 +4,7 @@ import { createRequire } from 'module';
 import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import type { LibreOfficeWasmOptions } from '../../frontend/node_modules/@matbee/libreoffice-converter/dist/index.js';
+import type { LibreOfficeWasmOptions } from '@matbee/libreoffice-converter';
 
 type WasmLoaderModule = NonNullable<LibreOfficeWasmOptions['wasmLoader']>;
 
@@ -18,6 +18,7 @@ interface BunRuntimeLike {
 }
 
 const bunRuntime = (globalThis as typeof globalThis & { Bun?: BunRuntimeLike }).Bun;
+const require = createRequire(import.meta.url);
 const EMBEDDED_WASM_FILES = [
   'loader.cjs',
   'soffice.cjs',
@@ -27,14 +28,12 @@ const EMBEDDED_WASM_FILES = [
   'soffice.worker.cjs',
   'soffice.worker.js',
 ] as const;
-const EMBEDDED_WASM_URLS = Object.fromEntries(
-  EMBEDDED_WASM_FILES.map(fileName => [
-    fileName,
-    new URL(`../../frontend/node_modules/@matbee/libreoffice-converter/wasm/${fileName}`, import.meta.url),
-  ]),
-) as Record<(typeof EMBEDDED_WASM_FILES)[number], URL>;
-
 let extractedWasmDirPromise: Promise<string> | null = null;
+
+function resolveConverterPackageRoot() {
+  const packageJsonPath = require.resolve('@matbee/libreoffice-converter/package.json');
+  return dirname(packageJsonPath);
+}
 
 function hasAllRuntimeFiles(wasmDir: string) {
   return EMBEDDED_WASM_FILES.every(fileName => existsSync(join(wasmDir, fileName)));
@@ -49,14 +48,13 @@ function isBunRuntime() {
 }
 
 function resolveInstalledWasmDir() {
-  const sourceDir = dirname(fileURLToPath(import.meta.url));
-  const wasmDir = resolve(sourceDir, '..', '..', 'frontend', 'node_modules', '@matbee', 'libreoffice-converter', 'wasm');
+  const wasmDir = resolve(resolveConverterPackageRoot(), 'wasm');
   return hasAllRuntimeFiles(wasmDir) ? wasmDir : null;
 }
 
 function resolvePackagedWasmDir() {
   try {
-    const loaderPath = fileURLToPath(EMBEDDED_WASM_URLS['loader.cjs']);
+    const loaderPath = join(resolveConverterPackageRoot(), 'wasm', 'loader.cjs');
     const wasmDir = dirname(loaderPath);
     if (isBunRuntime() && isBundledBunPath(wasmDir)) {
       return null;
@@ -72,13 +70,13 @@ async function extractBundledWasmDir() {
     throw new Error('当前环境没有可用的 Bun 运行时');
   }
 
-  const wasmDir = join(tmpdir(), 'ppt-libreoffice-runtime', `${process.pid}`, 'wasm');
+  const wasmDir = join(tmpdir(), 'ppt-libreoffice-runtime', 'matbee-converter', 'wasm');
   mkdirSync(wasmDir, { recursive: true });
 
   for (const fileName of EMBEDDED_WASM_FILES) {
     const targetPath = join(wasmDir, fileName);
     if (existsSync(targetPath)) continue;
-    const fileData = await bunRuntime.file(EMBEDDED_WASM_URLS[fileName]).arrayBuffer();
+    const fileData = await bunRuntime.file(join(resolveConverterPackageRoot(), 'wasm', fileName)).arrayBuffer();
     await writeFile(targetPath, new Uint8Array(fileData));
   }
 
@@ -111,7 +109,6 @@ async function resolveWasmDir() {
 
 export async function resolveLibreOfficeRuntime() {
   const wasmDir = await resolveWasmDir();
-  const require = createRequire(import.meta.url);
   const loaderPath = join(wasmDir, 'loader.cjs');
   return {
     wasmDir,
