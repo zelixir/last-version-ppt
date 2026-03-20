@@ -802,7 +802,7 @@ const app = new Elysia()
     if (!project) return new Response('Not found', { status: 404 });
     const result = await runProject({ projectId: params.id, includeLogs: payload?.includeLogs });
     return result.ok
-      ? { ok: true, slideCount: result.slideCount, logs: result.logs }
+      ? { ok: true, slideCount: result.slideCount, logs: result.logs, warnings: result.warnings }
       : errorResponse(result.error || '项目运行失败', 500);
   })
   .get('/api/projects/:id/export', async ({ params }) => {

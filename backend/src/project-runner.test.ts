@@ -19,7 +19,7 @@ test('runProject 提供的 PPT 脚本运行环境与指南示例一致', async (
   await withTestProject(async projectId => {
     writeFileSync(
       resolveProjectFile(projectId, 'index.js'),
-      `module.exports = async function buildPresentation({ pptx, pptxgenjs, getResourceUrl, getResourcePath, measureText, log, projectId, projectDir, path }) {
+      `module.exports = async function buildPresentation({ pptx, pptxgenjs, getResourceUrl, getResourcePath, measureText, log, assert, projectId, projectDir, path }) {
   if (typeof pptxgenjs !== 'function') throw new Error('pptxgenjs 应该是构造函数');
   if (!(pptx instanceof pptxgenjs)) throw new Error('pptx 应该是 pptxgenjs 的实例');
   if (pptxgenjs.ShapeType !== undefined) throw new Error('pptxgenjs 上不应直接提供 ShapeType');
@@ -31,7 +31,7 @@ test('runProject 提供的 PPT 脚本运行环境与指南示例一致', async (
   if (!('LAYOUT_WIDE' in pptx.LAYOUTS) || !('LAYOUT_16x9' in pptx.LAYOUTS) || !('LAYOUT_4x3' in pptx.LAYOUTS)) {
     throw new Error('缺少预期的布局常量');
   }
-  if (typeof getResourceUrl !== 'function' || typeof getResourcePath !== 'function' || typeof measureText !== 'function' || typeof log !== 'function') {
+  if (typeof getResourceUrl !== 'function' || typeof getResourcePath !== 'function' || typeof measureText !== 'function' || typeof log !== 'function' || typeof assert !== 'function') {
     throw new Error('上下文函数缺失');
   }
   if (typeof projectId !== 'string' || typeof projectDir !== 'string' || typeof path?.join !== 'function') {
@@ -60,6 +60,7 @@ test('runProject 提供的 PPT 脚本运行环境与指南示例一致', async (
 
     const result = await runProject({ projectId });
     assert.equal(result.ok, true, result.error);
+    assert.deepEqual(result.warnings, []);
     assert.equal(result.slideCount, 2);
     assert.equal(result.pptx?.layout, 'LAYOUT_16x9');
     assert.ok(result.logs.length > 0);
@@ -72,5 +73,28 @@ test('runProject 提供的 PPT 脚本运行环境与指南示例一致', async (
     assert.match(runtimeInfo.resourceUrl, new RegExp(`^http://localhost:3101/${projectId}/`));
     assert.ok(runtimeInfo.resourceUrl.endsWith('%E5%B0%81%E9%9D%A2%20%E5%9B%BE.png'));
     assert.equal(runtimeInfo.resourcePath, resolveProjectFile(projectId, 'cover.png'));
+  });
+});
+
+test('runProject 的 assert 会收集 warning 而不是中断脚本', async () => {
+  await withTestProject(async projectId => {
+    writeFileSync(
+      resolveProjectFile(projectId, 'index.js'),
+      `module.exports = async function buildPresentation({ pptx, assert, log }) {
+  pptx.layout = 'LAYOUT_WIDE';
+  const slide = pptx.addSlide();
+  slide.addText('测试', { x: 0.5, y: 0.5, w: 1.2, h: 0.6, fontSize: 24 });
+  assert(false, '第一页标题超出安全区');
+  assert.equal(1, 2, '编号不匹配');
+  log('脚本仍然继续执行');
+};`,
+      'utf8',
+    );
+
+    const result = await runProject({ projectId });
+    assert.equal(result.ok, true, result.error);
+    assert.equal(result.slideCount, 1);
+    assert.deepEqual(result.warnings, ['第一页标题超出安全区', '编号不匹配']);
+    assert.match(result.logs.join('\n'), /脚本仍然继续执行/);
   });
 });

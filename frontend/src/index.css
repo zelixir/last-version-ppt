@@ -1,12 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-@font-face {
-  font-family: 'LastVersionPptCjkUi';
-  src: url('/fonts/last-version-ppt-cjk-subset.otf') format('opentype');
-  font-display: swap;
-}
-
 @layer base {
   :root {
     color-scheme: dark;
@@ -16,7 +10,7 @@
   }
   body {
     @apply h-full bg-gray-950 text-gray-100;
-    font-family: 'LastVersionPptCjkUi', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+    font-family: 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
   }
   #root {
     @apply h-full;

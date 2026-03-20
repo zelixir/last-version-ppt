@@ -1,5 +1,6 @@
 import PptxGenJS from 'pptxgenjs'
 import type { PreviewElement, PreviewPresentation, PreviewSlide } from '../types'
+import { createScriptAssert } from './script-assert'
 
 export interface ProjectPreviewRunResult {
   presentation: PreviewPresentation
@@ -220,6 +221,7 @@ function serializeSlide(projectId: string, slide: any): PreviewSlide {
 
 export async function runProjectPreview(projectId: string, code: string): Promise<ProjectPreviewRunResult> {
   const logs: string[] = []
+  const warnings: string[] = []
   const module = { exports: {} as any }
 
   try {
@@ -276,6 +278,7 @@ export async function runProjectPreview(projectId: string, code: string): Promis
     pptxgenjs: PptxGenJS,
     getResourceUrl: (fileName: string) => buildProjectResourceUrl(projectId, fileName),
     log: (...args: unknown[]) => logs.push(args.map(arg => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ')),
+    assert: createScriptAssert(message => warnings.push(message)),
     measureText,
   }
 
@@ -293,7 +296,7 @@ export async function runProjectPreview(projectId: string, code: string): Promis
       width: toInches(layout?.width) || DEFAULT_PPT_WIDTH,
       height: toInches(layout?.height) || DEFAULT_PPT_HEIGHT,
       slides: ((finalPptx as any)._slides ?? []).map((slide: any) => serializeSlide(projectId, slide)),
-      logs,
+      logs: warnings.length ? [...logs, ...warnings.map(message => `[警告] ${message}`)] : logs,
     },
     pptxData,
   }

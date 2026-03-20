@@ -14,9 +14,7 @@ declare global {
   }
 }
 
-const bundledFonts = [
-  { name: 'last-version-ppt-cjk-subset.otf', url: '/fonts/last-version-ppt-cjk-subset.otf' },
-]
+const bundledFonts: Array<{ name: string; url: string }> = []
 const PREFERRED_SYSTEM_FONT_PATTERNS = [
   /NotoSansCJK/i,
   /NotoSerifCJK/i,
