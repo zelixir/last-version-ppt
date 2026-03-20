@@ -1,8 +1,9 @@
-import { createConverter, rgbaToPng } from '../../frontend/node_modules/@matbee/libreoffice-converter/dist/index.js';
+import { createConverter, rgbaToPng, type LibreOfficeWasmOptions } from '../../frontend/node_modules/@matbee/libreoffice-converter/dist/index.js';
 import { resolveLibreOfficeRuntime } from './libreoffice-runtime.ts';
 import { replaceProjectPreviewImages, type ProjectPreviewImageInfo } from './project-preview-cache.ts';
 
 const PREVIEW_WIDTH = 1600;
+type WasmLoaderModule = NonNullable<LibreOfficeWasmOptions['wasmLoader']>;
 
 type PreviewRenderer = (pptxData: Uint8Array, width: number) => Promise<Array<{ pageNumber: number; data: Uint8Array }>>;
 
@@ -47,7 +48,7 @@ async function renderPreviewImagesWithLibreOffice(
   const runtime = await resolveLibreOfficeRuntime();
   const converter = await createConverter({
     wasmPath: runtime.wasmDir,
-    wasmLoader: runtime.wasmLoader as any,
+    wasmLoader: runtime.wasmLoader as WasmLoaderModule,
   });
   try {
     const pageCount = await converter.getPageCount(pptxData, { inputFormat: 'pptx' });

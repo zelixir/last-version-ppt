@@ -4,10 +4,9 @@ import { createRequire } from 'module';
 import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import type { LibreOfficeWasmOptions } from '../../frontend/node_modules/@matbee/libreoffice-converter/dist/index.js';
 
-interface WasmLoaderModule {
-  createModule(config: Record<string, unknown>): unknown;
-}
+type WasmLoaderModule = NonNullable<LibreOfficeWasmOptions['wasmLoader']>;
 
 interface BunFileLike {
   arrayBuffer(): Promise<ArrayBuffer>;
@@ -73,7 +72,7 @@ async function extractBundledWasmDir() {
     throw new Error('当前环境没有可用的 Bun 运行时');
   }
 
-  const wasmDir = join(tmpdir(), 'last-version-ppt-libreoffice', `${process.pid}`, 'wasm');
+  const wasmDir = join(tmpdir(), 'ppt-libreoffice-runtime', `${process.pid}`, 'wasm');
   mkdirSync(wasmDir, { recursive: true });
 
   for (const fileName of EMBEDDED_WASM_FILES) {
