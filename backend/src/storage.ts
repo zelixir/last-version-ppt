@@ -18,7 +18,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     coverTop: 0.76,
     contentGap: 0.38,
   };
-  const fontFace = 'Noto Sans CJK SC';
+  const fontFace = 'Microsoft YaHei';
   const textOptions = { fontFace, margin: 0, breakLine: false };
   const BOX_TOLERANCE = 0.01;
   const MIN_TEXT_BOX_WIDTH = 0.6;

@@ -23,7 +23,7 @@ test('DEFAULT_INDEX_JS uses the verified three-page default template', () => {
   assert.match(DEFAULT_INDEX_JS, /measureText/);
   assert.match(DEFAULT_INDEX_JS, /await addMeasuredText/);
   assert.match(DEFAULT_INDEX_JS, /assert/);
-  assert.match(DEFAULT_INDEX_JS, /const fontFace = 'Noto Sans CJK SC'/);
+  assert.match(DEFAULT_INDEX_JS, /const fontFace = 'Microsoft YaHei'/);
   assert.match(DEFAULT_INDEX_JS, /fontFace, margin: 0/);
   assert.match(DEFAULT_INDEX_JS, /fontSize: 88/);
   assert.match(DEFAULT_INDEX_JS, /fontSize: 72/);

@@ -16,6 +16,12 @@ const PLACEHOLDERS = [
   '做一个汇报型 PPT，总结本季度运营数据，包含图表、关键结论和下季度计划。',
 ]
 
+const PENDING_AUTO_PROMPT_STORAGE_KEY_PREFIX = 'last-version-ppt:pending-auto-prompt:'
+
+function getPendingAutoPromptStorageKey(projectId: string) {
+  return `${PENDING_AUTO_PROMPT_STORAGE_KEY_PREFIX}${projectId}`
+}
+
 export default function Home() {
   const navigate = useNavigate()
   const [projects, setProjects] = useState<ProjectSummary[]>([])
@@ -113,6 +119,7 @@ export default function Home() {
       void warmupPreviewEngine()
       setPlaceholderSeed(nextSeed)
       setRequirement(PLACEHOLDERS[nextSeed % PLACEHOLDERS.length])
+      window.sessionStorage.setItem(getPendingAutoPromptStorageKey(data.id), JSON.stringify({ autoPrompt: prompt, suggestedModelId: selectedModelId }))
       navigate(`/projects/${data.id}`, { state: { autoPrompt: prompt, suggestedModelId: selectedModelId } })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
