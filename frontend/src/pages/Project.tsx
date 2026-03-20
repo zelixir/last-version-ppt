@@ -70,6 +70,11 @@ function getPendingAutoPromptStorageKey(projectKey: string) {
   return `${PENDING_AUTO_PROMPT_STORAGE_KEY_PREFIX}${projectKey}`
 }
 
+function clearPendingAutoPrompt(projectKey: string) {
+  if (!projectKey) return
+  window.sessionStorage.removeItem(getPendingAutoPromptStorageKey(projectKey))
+}
+
 function readStoredProjectTab(projectKey: string): 'preview' | 'resources' {
   return window.localStorage.getItem(getProjectTabStorageKey(projectKey)) === 'resources' ? 'resources' : 'preview'
 }
@@ -90,7 +95,6 @@ function readPendingAutoPrompt(projectKey: string): NavigationState | null {
   const storageKey = getPendingAutoPromptStorageKey(projectKey)
   const rawValue = window.sessionStorage.getItem(storageKey)
   if (!rawValue) return null
-  window.sessionStorage.removeItem(storageKey)
   try {
     const parsed = JSON.parse(rawValue)
     if (!parsed || typeof parsed !== 'object') return null
@@ -464,13 +468,15 @@ export default function Project() {
 
   useEffect(() => {
     if (!autoPromptRef.current || !selectedModelId || chatLoading) return
-    const prompt = autoPromptRef.current
-    autoPromptRef.current = null
     const timeoutId = window.setTimeout(() => {
+      const prompt = autoPromptRef.current
+      if (!prompt) return
+      autoPromptRef.current = null
+      clearPendingAutoPrompt(projectKey)
       sendChat(prompt, selectedModelId)
     }, 200)
     return () => window.clearTimeout(timeoutId)
-  }, [selectedModelId, projectId, chatLoading])
+  }, [selectedModelId, projectId, projectKey, chatLoading])
 
   useEffect(() => {
     document.title = buildProjectPageTitle(project, projectId)
