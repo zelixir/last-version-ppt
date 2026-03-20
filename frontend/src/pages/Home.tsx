@@ -6,7 +6,6 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
-import { warmupPreviewEngine } from '../lib/preview-image-generator'
 import { readStoredSelectedModelId, writeStoredSelectedModelId } from '../lib/selected-model-storage'
 
 const PLACEHOLDERS = [
@@ -116,7 +115,6 @@ export default function Home() {
       if (!response.ok) throw new Error(data.error || '创建项目失败')
       const prompt = requirement.trim()
       const nextSeed = placeholderSeed + 1
-      void warmupPreviewEngine()
       setPlaceholderSeed(nextSeed)
       setRequirement(PLACEHOLDERS[nextSeed % PLACEHOLDERS.length])
       window.sessionStorage.setItem(getPendingAutoPromptStorageKey(data.id), JSON.stringify({ autoPrompt: prompt, suggestedModelId: selectedModelId }))

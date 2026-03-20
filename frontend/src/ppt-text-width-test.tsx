@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { capturePreviewImages, uploadPreviewImages } from './lib/preview-image-generator'
+import { generatePreviewImages } from './lib/preview-image-generator'
 import { runProjectPreview } from './lib/project-preview'
 import type { PreviewPresentation } from './types'
 
@@ -142,10 +142,9 @@ function PptTextWidthTestPage() {
 
       const rendered = await runProjectPreview(nextProjectId, content)
       setPreview(rendered.presentation)
-      setStatus('正在生成 PPT 高保真图片，请稍等…')
+      setStatus('正在请服务器生成 PPT 高保真图片，请稍等…')
 
-      const capturedImages = await capturePreviewImages(rendered.pptxData, progress => setStatus(progress.message))
-      const uploadedImages = await uploadPreviewImages(nextProjectId, capturedImages, progress => setStatus(progress.message))
+      const uploadedImages = await generatePreviewImages(nextProjectId, rendered.pptxData, progress => setStatus(progress.message))
       setImages(uploadedImages)
       setPhase('done')
       setStatus(`核对页面已经准备好，项目 ${nextProjectId} 的图片已生成。`)
