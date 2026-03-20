@@ -38,7 +38,7 @@ test('runProject 提供的 PPT 脚本运行环境与指南示例一致', async (
     throw new Error('项目信息缺失');
   }
 
-  const measured = measureText('新的演示文稿', { fontSize: 88, fontFace: 'Noto Sans CJK SC', width: 11.56 });
+  const measured = measureText('新的演示文稿', { fontSize: 88, fontFace: 'Microsoft YaHei', width: 11.56 });
   if (typeof measured?.width !== 'number' || measured.width <= 0) throw new Error('measureText 不可用');
 
   pptx.layout = 'LAYOUT_16x9';

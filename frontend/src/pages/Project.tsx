@@ -46,6 +46,7 @@ type NavigationState = { autoPrompt?: string; suggestedModelId?: number }
 
 const SHOW_SCRIPT_STORAGE_KEY = 'last-version-ppt:show-script'
 const CHAT_WIDTH_STORAGE_KEY = 'last-version-ppt:chat-width'
+const PENDING_AUTO_PROMPT_STORAGE_KEY_PREFIX = 'last-version-ppt:pending-auto-prompt:'
 const PROJECT_TAB_STORAGE_KEY_PREFIX = 'last-version-ppt:project-tab:'
 const PROMPT_HISTORY_STORAGE_KEY_PREFIX = 'last-version-ppt:prompt-history:'
 const MIN_CHAT_PANEL_WIDTH = 320
@@ -65,6 +66,15 @@ function getPromptHistoryStorageKey(projectKey: string) {
   return `${PROMPT_HISTORY_STORAGE_KEY_PREFIX}${projectKey}`
 }
 
+function getPendingAutoPromptStorageKey(projectKey: string) {
+  return `${PENDING_AUTO_PROMPT_STORAGE_KEY_PREFIX}${projectKey}`
+}
+
+function clearPendingAutoPrompt(projectKey: string) {
+  if (!projectKey) return
+  window.sessionStorage.removeItem(getPendingAutoPromptStorageKey(projectKey))
+}
+
 function readStoredProjectTab(projectKey: string): 'preview' | 'resources' {
   return window.localStorage.getItem(getProjectTabStorageKey(projectKey)) === 'resources' ? 'resources' : 'preview'
 }
@@ -80,14 +90,38 @@ function readStoredPromptHistory(projectKey: string): string[] {
   }
 }
 
-function readNavigationState(locationState: unknown): NavigationState | null {
-  if (locationState && typeof locationState === 'object') {
-    return locationState as NavigationState
+function readPendingAutoPrompt(projectKey: string): NavigationState | null {
+  if (!projectKey) return null
+  const storageKey = getPendingAutoPromptStorageKey(projectKey)
+  const rawValue = window.sessionStorage.getItem(storageKey)
+  if (!rawValue) return null
+  try {
+    const parsed = JSON.parse(rawValue)
+    if (!parsed || typeof parsed !== 'object') return null
+    const autoPrompt = typeof parsed.autoPrompt === 'string' ? parsed.autoPrompt : undefined
+    const suggestedModelId = typeof parsed.suggestedModelId === 'number' && Number.isInteger(parsed.suggestedModelId)
+      ? parsed.suggestedModelId
+      : undefined
+    if (!autoPrompt && suggestedModelId === undefined) return null
+    return { autoPrompt, suggestedModelId }
+  } catch {
+    return null
   }
-  const historyUserState = window.history.state?.usr
-  return historyUserState && typeof historyUserState === 'object'
-    ? historyUserState as NavigationState
-    : null
+}
+
+function readNavigationState(projectKey: string, locationState: unknown): NavigationState | null {
+  const pendingAutoPrompt = readPendingAutoPrompt(projectKey)
+  const rawNavigationState = locationState && typeof locationState === 'object'
+    ? locationState
+    : window.history.state?.usr && typeof window.history.state.usr === 'object'
+      ? window.history.state.usr
+      : null
+  const suggestedModelId = pendingAutoPrompt?.suggestedModelId
+    ?? (rawNavigationState && typeof (rawNavigationState as NavigationState).suggestedModelId === 'number' && Number.isInteger((rawNavigationState as NavigationState).suggestedModelId)
+      ? (rawNavigationState as NavigationState).suggestedModelId
+      : undefined)
+  if (!pendingAutoPrompt?.autoPrompt && suggestedModelId === undefined) return null
+  return { autoPrompt: pendingAutoPrompt?.autoPrompt, suggestedModelId }
 }
 
 function buildProjectPageTitle(project: ProjectSummary | null, projectId?: string) {
@@ -104,7 +138,7 @@ export default function Project() {
   const projectKey = projectId ?? ''
   const navigate = useNavigate()
   const location = useLocation()
-  const initialNavigationState = readNavigationState(location.state)
+  const initialNavigationState = readNavigationState(projectKey, location.state)
   const initialNavigationStateRef = useRef<NavigationState | null>(initialNavigationState)
   const autoPromptRef = useRef<string | null>(initialNavigationStateRef.current?.autoPrompt ?? null)
   const autoModelRef = useRef<number | null>(initialNavigationStateRef.current?.suggestedModelId ?? null)
@@ -436,13 +470,15 @@ export default function Project() {
 
   useEffect(() => {
     if (!autoPromptRef.current || !selectedModelId || chatLoading) return
-    const prompt = autoPromptRef.current
-    autoPromptRef.current = null
     const timeoutId = window.setTimeout(() => {
+      const prompt = autoPromptRef.current
+      if (!prompt) return
+      autoPromptRef.current = null
+      clearPendingAutoPrompt(projectKey)
       sendChat(prompt, selectedModelId)
     }, 200)
     return () => window.clearTimeout(timeoutId)
-  }, [selectedModelId, projectId, chatLoading])
+  }, [selectedModelId, projectId, projectKey, chatLoading])
 
   useEffect(() => {
     document.title = buildProjectPageTitle(project, projectId)

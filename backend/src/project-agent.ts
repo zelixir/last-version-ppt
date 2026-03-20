@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'fs';
 import path from 'path';
-import { createAgentUIStreamResponse, createIdGenerator, streamText, ToolLoopAgent, tool, type UIMessage } from 'ai';
+import { createAgentUIStreamResponse, createIdGenerator, generateText, streamText, ToolLoopAgent, tool, type UIMessage } from 'ai';
 import { z } from 'zod';
 import { createModelClient } from './dashscope-model.ts';
 import { appendProjectChat, createProjectRecord, getAiModelById, getProjectById, getProviderByName, ProjectChatEntry, ProjectChatMessagePart, ProjectChatToolEvent, renameProjectRecord, setSetting } from './db.ts';
@@ -117,13 +117,12 @@ export async function generateProjectName(requirement: string, modelId: number):
     throw new Error(summarizeModelConfigurationError());
   }
 
-  const result = streamText({
+  const result = await generateText({
     model: createModelClient(model.model_name, model.provider),
     prompt: `请根据下面的 PPT 需求生成一个简洁的项目名，只返回项目名本身，不要解释，不超过 18 个字符。\n\n需求：${requirement}`,
-    maxOutputTokens: 80,
   });
 
-  return sanitizeProjectName((await result.text).replace(/[\r\n]+/g, ' ').trim() || 'project');
+  return sanitizeProjectName(result.text.replace(/[\r\n]+/g, ' ').trim() || 'project');
 }
 
 function summarizeToolIntent(toolName: string, input: Record<string, unknown>): string {
