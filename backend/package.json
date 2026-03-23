@@ -10,6 +10,7 @@
     "test": "bun test src/*.test.ts"
   },
   "dependencies": {
+    "@matbee/libreoffice-converter": "https://registry.npmjs.org/%40matbee%2Flibreoffice-converter/-/libreoffice-converter-2.6.0.tgz",
     "@ai-sdk/provider": "^3.0.8",
     "@ai-sdk/provider-utils": "^4.0.19",
     "@elysiajs/cors": "^1.2.2",
@@ -22,5 +23,8 @@
   "devDependencies": {
     "@types/bun": "^1.3.10",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "zod": "https://registry.npmjs.org/zod/-/zod-4.3.6.tgz"
   }
 }

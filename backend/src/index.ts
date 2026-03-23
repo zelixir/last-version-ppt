@@ -56,6 +56,7 @@ import {
   stripVersionSuffix,
 } from './storage.ts';
 import { replaceProjectPreviewImages } from './project-preview-cache.ts';
+import { generateProjectPreviewImages } from './project-preview-generator.ts';
 import { getProjectRecordSyncDiff } from './project-record-sync.ts';
 import { listSystemFonts, getSystemFontData } from './system-fonts.ts';
 
@@ -766,6 +767,13 @@ const app = new Elysia()
     if (!project) return new Response('Not found', { status: 404 });
 
     const form = await request.formData();
+    const pptxFile = form.get('pptx');
+    if (pptxFile instanceof File) {
+      const previewResult = await generateProjectPreviewImages(params.id, new Uint8Array(await pptxFile.arrayBuffer()));
+      updateProjectRecord(params.id, { touch: true });
+      return previewResult;
+    }
+
     const files = form.getAll('files');
     const images: Array<{ pageNumber: number; data: Uint8Array }> = [];
 

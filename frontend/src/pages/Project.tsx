@@ -10,7 +10,7 @@ import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
-import { capturePreviewImages, uploadPreviewImages } from '../lib/preview-image-generator'
+import { generatePreviewImages } from '../lib/preview-image-generator'
 import { runProjectPreview } from '../lib/project-preview'
 import { getInitialSelectedModelId, readStoredSelectedModelId, writeStoredSelectedModelId } from '../lib/selected-model-storage'
 
@@ -314,9 +314,9 @@ export default function Project() {
       setSelectedSlideIndex(0)
       setPreviewImageLoading(true)
       try {
-        const generatedImages = await capturePreviewImages(rendered.pptxData, progress => setPreviewImageStatus(progress.message))
+        const generatedImages = await generatePreviewImages(targetProjectKey, rendered.pptxData, progress => setPreviewImageStatus(progress.message))
         if (isStale()) return
-        setPreviewImages(await uploadPreviewImages(targetProjectKey, generatedImages, progress => setPreviewImageStatus(progress.message)))
+        setPreviewImages(generatedImages)
       } catch (error) {
         if (isStale()) return
         setPreviewImageError(error instanceof Error ? error.message : String(error))

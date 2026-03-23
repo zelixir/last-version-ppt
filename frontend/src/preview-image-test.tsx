@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import { capturePreviewImages, uploadPreviewImages } from './lib/preview-image-generator'
+import { generatePreviewImages } from './lib/preview-image-generator'
 import { runProjectPreview } from './lib/project-preview'
 import type { PreviewPresentation } from './types'
 
@@ -61,9 +61,8 @@ function PreviewImageTestPage() {
       const { content } = await response.json() as { content: string }
       const rendered = await runProjectPreview(nextProjectId, content)
       setPreview(rendered.presentation)
-      setStatus('正在用高保真方式生成预览图，请稍等…')
-      const capturedImages = await capturePreviewImages(rendered.pptxData, progress => setStatus(progress.message))
-      const uploadedImages = await uploadPreviewImages(nextProjectId, capturedImages, progress => setStatus(progress.message))
+      setStatus('正在请服务器生成高保真预览图，请稍等…')
+      const uploadedImages = await generatePreviewImages(nextProjectId, rendered.pptxData, progress => setStatus(progress.message))
       setImages(uploadedImages)
       setPhase('done')
       setStatus(`生成完成，项目 ${nextProjectId} 的预览图已经准备好了。`)
@@ -103,7 +102,7 @@ function PreviewImageTestPage() {
         <header className="space-y-3">
           <h1 className="text-3xl font-semibold">预览出图测试</h1>
             <p className="max-w-3xl text-sm leading-6 text-slate-300">
-             这个页面会直接读取项目里的 PPT 脚本，在浏览器里生成 PPT，再用高保真的方式把每一页转成图片并写进 preview 文件夹，方便确认整条链路是否正常。
+             这个页面会直接读取项目里的 PPT 脚本，在浏览器里生成 PPT，再交给服务器统一出图并写进 preview 文件夹，方便确认整条链路是否正常。
             </p>
         </header>
 
