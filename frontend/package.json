@@ -20,7 +20,6 @@
   },
   "dependencies": {
     "@ai-sdk/react": "https://registry.npmjs.org/@ai-sdk/react/-/react-3.0.110.tgz",
-    "@matbee/libreoffice-converter": "2.5.0",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",

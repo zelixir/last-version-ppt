@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { generatePreviewImages } from './lib/preview-image-generator'
 import { runProjectPreview } from './lib/project-preview'
 import type { PreviewPresentation } from './types'
 
@@ -132,22 +131,19 @@ function PptTextWidthTestPage() {
 
     setLoading(true)
     setPhase('running')
-    setStatus('正在读取项目脚本并准备核对，请稍等…')
-    setImages([])
+      setStatus('正在请服务器准备核对页面，请稍等…')
+      setImages([])
 
-    try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(nextProjectId)}/files/content?fileName=${encodeURIComponent('index.js')}`)
-      if (!response.ok) throw new Error('读取项目脚本失败')
-      const { content } = await response.json() as { content: string }
-
-      const rendered = await runProjectPreview(nextProjectId, content)
+      try {
+      const rendered = await runProjectPreview(nextProjectId, progress => setStatus(progress.message))
       setPreview(rendered.presentation)
-      setStatus('正在请服务器生成 PPT 高保真图片，请稍等…')
-
-      const uploadedImages = await generatePreviewImages(nextProjectId, rendered.pptxData, progress => setStatus(progress.message))
-      setImages(uploadedImages)
+      setImages(rendered.images)
       setPhase('done')
-      setStatus(`核对页面已经准备好，项目 ${nextProjectId} 的图片已生成。`)
+      setStatus(
+        rendered.imageError
+          ? `核对页面已经准备好，但高保真图片这次没有生成成功：${rendered.imageError}`
+          : `核对页面已经准备好，项目 ${nextProjectId} 的图片已生成。`,
+      )
 
       const nextUrl = new URL(window.location.href)
       nextUrl.searchParams.set('projectId', nextProjectId)
@@ -184,9 +180,9 @@ function PptTextWidthTestPage() {
       <div style={styles.shell}>
         <section style={styles.card}>
           <h1 style={{ margin: '0 0 12px', fontSize: '28px' }}>中文文字宽度核对</h1>
-          <p style={styles.muted}>
-            这个页面只用于核对中文文字宽度：先在浏览器里生成 PPT，再把每一页转成图片，方便和 Canvas 的文字宽度做对照。
-          </p>
+            <p style={styles.muted}>
+              这个页面只用于核对中文文字宽度：由服务器统一生成 PPT 和图片，方便和页面里的预览结果做对照。
+            </p>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'end', marginTop: '16px' }}>
             <label style={{ flex: 1 }}>
               <div style={{ marginBottom: '8px', fontSize: '14px', color: '#cbd5e1' }}>项目编号</div>

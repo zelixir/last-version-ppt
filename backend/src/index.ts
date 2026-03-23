@@ -57,6 +57,7 @@ import {
 } from './storage.ts';
 import { replaceProjectPreviewImages } from './project-preview-cache.ts';
 import { generateProjectPreviewImages } from './project-preview-generator.ts';
+import { generateProjectPreview } from './project-preview.ts';
 import { getProjectRecordSyncDiff } from './project-record-sync.ts';
 import { listSystemFonts, getSystemFontData } from './system-fonts.ts';
 
@@ -797,6 +798,18 @@ const app = new Elysia()
         url: `/api/projects/${encodeURIComponent(params.id)}/files/raw?fileName=${encodeURIComponent(`preview/${image.fileName}`)}&t=${encodeURIComponent(image.updatedAt)}`,
       })),
     };
+  })
+  .post('/api/projects/:id/preview', async ({ params }) => {
+    const project = getProjectById(params.id);
+    if (!project) return new Response('Not found', { status: 404 });
+
+    try {
+      const previewResult = await generateProjectPreview(params.id);
+      updateProjectRecord(params.id, { touch: true });
+      return previewResult;
+    } catch (error) {
+      return errorResponse(error instanceof Error ? error.message : String(error), 500);
+    }
   })
   .post('/api/projects/:id/open-folder', ({ params }) => {
     const project = getProjectById(params.id);
