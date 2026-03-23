@@ -10,7 +10,6 @@ import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
-import { generatePreviewImages } from '../lib/preview-image-generator'
 import { runProjectPreview } from '../lib/project-preview'
 import { getInitialSelectedModelId, readStoredSelectedModelId, writeStoredSelectedModelId } from '../lib/selected-model-storage'
 
@@ -301,30 +300,15 @@ export default function Project() {
       setPreviewLoading(true)
       setPreviewError(null)
       setPreviewImageError(null)
-      setPreviewImageStatus('正在读取脚本…')
+      setPreviewImageStatus('正在请服务器准备预览…')
       setPreviewImages([])
-      const response = await fetch(`/api/projects/${encodeURIComponent(targetProjectKey)}/files/content?fileName=${encodeURIComponent('index.js')}`)
-      if (!response.ok) throw new Error('加载 PPT 脚本失败')
-      const data = await response.json() as { content: string }
-      if (isStale()) return
-      setPreviewImageStatus('正在生成 PPT…')
-      const rendered = await runProjectPreview(targetProjectKey, data.content)
+      setPreviewImageLoading(true)
+      const rendered = await runProjectPreview(targetProjectKey, progress => setPreviewImageStatus(progress.message))
       if (isStale()) return
       setPreview(rendered.presentation)
       setSelectedSlideIndex(0)
-      setPreviewImageLoading(true)
-      try {
-        const generatedImages = await generatePreviewImages(targetProjectKey, rendered.pptxData, progress => setPreviewImageStatus(progress.message))
-        if (isStale()) return
-        setPreviewImages(generatedImages)
-      } catch (error) {
-        if (isStale()) return
-        setPreviewImageError(error instanceof Error ? error.message : String(error))
-      } finally {
-        if (isStale()) return
-        setPreviewImageLoading(false)
-        setPreviewImageStatus(null)
-      }
+      setPreviewImages(rendered.images)
+      setPreviewImageError(rendered.imageError ?? null)
     } catch (err) {
       if (isStale()) return
       setPreview(null)
@@ -334,6 +318,8 @@ export default function Project() {
       setPreviewImageStatus(null)
     } finally {
       if (isStale()) return
+      setPreviewImageLoading(false)
+      setPreviewImageStatus(null)
       setPreviewLoading(false)
     }
   }

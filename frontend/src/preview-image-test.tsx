@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import { generatePreviewImages } from './lib/preview-image-generator'
 import { runProjectPreview } from './lib/project-preview'
 import type { PreviewPresentation } from './types'
 
@@ -52,20 +51,19 @@ function PreviewImageTestPage() {
 
     setLoading(true)
     setPhase('running')
-    setStatus('正在读取脚本并生成预览图，请稍等…')
-    setImages([])
+      setStatus('正在请服务器生成预览图，请稍等…')
+      setImages([])
 
-    try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(nextProjectId)}/files/content?fileName=${encodeURIComponent('index.js')}`)
-      if (!response.ok) throw new Error('读取项目脚本失败')
-      const { content } = await response.json() as { content: string }
-      const rendered = await runProjectPreview(nextProjectId, content)
+      try {
+      const rendered = await runProjectPreview(nextProjectId, progress => setStatus(progress.message))
       setPreview(rendered.presentation)
-      setStatus('正在请服务器生成高保真预览图，请稍等…')
-      const uploadedImages = await generatePreviewImages(nextProjectId, rendered.pptxData, progress => setStatus(progress.message))
-      setImages(uploadedImages)
+      setImages(rendered.images)
       setPhase('done')
-      setStatus(`生成完成，项目 ${nextProjectId} 的预览图已经准备好了。`)
+      setStatus(
+        rendered.imageError
+          ? `项目 ${nextProjectId} 的页面预览已经准备好，但高保真图片这次没有生成成功：${rendered.imageError}`
+          : `生成完成，项目 ${nextProjectId} 的预览图已经准备好了。`,
+      )
       const nextUrl = new URL(window.location.href)
       nextUrl.searchParams.set('projectId', nextProjectId)
       window.history.replaceState(null, '', nextUrl)
@@ -102,7 +100,7 @@ function PreviewImageTestPage() {
         <header className="space-y-3">
           <h1 className="text-3xl font-semibold">预览出图测试</h1>
             <p className="max-w-3xl text-sm leading-6 text-slate-300">
-             这个页面会直接读取项目里的 PPT 脚本，在浏览器里生成 PPT，再交给服务器统一出图并写进 preview 文件夹，方便确认整条链路是否正常。
+              这个页面会直接让服务器读取项目脚本、生成 PPT，并把预览图写进 preview 文件夹，方便确认整条链路是否正常。
             </p>
         </header>
 
