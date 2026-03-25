@@ -12,7 +12,8 @@
     "build:exe": "bun run scripts/build-exe.ts",
     "test:render": "bun run scripts/puppeteer-render-test.ts",
     "test:lok-init": "bun run scripts/puppeteer-lok-init-test.ts",
-    "test:text-width": "node scripts/ppt-text-canvas-cv-test-with-nodejs.ts"
+    "test:text-width": "node scripts/ppt-text-canvas-cv-test-with-nodejs.ts",
+    "test:backend-preview": "bun run scripts/test-backend-preview.ts backend/libreoffice-document-converter/tests/sample_test_1.pptx"
   },
   "devDependencies": {
     "@types/node": "https://registry.npmjs.org/@types/node/-/node-25.4.0.tgz",
