@@ -60,6 +60,9 @@ import { generateProjectPreviewImages } from './project-preview-generator.ts';
 import { generateProjectPreview } from './project-preview.ts';
 import { getProjectRecordSyncDiff } from './project-record-sync.ts';
 import { listSystemFonts, getSystemFontData } from './system-fonts.ts';
+import { clearFontCache, getDefaultFontCandidates, getSelectedFontNames, listFontsWithSelection, setSelectedFontNames } from './font-preferences.ts';
+import { clearPreviewProgress, getPreviewProgress, setPreviewProgress } from './preview-progress.ts';
+import { invalidateSharedConverter } from './shared-libreoffice-converter.ts';
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -769,35 +772,45 @@ const app = new Elysia()
 
     const form = await request.formData();
     const pptxFile = form.get('pptx');
-    if (pptxFile instanceof File) {
-      const previewResult = await generateProjectPreviewImages(params.id, new Uint8Array(await pptxFile.arrayBuffer()));
+    try {
+      if (pptxFile instanceof File) {
+        setPreviewProgress(params.id, { message: '正在生成高保真预览图…', percent: 10 });
+        const previewResult = await generateProjectPreviewImages(params.id, new Uint8Array(await pptxFile.arrayBuffer()), {
+          onProgress: progress => setPreviewProgress(params.id, progress),
+        });
+        updateProjectRecord(params.id, { touch: true });
+        return previewResult;
+      }
+
+      const files = form.getAll('files');
+      const images: Array<{ pageNumber: number; data: Uint8Array }> = [];
+
+      for (const entry of files) {
+        if (!(entry instanceof File)) continue;
+        const match = entry.name.match(/^slide-(\d+)\.png$/i);
+        if (!match) continue;
+        images.push({
+          pageNumber: Number(match[1]),
+          data: new Uint8Array(await entry.arrayBuffer()),
+        });
+      }
+
+      const storedImages = replaceProjectPreviewImages(params.id, images);
       updateProjectRecord(params.id, { touch: true });
-      return previewResult;
+
+      return {
+        slideCount: storedImages.length,
+        images: storedImages.map(image => ({
+          pageNumber: image.pageNumber,
+          url: `/api/projects/${encodeURIComponent(params.id)}/files/raw?fileName=${encodeURIComponent(`preview/${image.fileName}`)}&t=${encodeURIComponent(image.updatedAt)}`,
+        })),
+      };
+    } finally {
+      clearPreviewProgress(params.id);
     }
-
-    const files = form.getAll('files');
-    const images: Array<{ pageNumber: number; data: Uint8Array }> = [];
-
-    for (const entry of files) {
-      if (!(entry instanceof File)) continue;
-      const match = entry.name.match(/^slide-(\d+)\.png$/i);
-      if (!match) continue;
-      images.push({
-        pageNumber: Number(match[1]),
-        data: new Uint8Array(await entry.arrayBuffer()),
-      });
-    }
-
-    const storedImages = replaceProjectPreviewImages(params.id, images);
-    updateProjectRecord(params.id, { touch: true });
-
-    return {
-      slideCount: storedImages.length,
-      images: storedImages.map(image => ({
-        pageNumber: image.pageNumber,
-        url: `/api/projects/${encodeURIComponent(params.id)}/files/raw?fileName=${encodeURIComponent(`preview/${image.fileName}`)}&t=${encodeURIComponent(image.updatedAt)}`,
-      })),
-    };
+  })
+  .get('/api/projects/:id/preview/progress', ({ params }) => {
+    return { progress: getPreviewProgress(params.id) };
   })
   .post('/api/projects/:id/preview', async ({ params }) => {
     const project = getProjectById(params.id);
@@ -838,6 +851,17 @@ const app = new Elysia()
         'Content-Disposition': buildAttachmentDisposition(`${params.id}.pptx`),
       },
     });
+  })
+  .get('/api/fonts', () => {
+    const fonts = listFontsWithSelection();
+    return { fonts, selected: getSelectedFontNames(), defaults: getDefaultFontCandidates() };
+  })
+  .post('/api/fonts', ({ body }) => {
+    const payload = body as { selected?: string[] };
+    const selected = setSelectedFontNames(Array.isArray(payload?.selected) ? payload.selected : []);
+    clearFontCache();
+    invalidateSharedConverter();
+    return { selected, defaults: getDefaultFontCandidates() };
   })
   .get('/api/system-fonts', () => {
     const fonts = listSystemFonts();

@@ -3,14 +3,14 @@ import { useChat } from '@ai-sdk/react'
 import Editor from '@monaco-editor/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Trash2 } from 'lucide-react'
+import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Trash2, Type } from 'lucide-react'
 import type { AiModel, PreviewPresentation, ProjectChatMessageMetadata, ProjectConversationDetail, ProjectConversationSummary, ProjectFile, ProjectSummary } from '../types'
 import { PromptInput } from '../components/ai-elements/prompt-input'
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
-import { runProjectPreview } from '../lib/project-preview'
+import { fetchPreviewProgress, runProjectPreview } from '../lib/project-preview'
 import { getInitialSelectedModelId, readStoredSelectedModelId, writeStoredSelectedModelId } from '../lib/selected-model-storage'
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
@@ -187,6 +187,36 @@ export default function Project() {
   const previewRefreshPromiseRef = useRef<Promise<void> | null>(null)
   const previewRefreshQueuedRef = useRef(false)
   const previewRefreshRunIdRef = useRef(0)
+  const previewProgressTimerRef = useRef<number | null>(null)
+
+  const formatPreviewProgress = (progress: { message: string; percent?: number } | null) => {
+    if (!progress) return null
+    const percentText = typeof progress.percent === 'number' && Number.isFinite(progress.percent)
+      ? `${Math.max(0, Math.min(100, Math.round(progress.percent)))}%`
+      : null
+    return percentText ? `${progress.message}（${percentText}）` : progress.message
+  }
+
+  const stopPreviewProgressWatch = () => {
+    if (previewProgressTimerRef.current !== null) {
+      window.clearInterval(previewProgressTimerRef.current)
+      previewProgressTimerRef.current = null
+    }
+  }
+
+  const pollPreviewProgress = async () => {
+    const progress = await fetchPreviewProgress(projectKeyRef.current)
+    const text = formatPreviewProgress(progress)
+    if (text) setPreviewImageStatus(text)
+  }
+
+  const startPreviewProgressWatch = () => {
+    stopPreviewProgressWatch()
+    pollPreviewProgress().catch(() => undefined)
+    previewProgressTimerRef.current = window.setInterval(() => {
+      pollPreviewProgress().catch(() => undefined)
+    }, 900)
+  }
 
   useEffect(() => {
     selectedModelIdRef.current = selectedModelId
@@ -303,7 +333,11 @@ export default function Project() {
       setPreviewImageStatus('正在请服务器准备预览…')
       setPreviewImages([])
       setPreviewImageLoading(true)
-      const rendered = await runProjectPreview(targetProjectKey, progress => setPreviewImageStatus(progress.message))
+      startPreviewProgressWatch()
+      const rendered = await runProjectPreview(targetProjectKey, progress => {
+        const text = formatPreviewProgress(progress)
+        if (text) setPreviewImageStatus(text)
+      })
       if (isStale()) return
       setPreview(rendered.presentation)
       setSelectedSlideIndex(0)
@@ -317,6 +351,7 @@ export default function Project() {
       setPreviewImageLoading(false)
       setPreviewImageStatus(null)
     } finally {
+      stopPreviewProgressWatch()
       if (isStale()) return
       setPreviewImageLoading(false)
       setPreviewImageStatus(null)
@@ -439,6 +474,7 @@ export default function Project() {
   }, [projectKey])
 
   useEffect(() => {
+    stopPreviewProgressWatch()
     setActiveTab(readStoredProjectTab(projectKey))
     setPromptHistory(readStoredPromptHistory(projectKey))
     setPromptHistoryIndex(null)
@@ -453,6 +489,10 @@ export default function Project() {
   useEffect(() => {
     if (selectedFile?.kind === 'text') loadTextFile(selectedFile)
   }, [selectedFile])
+
+  useEffect(() => () => {
+    stopPreviewProgressWatch()
+  }, [])
 
   useEffect(() => {
     if (!autoPromptRef.current || !selectedModelId || chatLoading) return
@@ -688,6 +728,7 @@ export default function Project() {
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => fetch(`/api/projects/${encodeURIComponent(projectId)}/open-folder`, { method: 'POST' })}><FolderOpen className="h-4 w-4" />打开资源管理器</Button>
             <Button variant="outline" size="sm" onClick={() => navigate('/models', { state: { returnTo: location.pathname } })}><BrainCircuit className="h-4 w-4" />模型配置</Button>
+            <Button variant="outline" size="sm" onClick={() => navigate('/fonts', { state: { returnTo: location.pathname } })}><Type className="h-4 w-4" />字体管理</Button>
           </div>
         </header>
 

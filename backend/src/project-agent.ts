@@ -20,6 +20,7 @@ import {
   resolveProjectFile,
   sanitizeProjectName,
 } from './storage.ts';
+import { getSelectedFontNames, listFontsWithSelection } from './font-preferences.ts';
 import { readProjectPreviewImage } from './project-preview-cache.ts';
 import {
   buildImageToolModelOutput,
@@ -71,6 +72,11 @@ const TOOL_CAPABILITY_GROUPS = [
     title: '看图辅助',
     tools: ['read-image-file'],
     summary: '查看你上传的图片，帮助判断配图是否合适。',
+  },
+  {
+    title: '字体配置',
+    tools: ['list-fonts'],
+    summary: '查看当前允许使用的字体，写脚本时请只在 fontFace 里使用这些字体名。',
   },
 ] as const;
 
@@ -179,6 +185,7 @@ export function buildToolCapabilitySummary(enabledToolNames: string[]): string {
 }
 
 export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimodal: boolean, enabledToolNames: string[]): string {
+  const allowedFonts = getSelectedFontNames();
   return [
     '你是“最后一版PPT”的内置 PPT 生成助手。你的目标是根据用户需求创建或编辑当前项目中的 PPT 脚本和资源文件。',
     '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
@@ -190,6 +197,9 @@ export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimo
     '读取文本文件时，优先使用 read-file；如果文件较大或只需要局部内容，要改用 read-range 工具按行查看。',
     '修改已有文件时，优先使用 apply-patch（应用补丁）；只有在新建文件或确实需要整份重写时，才使用 create-file。',
     APPLY_PATCH_AGENT_INSTRUCTIONS,
+    allowedFonts.length
+      ? `当前允许使用的字体：${allowedFonts.join('、')}。请在 fontFace 或其他字体参数里只使用这些名称，优先选择便于中文阅读的字体。`
+      : '当前没有可用字体。请提醒用户在字体管理页面选择允许的字体，生成脚本时不要随意填入字体名。',
     '最终回复面向不懂技术的普通用户，尽量使用自然中文，避免技术术语和英文缩写。',
     supportsMultimodal
       ? '当前模型支持看图：必要时可以读取上传的图片，也可以查看当前 PPT 某一页的预览图来判断版式是否合适。'
@@ -359,6 +369,22 @@ function buildProjectTools(options: {
           warnings: runResult.warnings,
           error: runResult.error,
         };
+      },
+    }),
+    'list-fonts': tool({
+      description: '查看当前允许使用的字体名单，写脚本时只用这些字体。',
+      inputSchema: z.object({}),
+      execute: async () => {
+        emitter.start('list-fonts', {});
+        const allowedFonts = getSelectedFontNames();
+        const systemFonts = listFontsWithSelection().map(font => ({
+          name: font.name,
+          size: font.size,
+          selected: font.selected,
+          defaultPreferred: font.defaultPreferred,
+        }));
+        emitter.finish('list-fonts', `当前可用字体 ${allowedFonts.length} 种`);
+        return { allowedFonts, systemFonts };
       },
     }),
     'list-file': tool({
