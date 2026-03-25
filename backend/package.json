@@ -10,7 +10,7 @@
     "test": "bun test src/*.test.ts"
   },
   "dependencies": {
-    "@matbee/libreoffice-converter": "https://registry.npmjs.org/%40matbee%2Flibreoffice-converter/-/libreoffice-converter-2.6.0.tgz",
+    "@matbee/libreoffice-converter": "file:./libreoffice-document-converter",
     "@ai-sdk/provider": "^3.0.8",
     "@ai-sdk/provider-utils": "^4.0.19",
     "@elysiajs/cors": "^1.2.2",
