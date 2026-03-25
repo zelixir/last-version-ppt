@@ -3,3 +3,4 @@ node_modules
 backend/exec-output/
 dist/
 out/
+preview-test-output/
