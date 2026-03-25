@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync } from 'fs';
 import { writeFile } from 'fs/promises';
-import { createRequire } from 'module';
 import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -18,7 +17,7 @@ interface BunRuntimeLike {
 }
 
 const bunRuntime = (globalThis as typeof globalThis & { Bun?: BunRuntimeLike }).Bun;
-const require = createRequire(import.meta.url);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const EMBEDDED_WASM_FILES = [
   'loader.cjs',
   'soffice.cjs',
@@ -27,12 +26,13 @@ const EMBEDDED_WASM_FILES = [
   'soffice.wasm',
   'soffice.worker.cjs',
   'soffice.worker.js',
+  'soffice-bun-worker.cjs',
 ] as const;
 let extractedWasmDirPromise: Promise<string> | null = null;
 
 function resolveConverterPackageRoot() {
-  const packageJsonPath = require.resolve('@matbee/libreoffice-converter/package.json');
-  return dirname(packageJsonPath);
+  // 直接使用 submodule 路径
+  return resolve(__dirname, '..', 'libreoffice-document-converter');
 }
 
 function hasAllRuntimeFiles(wasmDir: string) {
@@ -110,8 +110,10 @@ async function resolveWasmDir() {
 export async function resolveLibreOfficeRuntime() {
   const wasmDir = await resolveWasmDir();
   const loaderPath = join(wasmDir, 'loader.cjs');
+  // 使用动态 import 以支持 Bun 环境
+  const loaderModule = await import(loaderPath);
   return {
     wasmDir,
-    wasmLoader: require(loaderPath) as WasmLoaderModule,
+    wasmLoader: (loaderModule.default || loaderModule) as WasmLoaderModule,
   };
 }
