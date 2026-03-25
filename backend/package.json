@@ -16,6 +16,7 @@
     "@elysiajs/cors": "^1.2.2",
     "@matbee/libreoffice-converter": "2.6.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@sinclair/typebox": "^0.34.48",
     "ai": "^6.0.111",
     "elysia": "^1.2.25",
     "pptxgenjs": "^4.0.1",
