@@ -339,6 +339,9 @@ export default function Project() {
         if (text) setPreviewImageStatus(text)
       })
       if (isStale()) return
+      if (rendered.presentation.logs?.length) {
+        console.info('生成记录：\n' + rendered.presentation.logs.join('\n'))
+      }
       setPreview(rendered.presentation)
       setSelectedSlideIndex(0)
       setPreviewImages(rendered.images)
@@ -823,12 +826,6 @@ export default function Project() {
                           {previewImageLoading && <div className="text-blue-300">{previewImageStatus || '正在生成高保真预览图，请稍等…'}</div>}
                           {previewImageError && <div className="text-amber-300">这次没能生成预览图，请再试一次。原因：{previewImageError}</div>}
                         </div>
-                        {preview.logs.length > 0 && (
-                          <div className="rounded-xl border border-gray-800 bg-gray-950/70 p-4">
-                            <div className="mb-2 text-sm font-medium text-white">生成记录</div>
-                            <div className="space-y-1 text-xs text-gray-400">{preview.logs.map((log, index) => <div key={index}>{log}</div>)}</div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>

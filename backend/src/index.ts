@@ -170,6 +170,20 @@ function errorResponse(message: string, status = 400): Response {
   return json({ error: message }, status);
 }
 
+function formatErrorDetail(error: unknown): string {
+  if (error instanceof Error) return error.stack || error.message || String(error);
+  return String(error);
+}
+
+function logBackendError(context: string, error: unknown): void {
+  console.error(`[后端异常] ${context}: ${formatErrorDetail(error)}`);
+}
+
+function respondWithServerError(context: string, error: unknown, status = 500): Response {
+  logBackendError(context, error);
+  return errorResponse(error instanceof Error ? error.message : String(error), status);
+}
+
 function createSseResponse(run: (push: (event: string, payload: unknown) => void) => Promise<void>): Response {
   const encoder = new TextEncoder();
   return new Response(new ReadableStream({
@@ -181,6 +195,7 @@ function createSseResponse(run: (push: (event: string, payload: unknown) => void
       try {
         await run(push);
       } catch (error) {
+        logBackendError('事件推送', error);
         push('error', { error: error instanceof Error ? error.message : String(error) });
       } finally {
         controller.close();
@@ -288,7 +303,7 @@ async function handleProjectChatRequest(projectId: string, payload: { id?: strin
       },
     });
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : String(error), 500);
+    return respondWithServerError(`项目 ${projectId} 对话`, error, 500);
   }
 }
 
@@ -825,7 +840,7 @@ const app = new Elysia()
       updateProjectRecord(params.id, { touch: true });
       return previewResult;
     } catch (error) {
-      return errorResponse(error instanceof Error ? error.message : String(error), 500);
+      return respondWithServerError(`生成预览 ${params.id}`, error, 500);
     }
   })
   .post('/api/projects/:id/open-folder', ({ params }) => {
@@ -838,23 +853,31 @@ const app = new Elysia()
     const payload = body as { includeLogs?: boolean };
     const project = getProjectById(params.id);
     if (!project) return new Response('Not found', { status: 404 });
-    const result = await runProject({ projectId: params.id, includeLogs: payload?.includeLogs });
-    return result.ok
-      ? { ok: true, slideCount: result.slideCount, logs: result.logs, warnings: result.warnings }
-      : errorResponse(result.error || '项目运行失败', 500);
+    try {
+      const result = await runProject({ projectId: params.id, includeLogs: payload?.includeLogs });
+      return result.ok
+        ? { ok: true, slideCount: result.slideCount, logs: result.logs, warnings: result.warnings }
+        : errorResponse(result.error || '项目运行失败', 500);
+    } catch (error) {
+      return respondWithServerError(`运行项目 ${params.id}`, error, 500);
+    }
   })
   .get('/api/projects/:id/export', async ({ params }) => {
     const project = getProjectById(params.id);
     if (!project) return new Response('Not found', { status: 404 });
-    const result = await runProject({ projectId: params.id, includeLogs: true });
-    if (!result.ok || !result.pptx) return errorResponse(result.error || '导出失败', 500);
-    const buffer = await result.pptx.write({ outputType: 'nodebuffer' });
-    return new Response(buffer, {
-      headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'Content-Disposition': buildAttachmentDisposition(`${params.id}.pptx`),
-      },
-    });
+    try {
+      const result = await runProject({ projectId: params.id, includeLogs: true });
+      if (!result.ok || !result.pptx) return errorResponse(result.error || '导出失败', 500);
+      const buffer = await result.pptx.write({ outputType: 'nodebuffer' });
+      return new Response(buffer, {
+        headers: {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          'Content-Disposition': buildAttachmentDisposition(`${params.id}.pptx`),
+        },
+      });
+    } catch (error) {
+      return respondWithServerError(`导出项目 ${params.id}`, error, 500);
+    }
   })
   .get('/api/fonts', () => {
     const fonts = listFontsWithSelection();
@@ -932,6 +955,13 @@ const app = new Elysia()
     }
 
     return new Response('Not Found', { status: 404 });
+  })
+  .onError(({ code, error, request }) => {
+    if (code !== 'NOT_FOUND') {
+      const method = request?.method || 'UNKNOWN';
+      const url = request?.url || '未知路径';
+      logBackendError(`${method} ${url} (${code})`, error);
+    }
   })
   .listen(3101);
 
