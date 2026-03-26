@@ -6,7 +6,7 @@ import { __systemFontTestUtils } from './system-fonts.ts';
 const {
   extractFontLabelFromBuffer,
   looksLikeGarbledFontLabel,
-  normalizeWindowsRegistryFontLabel,
+  sanitizeWindowsRegistryFontLabel,
   parseWindowsRegistryFontQuery,
   sanitizeFontLabel,
 } = __systemFontTestUtils;
@@ -120,17 +120,17 @@ test('sanitizeFontLabel rejects spaced-out garbled names', () => {
   assert.equal(sanitizeFontLabel(', < 6 T . b 6 * L J F T 8 R X $ - " R 0 T * * L J F T 8 N o r m a l'), null);
 });
 
-test('normalizeWindowsRegistryFontLabel strips registry suffixes', () => {
-  assert.equal(normalizeWindowsRegistryFontLabel('微软雅黑 (TrueType)'), '微软雅黑');
-  assert.equal(normalizeWindowsRegistryFontLabel('思源黑体 (OpenType)'), '思源黑体');
-  assert.equal(normalizeWindowsRegistryFontLabel(''), null);
+test('sanitizeWindowsRegistryFontLabel strips registry suffixes', () => {
+  assert.equal(sanitizeWindowsRegistryFontLabel('微软雅黑 (TrueType)'), '微软雅黑');
+  assert.equal(sanitizeWindowsRegistryFontLabel('思源黑体 (OpenType)'), '思源黑体');
+  assert.equal(sanitizeWindowsRegistryFontLabel(''), null);
 });
 
 test('parseWindowsRegistryFontQuery maps registry font entries to known font paths', () => {
   const output = [
     'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts',
     '    微软雅黑 (TrueType)    REG_SZ    msyh.ttc',
-    '    Segoe UI Bold (TrueType)    REG_SZ    C:\\\\Users\\\\demo\\\\AppData\\\\Local\\\\Microsoft\\\\Windows\\\\Fonts\\\\segoeuib.ttf',
+    '    Segoe UI Bold (TrueType)    REG_SZ    C:\\Users\\demo\\AppData\\Local\\Microsoft\\Windows\\Fonts\\segoeuib.ttf',
     '',
   ].join('\n');
 
@@ -141,4 +141,19 @@ test('parseWindowsRegistryFontQuery maps registry font entries to known font pat
     labels['c:\\users\\demo\\appdata\\local\\microsoft\\windows\\fonts\\segoeuib.ttf'],
     'Segoe UI Bold',
   );
+});
+
+test('parseWindowsRegistryFontQuery ignores malformed and unsupported registry values', () => {
+  const output = [
+    'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts',
+    '    Not A Font Entry',
+    '    Some Font (TrueType)    REG_BINARY    msyh.ttc',
+    '    Another Font (TrueType)    REG_SZ',
+    '    Valid Font (TrueType)    REG_EXPAND_SZ    valid.ttf',
+    '',
+  ].join('\n');
+
+  assert.deepEqual(parseWindowsRegistryFontQuery(output, ['C:\\Windows\\Fonts']), {
+    'c:\\windows\\fonts\\valid.ttf': 'Valid Font',
+  });
 });
