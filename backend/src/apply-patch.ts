@@ -788,7 +788,15 @@ export function collectApplyPatchSourceContent(projectRoot: string, input: strin
   }
 
   const entries = neededFiles.flatMap(filePath => {
-    const resolved = resolvePatchPath(projectRoot, filePath);
+    let resolved: string;
+    try {
+      resolved = resolvePatchPath(projectRoot, filePath);
+    } catch (error) {
+      if (!(error instanceof InvalidPatchFormatError)) {
+        throw error;
+      }
+      return [];
+    }
     if (!existsSync(resolved)) {
       return [];
     }
@@ -799,7 +807,8 @@ export function collectApplyPatchSourceContent(projectRoot: string, input: strin
   });
 
   if (entries.length === 1 && neededFiles.length === 1) {
-    return entries[0]?.content ?? '';
+    const [entry] = entries;
+    return entry.content;
   }
 
   return entries.map(({ relativePath, content }) => `// ${relativePath}\n${content}`).join('\n\n');

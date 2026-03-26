@@ -481,11 +481,12 @@ function buildProjectTools(options: {
       execute: async ({ input, fileName, search, replace, replaceAll }) => {
         emitter.start('apply-patch', { fileName });
         const currentProjectId = options.getProjectId();
-        let originalContent = '';
+        const projectDir = getProjectDir(currentProjectId);
+        let sourceContent = '';
         try {
           if (input) {
-            originalContent = collectApplyPatchSourceContent(getProjectDir(currentProjectId), input);
-            const summary = applyProjectPatch(getProjectDir(currentProjectId), input);
+            sourceContent = collectApplyPatchSourceContent(projectDir, input);
+            const summary = applyProjectPatch(projectDir, input);
             const details = summary.changedFiles.length > 0
               ? `修改 ${summary.changedFiles.join(', ')}`
               : '补丁未产生文件变更';
@@ -504,8 +505,8 @@ function buildProjectTools(options: {
             throw new Error('apply-patch 缺少必要的 legacy 参数');
           }
           const targetPath = resolveProjectFile(currentProjectId, fileName);
-          originalContent = readFileSync(targetPath, 'utf8');
-          const updated = applyLegacySearchReplace(originalContent, search, replace, replaceAll);
+          sourceContent = readFileSync(targetPath, 'utf8');
+          const updated = applyLegacySearchReplace(sourceContent, search, replace, replaceAll);
           writeFileSync(targetPath, updated, 'utf8');
           emitter.finish('apply-patch', `修改 ${fileName}`);
           return { changed: [fileName], legacy: true, lineCount: countTextLines(updated) };
@@ -513,7 +514,7 @@ function buildProjectTools(options: {
           recordApplyPatchFailureCase({
             projectId: currentProjectId,
             input,
-            sourceContent: originalContent,
+            sourceContent,
             fileName,
             search,
             replace,
