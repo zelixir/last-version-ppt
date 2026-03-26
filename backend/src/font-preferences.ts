@@ -67,15 +67,24 @@ export function setSelectedFontNames(fontNames: string[]): string[] {
   return effective;
 }
 
-export function listFontsWithSelection(): Array<{ name: string; size: number; selected: boolean; defaultPreferred: boolean }> {
+export function listFontsWithSelection(): Array<{ name: string; displayName: string; size: number; selected: boolean; defaultPreferred: boolean }> {
   const selected = new Set(getSelectedFontNames());
   const defaults = new Set(DEFAULT_FONT_FILES);
-  return listSystemFonts().map(font => ({
-    name: font.name,
-    size: font.size,
-    selected: selected.has(font.name),
-    defaultPreferred: defaults.has(font.name),
-  }));
+  return listSystemFonts()
+    .map(font => ({
+      name: font.name,
+      displayName: font.label || font.name,
+      size: font.size,
+      selected: selected.has(font.name),
+      defaultPreferred: defaults.has(font.name),
+    }))
+    .sort((a, b) => {
+      const selectedDiff = Number(b.selected) - Number(a.selected);
+      if (selectedDiff) return selectedDiff;
+      const defaultDiff = Number(b.defaultPreferred) - Number(a.defaultPreferred);
+      if (defaultDiff) return defaultDiff;
+      return a.displayName.localeCompare(b.displayName, 'zh-Hans-CN');
+    });
 }
 
 let cachedFontData: { key: string; fonts: FontData[] } | null = null;

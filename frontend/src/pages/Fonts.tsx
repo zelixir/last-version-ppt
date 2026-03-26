@@ -6,6 +6,7 @@ import { Input } from '../components/ui/input'
 
 interface FontItem {
   name: string
+  displayName?: string
   size: number
   selected?: boolean
   defaultPreferred?: boolean
@@ -33,7 +34,10 @@ export default function Fonts() {
   const filteredFonts = useMemo(() => {
     const text = keyword.trim().toLowerCase()
     if (!text) return fonts
-    return fonts.filter(font => font.name.toLowerCase().includes(text))
+    return fonts.filter(font => {
+      const title = (font.displayName || font.name).toLowerCase()
+      return title.includes(text) || font.name.toLowerCase().includes(text)
+    })
   }, [fonts, keyword])
 
   const syncSelection = (list: string[]) => setSelected(new Set(list))
@@ -45,8 +49,20 @@ export default function Fonts() {
       const response = await fetch('/api/fonts')
       if (!response.ok) throw new Error('加载字体列表失败')
       const data = await response.json() as FontResponse
-      setFonts(data.fonts ?? [])
-      syncSelection(data.selected ?? [])
+      const selectedNames = new Set(data.selected ?? [])
+      const normalizedFonts = (data.fonts ?? []).map(font => ({
+        ...font,
+        displayName: font.displayName || font.name,
+      }))
+      const sortedFonts = [...normalizedFonts].sort((a, b) => {
+        const aSelected = selectedNames.has(a.name) || a.selected
+        const bSelected = selectedNames.has(b.name) || b.selected
+        if (aSelected !== bSelected) return Number(bSelected) - Number(aSelected)
+        if (a.defaultPreferred !== b.defaultPreferred) return Number(Boolean(b.defaultPreferred)) - Number(Boolean(a.defaultPreferred))
+        return (a.displayName || a.name).localeCompare(b.displayName || b.name, 'zh-Hans-CN')
+      })
+      setFonts(sortedFonts)
+      syncSelection(data.selected ?? normalizedFonts.filter(font => font.selected).map(font => font.name))
       setDefaultFonts(data.defaults ?? [])
       setMessage(null)
     } catch (err) {
@@ -166,7 +182,7 @@ export default function Fonts() {
               const checked = selected.has(font.name)
               return (
                 <label key={font.name} className={`flex items-start justify-between gap-3 rounded-xl border p-3 transition ${checked ? 'border-blue-600 bg-blue-950/40' : 'border-gray-800 bg-gray-950/40 hover:border-gray-700'}`}>
-                  <div>
+                  <div className="flex-1 space-y-1">
                     <div className="flex items-center gap-2 text-sm font-medium text-white">
                       <input
                         type="checkbox"
@@ -174,11 +190,11 @@ export default function Fonts() {
                         onChange={() => toggleFont(font.name)}
                         className="h-4 w-4"
                       />
-                      <span>{font.name}</span>
+                      <span>{font.displayName || font.name}</span>
                       {font.defaultPreferred && <span className="rounded-full bg-blue-900/60 px-2 text-xs text-blue-100">推荐</span>}
                     </div>
                     <div className="ml-6 text-xs text-gray-500">
-                      {formatSize(font.size) || '大小未知'}
+                      {font.name} · {formatSize(font.size) || '大小未知'}
                     </div>
                   </div>
                   {checked && <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-blue-400" />}

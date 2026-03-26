@@ -495,7 +495,22 @@ export default function Project() {
   }, [])
 
   useEffect(() => {
+    if (!projectKey || autoPromptRef.current) return
+    const pending = readPendingAutoPrompt(projectKey)
+    if (!pending?.autoPrompt) return
+    autoPromptRef.current = pending.autoPrompt
+    if (pending.suggestedModelId) {
+      setSelectedModelId(current => current ?? pending.suggestedModelId ?? null)
+    }
+  }, [projectKey, selectedModelId])
+
+  useEffect(() => {
     if (!autoPromptRef.current || !selectedModelId || chatLoading) return
+    if (project?.chatHistory?.length) {
+      clearPendingAutoPrompt(projectKey)
+      autoPromptRef.current = null
+      return
+    }
     const timeoutId = window.setTimeout(() => {
       const prompt = autoPromptRef.current
       if (!prompt) return
@@ -504,7 +519,7 @@ export default function Project() {
       sendChat(prompt, selectedModelId)
     }, 200)
     return () => window.clearTimeout(timeoutId)
-  }, [selectedModelId, projectId, projectKey, chatLoading])
+  }, [selectedModelId, projectId, projectKey, chatLoading, project?.chatHistory?.length])
 
   useEffect(() => {
     document.title = buildProjectPageTitle(project, projectId)

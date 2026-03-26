@@ -55,9 +55,9 @@ import {
   storageRoot,
   stripVersionSuffix,
 } from './storage.ts';
-import { replaceProjectPreviewImages } from './project-preview-cache.ts';
+import { computeProjectScriptHash, replaceProjectPreviewImages } from './project-preview-cache.ts';
 import { generateProjectPreviewImages } from './project-preview-generator.ts';
-import { generateProjectPreview } from './project-preview.ts';
+import { generateProjectPreview, getCachedProjectPreview } from './project-preview.ts';
 import { getProjectRecordSyncDiff } from './project-record-sync.ts';
 import { listSystemFonts, getSystemFontData } from './system-fonts.ts';
 import { clearFontCache, getDefaultFontCandidates, getSelectedFontNames, listFontsWithSelection, setSelectedFontNames } from './font-preferences.ts';
@@ -817,7 +817,11 @@ const app = new Elysia()
     if (!project) return new Response('Not found', { status: 404 });
 
     try {
-      const previewResult = await generateProjectPreview(params.id);
+      const scriptHash = computeProjectScriptHash(params.id);
+      const cachedPreview = getCachedProjectPreview(params.id, scriptHash);
+      if (cachedPreview) return cachedPreview;
+
+      const previewResult = await generateProjectPreview(params.id, { scriptHash });
       updateProjectRecord(params.id, { touch: true });
       return previewResult;
     } catch (error) {

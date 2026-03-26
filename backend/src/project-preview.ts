@@ -1,4 +1,5 @@
 import type PptxGenJS from 'pptxgenjs';
+import { buildProjectPreviewImageResponses, computeProjectScriptHash, listProjectPreviewImages, readProjectPreviewMetadata, writeProjectPreviewMetadata } from './project-preview-cache.ts';
 import { generateProjectPreviewImages, type PreviewProgressUpdate } from './project-preview-generator.ts';
 import { runProject } from './project-runner.ts';
 import { clearPreviewProgress, setPreviewProgress } from './preview-progress.ts';
@@ -76,6 +77,22 @@ export interface ProjectPreviewResult {
 }
 
 const PREVIEW_IMAGE_TIMEOUT_MS = 20_000;
+
+export function getCachedProjectPreview(projectId: string, scriptHash: string | null): ProjectPreviewResult | null {
+  if (!scriptHash) return null;
+  const metadata = readProjectPreviewMetadata(projectId);
+  if (!metadata || metadata.scriptHash !== scriptHash || !metadata.presentation) return null;
+
+  const storedImages = listProjectPreviewImages(projectId);
+  if (!storedImages.length) return null;
+
+  const imageResponses = buildProjectPreviewImageResponses(projectId, storedImages);
+  return {
+    presentation: metadata.presentation,
+    images: imageResponses.map(image => image.url),
+    imageError: metadata.imageError,
+  };
+}
 
 async function withTimeout<T>(task: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -234,7 +251,8 @@ function toUint8Array(data: Uint8Array | ArrayBuffer): Uint8Array {
   return data instanceof Uint8Array ? data : new Uint8Array(data);
 }
 
-export async function generateProjectPreview(projectId: string): Promise<ProjectPreviewResult> {
+export async function generateProjectPreview(projectId: string, options: { scriptHash?: string } = {}): Promise<ProjectPreviewResult> {
+  const scriptHash = options.scriptHash ?? computeProjectScriptHash(projectId);
   setPreviewProgress(projectId, { message: '正在运行项目脚本…', percent: 5 });
   try {
     const result = await runProject({ projectId, includeLogs: true });
@@ -246,7 +264,7 @@ export async function generateProjectPreview(projectId: string): Promise<Project
     if (!(pptxStream instanceof Uint8Array) && !(pptxStream instanceof ArrayBuffer)) {
       throw new Error('服务器没有生成可用的 PPT 文件内容');
     }
-    let images: string[] = [];
+    let imageResponses: Array<{ pageNumber: number; url: string }> = [];
     let imageError: string | undefined;
 
     try {
@@ -258,18 +276,38 @@ export async function generateProjectPreview(projectId: string): Promise<Project
         PREVIEW_IMAGE_TIMEOUT_MS,
         '服务器生成高保真预览图超时，请稍后再试',
       );
-      images = generatedImages.images.map(image => image.url);
+      imageResponses = generatedImages.images;
       setPreviewProgress(projectId, { message: '预览图已经生成', percent: 100 });
     } catch (error) {
       imageError = error instanceof Error ? error.message : String(error);
       setPreviewProgress(projectId, { message: imageError || '生成预览图失败', percent: 100 });
     }
 
-    return {
+    if (!imageResponses.length) {
+      const existingImages = listProjectPreviewImages(projectId);
+      if (existingImages.length) {
+        imageResponses = buildProjectPreviewImageResponses(projectId, existingImages);
+      }
+    }
+
+    const previewResult: ProjectPreviewResult = {
       presentation: buildProjectPreviewPresentation(projectId, result.pptx, result.logs, result.warnings),
-      images,
+      images: imageResponses.map(image => image.url),
       imageError,
     };
+
+    if (scriptHash && !imageError && imageResponses.length) {
+      writeProjectPreviewMetadata(projectId, {
+        scriptHash,
+        generatedAt: new Date().toISOString(),
+        slideCount: previewResult.presentation.slides.length,
+        presentation: previewResult.presentation,
+        images: imageResponses,
+        imageError,
+      });
+    }
+
+    return previewResult;
   } finally {
     clearPreviewProgress(projectId);
   }

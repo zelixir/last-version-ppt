@@ -1,15 +1,38 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
+import { createHash } from 'crypto';
 import path from 'path';
+import type { PreviewPresentation } from './project-preview.ts';
 import { resolveProjectFile } from './storage.ts';
 
 const PREVIEW_DIR_NAME = 'preview';
 const PREVIEW_FILE_PATTERN = /^slide-(\d+)\.png$/i;
+const PREVIEW_METADATA_FILE = 'meta.json';
 
 export interface ProjectPreviewImageInfo {
   pageNumber: number;
   fileName: string;
   filePath: string;
   updatedAt: string;
+}
+
+export interface ProjectPreviewMetadata {
+  scriptHash: string;
+  generatedAt: string;
+  slideCount: number;
+  presentation: PreviewPresentation;
+  images: Array<{ pageNumber: number; url: string }>;
+  imageError?: string;
+}
+
+export function computeProjectScriptHash(projectId: string): string | null {
+  const scriptPath = resolveProjectFile(projectId, 'index.js');
+  if (!existsSync(scriptPath)) return null;
+  try {
+    const content = readFileSync(scriptPath);
+    return createHash('sha256').update(content).digest('hex');
+  } catch {
+    return null;
+  }
 }
 
 export function getProjectPreviewDir(projectId: string): string {
@@ -46,6 +69,39 @@ export function listProjectPreviewImages(projectId: string): ProjectPreviewImage
       }];
     })
     .sort((a, b) => a.pageNumber - b.pageNumber);
+}
+
+function getProjectPreviewMetadataPath(projectId: string): string {
+  return resolveProjectFile(projectId, path.posix.join(PREVIEW_DIR_NAME, PREVIEW_METADATA_FILE));
+}
+
+export function readProjectPreviewMetadata(projectId: string): ProjectPreviewMetadata | null {
+  const metadataPath = getProjectPreviewMetadataPath(projectId);
+  if (!existsSync(metadataPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(metadataPath, 'utf8')) as ProjectPreviewMetadata;
+    if (!parsed || typeof parsed.scriptHash !== 'string' || typeof parsed.generatedAt !== 'string') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function writeProjectPreviewMetadata(projectId: string, metadata: ProjectPreviewMetadata): void {
+  const metadataPath = getProjectPreviewMetadataPath(projectId);
+  mkdirSync(path.dirname(metadataPath), { recursive: true });
+  writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+}
+
+export function buildProjectPreviewImageResponse(projectId: string, image: ProjectPreviewImageInfo): { pageNumber: number; url: string } {
+  return {
+    pageNumber: image.pageNumber,
+    url: `/api/projects/${encodeURIComponent(projectId)}/files/raw?fileName=${encodeURIComponent(`preview/${image.fileName}`)}&t=${encodeURIComponent(image.updatedAt)}`,
+  };
+}
+
+export function buildProjectPreviewImageResponses(projectId: string, images: ProjectPreviewImageInfo[]): Array<{ pageNumber: number; url: string }> {
+  return images.map(image => buildProjectPreviewImageResponse(projectId, image));
 }
 
 export function replaceProjectPreviewImages(
