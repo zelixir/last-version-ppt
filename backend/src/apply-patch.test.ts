@@ -152,7 +152,7 @@ test('apply-patch prompt strings expose the complete patch format', () => {
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /input/);
 });
 
-test('recordApplyPatchFailureCase stores the failed patch payload', () => {
+test('recordApplyPatchFailureCase stores failure files in a dedicated folder', () => {
   const failDir = path.resolve(process.cwd(), 'apply-patch-fail-case');
   rmSync(failDir, { recursive: true, force: true });
   recordApplyPatchFailureCase({
@@ -160,9 +160,12 @@ test('recordApplyPatchFailureCase stores the failed patch payload', () => {
     input: '*** Begin Patch\n*** End Patch',
     error: new Error('boom'),
   });
-  const files = readdirSync(failDir, { withFileTypes: true }).filter(entry => entry.isFile());
-  assert.ok(files.length > 0);
-  const payload = JSON.parse(readFileSync(path.join(failDir, files[0].name), 'utf8'));
-  assert.equal(payload.projectId, 'case-project');
+  const cases = readdirSync(failDir, { withFileTypes: true }).filter(entry => entry.isDirectory());
+  assert.equal(cases.length, 1);
+  const caseDir = path.join(failDir, cases[0].name);
+  assert.equal(readFileSync(path.join(caseDir, 'patch.diff'), 'utf8'), '*** Begin Patch\n*** End Patch');
+  assert.equal(readFileSync(path.join(caseDir, 'source.js'), 'utf8'), '');
+  assert.match(readFileSync(path.join(caseDir, 'error.log'), 'utf8'), /projectId: case-project/);
+  assert.match(readFileSync(path.join(caseDir, 'error.log'), 'utf8'), /errorMessage: boom/);
   rmSync(failDir, { recursive: true, force: true });
 });

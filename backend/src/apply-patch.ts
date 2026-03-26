@@ -192,6 +192,7 @@ export class DiffError extends Error {}
 export function recordApplyPatchFailureCase(payload: {
   projectId: string;
   input?: string;
+  sourceContent?: string;
   fileName?: string;
   search?: string;
   replace?: string;
@@ -206,27 +207,33 @@ export function recordApplyPatchFailureCase(payload: {
     const trimmedInput = typeof payload.input === 'string' && payload.input.length > maxLength
       ? payload.input.slice(0, maxLength)
       : payload.input;
-    const failCasePath = path.join(
+    const failCaseDir = path.join(
       APPLY_PATCH_FAILURE_DIR,
-      `${timestamp}-${Math.random().toString(36).slice(2, 8)}-${safeProjectId}.json`,
+      `${timestamp}-${Math.random().toString(36).slice(2, 8)}-${safeProjectId}`,
     );
+    mkdirSync(failCaseDir, { recursive: true });
     const serializedError = payload.error instanceof Error
       ? { name: payload.error.name, message: payload.error.message, stack: payload.error.stack }
       : { message: String(payload.error) };
-    const body = {
-      projectId: payload.projectId,
-      input: trimmedInput,
-      inputTruncated: !!payload.input && payload.input.length > (trimmedInput?.length ?? 0),
-      legacy: payload.input ? undefined : {
-        fileName: payload.fileName,
-        search: payload.search,
-        replace: payload.replace,
-        replaceAll: payload.replaceAll,
-      },
-      error: serializedError,
-      savedAt: new Date().toISOString(),
-    };
-    writeFileSync(failCasePath, JSON.stringify(body, null, 2), 'utf8');
+    const savedAt = new Date().toISOString();
+    const legacyPatchBody = [
+      payload.fileName ? `fileName: ${payload.fileName}` : undefined,
+      typeof payload.search === 'string' ? `search:\n${payload.search}` : undefined,
+      typeof payload.replace === 'string' ? `replace:\n${payload.replace}` : undefined,
+      typeof payload.replaceAll === 'boolean' ? `replaceAll: ${payload.replaceAll}` : undefined,
+    ].filter(Boolean).join('\n\n');
+    const errorLog = [
+      `savedAt: ${savedAt}`,
+      `projectId: ${payload.projectId}`,
+      `inputTruncated: ${!!payload.input && payload.input.length > (trimmedInput?.length ?? 0)}`,
+      '',
+      `errorName: ${serializedError.name ?? 'Error'}`,
+      `errorMessage: ${serializedError.message}`,
+      serializedError.stack ? `errorStack:\n${serializedError.stack}` : undefined,
+    ].filter(Boolean).join('\n');
+    writeFileSync(path.join(failCaseDir, 'source.js'), payload.sourceContent ?? '', 'utf8');
+    writeFileSync(path.join(failCaseDir, 'patch.diff'), trimmedInput ?? legacyPatchBody, 'utf8');
+    writeFileSync(path.join(failCaseDir, 'error.log'), errorLog, 'utf8');
   } catch {
     /* best-effort only */
   }
