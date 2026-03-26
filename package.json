@@ -10,6 +10,7 @@
     "start:server": "bun run --cwd backend start",
     "start:client": "bun run --cwd frontend build",
     "build:exe": "bun run scripts/build-exe.ts",
+    "test:font-name": "bun run scripts/test-font-name-extraction.ts",
     "test:render": "bun run scripts/puppeteer-render-test.ts",
     "test:lok-init": "bun run scripts/puppeteer-lok-init-test.ts",
     "test:text-width": "node scripts/ppt-text-canvas-cv-test-with-nodejs.ts",
