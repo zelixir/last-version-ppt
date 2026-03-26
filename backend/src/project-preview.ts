@@ -1,6 +1,7 @@
 import type PptxGenJS from 'pptxgenjs';
-import { generateProjectPreviewImages } from './project-preview-generator.ts';
+import { generateProjectPreviewImages, type PreviewProgressUpdate } from './project-preview-generator.ts';
 import { runProject } from './project-runner.ts';
+import { clearPreviewProgress, setPreviewProgress } from './preview-progress.ts';
 
 const EMU_PER_INCH = 914400;
 const PROJECT_FILE_API_PREFIX = '/api/projects';
@@ -234,31 +235,42 @@ function toUint8Array(data: Uint8Array | ArrayBuffer): Uint8Array {
 }
 
 export async function generateProjectPreview(projectId: string): Promise<ProjectPreviewResult> {
-  const result = await runProject({ projectId, includeLogs: true });
-  if (!result.ok || !result.pptx) {
-    throw new Error(result.error || '预览生成失败');
-  }
-
-  const pptxStream = await result.pptx.write({ outputType: 'uint8array' });
-  if (!(pptxStream instanceof Uint8Array) && !(pptxStream instanceof ArrayBuffer)) {
-    throw new Error('服务器没有生成可用的 PPT 文件内容');
-  }
-  let images: string[] = [];
-  let imageError: string | undefined;
+  setPreviewProgress(projectId, { message: '正在运行项目脚本…', percent: 5 });
   try {
-    const generatedImages = await withTimeout(
-      generateProjectPreviewImages(projectId, toUint8Array(pptxStream)),
-      PREVIEW_IMAGE_TIMEOUT_MS,
-      '服务器生成高保真预览图超时，请稍后再试',
-    );
-    images = generatedImages.images.map(image => image.url);
-  } catch (error) {
-    imageError = error instanceof Error ? error.message : String(error);
-  }
+    const result = await runProject({ projectId, includeLogs: true });
+    if (!result.ok || !result.pptx) {
+      throw new Error(result.error || '预览生成失败');
+    }
 
-  return {
-    presentation: buildProjectPreviewPresentation(projectId, result.pptx, result.logs, result.warnings),
-    images,
-    imageError,
-  };
+    const pptxStream = await result.pptx.write({ outputType: 'uint8array' });
+    if (!(pptxStream instanceof Uint8Array) && !(pptxStream instanceof ArrayBuffer)) {
+      throw new Error('服务器没有生成可用的 PPT 文件内容');
+    }
+    let images: string[] = [];
+    let imageError: string | undefined;
+
+    try {
+      setPreviewProgress(projectId, { message: '正在把 PPT 转成高保真预览图…', percent: 15 });
+      const generatedImages = await withTimeout(
+        generateProjectPreviewImages(projectId, toUint8Array(pptxStream), {
+          onProgress: (progress: PreviewProgressUpdate) => setPreviewProgress(projectId, progress),
+        }),
+        PREVIEW_IMAGE_TIMEOUT_MS,
+        '服务器生成高保真预览图超时，请稍后再试',
+      );
+      images = generatedImages.images.map(image => image.url);
+      setPreviewProgress(projectId, { message: '预览图已经生成', percent: 100 });
+    } catch (error) {
+      imageError = error instanceof Error ? error.message : String(error);
+      setPreviewProgress(projectId, { message: imageError || '生成预览图失败', percent: 100 });
+    }
+
+    return {
+      presentation: buildProjectPreviewPresentation(projectId, result.pptx, result.logs, result.warnings),
+      images,
+      imageError,
+    };
+  } finally {
+    clearPreviewProgress(projectId);
+  }
 }
