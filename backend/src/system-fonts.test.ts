@@ -3,7 +3,13 @@ import test from 'node:test';
 
 import { __systemFontTestUtils } from './system-fonts.ts';
 
-const { extractFontLabelFromBuffer, looksLikeGarbledFontLabel, sanitizeFontLabel } = __systemFontTestUtils;
+const {
+  extractFontLabelFromBuffer,
+  looksLikeGarbledFontLabel,
+  normalizeWindowsRegistryFontLabel,
+  parseWindowsRegistryFontQuery,
+  sanitizeFontLabel,
+} = __systemFontTestUtils;
 
 function toUtf16Be(value: string): Buffer {
   const le = Buffer.from(value, 'utf16le');
@@ -112,4 +118,27 @@ test('extractFontLabelFromBuffer prefers Windows Unicode names over garbled Maci
 test('sanitizeFontLabel rejects spaced-out garbled names', () => {
   assert.equal(looksLikeGarbledFontLabel(', < 6 T . b 6 * L J F T 8 R X $ - " R 0 T * * L J F T 8 N o r m a l'), true);
   assert.equal(sanitizeFontLabel(', < 6 T . b 6 * L J F T 8 R X $ - " R 0 T * * L J F T 8 N o r m a l'), null);
+});
+
+test('normalizeWindowsRegistryFontLabel strips registry suffixes', () => {
+  assert.equal(normalizeWindowsRegistryFontLabel('微软雅黑 (TrueType)'), '微软雅黑');
+  assert.equal(normalizeWindowsRegistryFontLabel('思源黑体 (OpenType)'), '思源黑体');
+  assert.equal(normalizeWindowsRegistryFontLabel(''), null);
+});
+
+test('parseWindowsRegistryFontQuery maps registry font entries to known font paths', () => {
+  const output = [
+    'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts',
+    '    微软雅黑 (TrueType)    REG_SZ    msyh.ttc',
+    '    Segoe UI Bold (TrueType)    REG_SZ    C:\\\\Users\\\\demo\\\\AppData\\\\Local\\\\Microsoft\\\\Windows\\\\Fonts\\\\segoeuib.ttf',
+    '',
+  ].join('\n');
+
+  const labels = parseWindowsRegistryFontQuery(output, ['C:\\Windows\\Fonts']);
+
+  assert.equal(labels['c:\\windows\\fonts\\msyh.ttc'], '微软雅黑');
+  assert.equal(
+    labels['c:\\users\\demo\\appdata\\local\\microsoft\\windows\\fonts\\segoeuib.ttf'],
+    'Segoe UI Bold',
+  );
 });

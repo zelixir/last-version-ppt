@@ -71,6 +71,36 @@ function buildFallbackFontLabel(fileName: string): string {
   return base.replace(/[_-]+/g, ' ') || base;
 }
 
+function normalizeWindowsRegistryFontLabel(raw: string): string | null {
+  return sanitizeFontLabel(raw.replace(/\s+\((?:true|open)type\)$/i, '').trim());
+}
+
+function resolveWindowsRegistryFontPaths(fileValue: string, fontDirs: string[]): string[] {
+  const trimmed = fileValue.trim().replace(/^"(.*)"$/, '$1');
+  if (!trimmed) return [];
+  if (path.win32.isAbsolute(trimmed)) return [normalizePath(path.win32.normalize(trimmed))];
+  return fontDirs.map(dir => normalizePath(path.win32.join(dir, trimmed)));
+}
+
+function parseWindowsRegistryFontQuery(output: string, fontDirs: string[]): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const line of output.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('HKEY_')) continue;
+    const parts = trimmed.split(/\s{2,}/).map(part => part.trim()).filter(Boolean);
+    if (parts.length < 3) continue;
+    const [labelRaw, valueType, ...pathParts] = parts;
+    if (!valueType.startsWith('REG_')) continue;
+    const label = normalizeWindowsRegistryFontLabel(labelRaw);
+    if (!label) continue;
+    const fileValue = pathParts.join('  ');
+    for (const candidatePath of resolveWindowsRegistryFontPaths(fileValue, fontDirs)) {
+      labels[candidatePath] ||= label;
+    }
+  }
+  return labels;
+}
+
 function decodeNameRecord(buffer: Buffer, record: FontNameRecord, stringBase: number, tableStart: number, tableLength: number): string | null {
   const start = stringBase + record.offset;
   const end = start + record.length;
@@ -211,27 +241,30 @@ export function readFontLabelFromMetadata(filePath: string): string | null {
   }
 }
 
-function readFontLabelsFromFontconfig(): Record<string, string> {
-  try {
-    const output = execFileSync('fc-list', ['--format', '%{file}||%{family[0]}||%{style[0]}\\n'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    const labels: Record<string, string> = {};
-    for (const line of output.split(/\r?\n/)) {
-      if (!line) continue;
-      const [filePath, familyRaw = '', styleRaw = ''] = line.split('||');
-      if (!filePath) continue;
-      const family = familyRaw.trim();
-      const style = styleRaw.trim();
-      const label = sanitizeFontLabel([family, style].filter(Boolean).join(' '));
-      if (!label) continue;
-      labels[normalizePath(filePath)] = label;
+function readFontLabelsFromWindowsRegistry(fontDirs: string[]): Record<string, string> {
+  if (process.platform !== 'win32') return {};
+  const registryKeys = [
+    'HKCU\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts',
+    'HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts',
+  ];
+  const labels: Record<string, string> = {};
+
+  for (const registryKey of registryKeys) {
+    try {
+      const output = execFileSync('reg', ['query', registryKey], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const parsed = parseWindowsRegistryFontQuery(output, fontDirs);
+      for (const [filePath, label] of Object.entries(parsed)) {
+        labels[filePath] ||= label;
+      }
+    } catch {
+      /* best-effort only */
     }
-    return labels;
-  } catch {
-    return {};
   }
+
+  return labels;
 }
 
 function getSystemFontDirs(): string[] {
@@ -295,12 +328,12 @@ let cachedFontList: SystemFontInfo[] | null = null;
 export function listSystemFonts(): SystemFontInfo[] {
   if (cachedFontList) return cachedFontList;
 
-  const fontLabels = readFontLabelsFromFontconfig();
   const dirs = getSystemFontDirs();
+  const windowsRegistryLabels = readFontLabelsFromWindowsRegistry(dirs);
   const allFonts: SystemFontInfo[] = [];
 
   for (const dir of dirs) {
-    allFonts.push(...collectFontFiles(dir, fontLabels));
+    allFonts.push(...collectFontFiles(dir, windowsRegistryLabels));
   }
 
   // Deduplicate by name (prefer first occurrence)
@@ -311,7 +344,9 @@ export function listSystemFonts(): SystemFontInfo[] {
     return true;
   }).map(font => ({
     ...font,
-    label: font.label || readFontLabelFromMetadata(font.filePath) || buildFallbackFontLabel(font.name),
+    label: (process.platform === 'win32'
+      ? font.label || readFontLabelFromMetadata(font.filePath)
+      : readFontLabelFromMetadata(font.filePath)) || buildFallbackFontLabel(font.name),
   })).sort((a, b) => (a.label || a.name).localeCompare(b.label || b.name, 'zh-Hans-CN'));
 
   return cachedFontList;
@@ -335,6 +370,8 @@ export const __systemFontTestUtils = {
   decodeUtf16Be,
   extractFontLabelFromBuffer,
   looksLikeGarbledFontLabel,
+  normalizeWindowsRegistryFontLabel,
+  parseWindowsRegistryFontQuery,
   readFontLabelFromMetadata,
   sanitizeFontLabel,
 };
