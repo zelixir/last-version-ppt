@@ -38,6 +38,8 @@ test('index.js 可以读取到 50KB，但超过后仍会提示改用按行读取
     const file = readProjectTextFile(projectId, '/index.js');
     assert.equal(file.size, 50 * 1024);
     assert.equal(file.content.length, 50 * 1024);
+    const windowsPathFile = readProjectTextFile(projectId, '\\index.js');
+    assert.equal(windowsPathFile.size, 50 * 1024);
 
     writeFileSync(resolveProjectFile(projectId, 'index.js'), 'B'.repeat(50 * 1024 + 1), 'utf8');
     assert.throws(() => readProjectTextFile(projectId, 'index.js'), /文件超过 50KB/);

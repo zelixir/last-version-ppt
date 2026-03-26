@@ -10,7 +10,8 @@ export const MAX_READ_INDEX_FILE_BYTES = 50 * 1024;
 
 function getReadFileByteLimit(fileName: string): number {
   const normalized = fileName.replace(/\\/g, '/').replace(/^\/+/, '');
-  return normalized === 'index.js' ? MAX_READ_INDEX_FILE_BYTES : MAX_READ_FILE_BYTES;
+  const segments = normalized.split('/').filter(Boolean);
+  return segments.length === 1 && segments[0] === 'index.js' ? MAX_READ_INDEX_FILE_BYTES : MAX_READ_FILE_BYTES;
 }
 
 export function isTextFile(fileName: string): boolean {

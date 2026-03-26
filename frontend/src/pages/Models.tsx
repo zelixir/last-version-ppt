@@ -181,11 +181,15 @@ export default function Models() {
     fetchModels()
   }
 
+  const markCopied = (copiedKey: string) => {
+    setCopiedState(copiedKey)
+    window.setTimeout(() => setCopiedState(current => (current === copiedKey ? null : current)), 1500)
+  }
+
   const copyApiKey = async (apiKey: string, key: string) => {
     try {
       await navigator.clipboard.writeText(apiKey)
-      setCopiedState(key)
-      window.setTimeout(() => setCopiedState(current => (current === key ? null : current)), 1500)
+      markCopied(key)
     } catch (err) {
       console.error(err)
       setError('复制失败，请手动复制。')
@@ -217,10 +221,11 @@ export default function Models() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    if (!response.ok) throw new Error('复制模型失败')
-    const copiedKey = `model-${model.id}`
-    setCopiedState(copiedKey)
-    window.setTimeout(() => setCopiedState(current => (current === copiedKey ? null : current)), 1500)
+    if (!response.ok) {
+      const detail = (await response.text()).trim()
+      throw new Error(detail || `复制模型失败（状态码 ${response.status}）`)
+    }
+    markCopied(`model-${model.id}`)
     fetchModels()
   }
 
