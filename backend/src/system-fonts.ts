@@ -19,6 +19,27 @@ interface SystemFontInfo {
   label?: string;
 }
 
+type FontNameRecord = {
+  platformId: number;
+  encodingId: number;
+  languageId: number;
+  nameId: number;
+  length: number;
+  offset: number;
+};
+
+const PREFERRED_NAME_LANGS = [0x0804, 0x0c04, 0x1004, 0x1404, 0x0404, 0x0409];
+const FONT_METADATA_EXTENSIONS = new Set(['.ttf', '.ttc', '.otf']);
+const utf16beDecoder = new TextDecoder('utf-16be');
+const macintoshDecoder = (() => {
+  try {
+    return new TextDecoder('macintosh');
+  } catch {
+    return new TextDecoder('latin1');
+  }
+})();
+const metadataLabelCache = new Map<string, string | null>();
+
 function normalizePath(filePath: string): string {
   return path.normalize(filePath).toLowerCase();
 }
@@ -26,6 +47,123 @@ function normalizePath(filePath: string): string {
 function buildFallbackFontLabel(fileName: string): string {
   const base = path.basename(fileName, path.extname(fileName));
   return base.replace(/[_-]+/g, ' ') || base;
+}
+
+function decodeNameRecord(buffer: Buffer, record: FontNameRecord, stringBase: number): string | null {
+  const start = stringBase + record.offset;
+  const end = start + record.length;
+  if (start < 0 || end > buffer.length) return null;
+  const slice = buffer.subarray(start, end);
+
+  if (record.platformId === 0 || record.platformId === 3) {
+    return utf16beDecoder.decode(slice);
+  }
+  if (record.platformId === 1) {
+    return macintoshDecoder.decode(slice);
+  }
+
+  return slice.toString('utf8');
+}
+
+function readNameTable(buffer: Buffer, fontOffset: number): { records: (FontNameRecord & { text: string })[]; stringBase: number } | null {
+  if (buffer.length < fontOffset + 12) return null;
+  const numTables = buffer.readUInt16BE(fontOffset + 4);
+  const tableDirStart = fontOffset + 12;
+  let nameTableOffset = 0;
+  let nameTableLength = 0;
+
+  for (let i = 0; i < numTables; i += 1) {
+    const entryOffset = tableDirStart + i * 16;
+    if (entryOffset + 16 > buffer.length) break;
+    const tag = buffer.toString('ascii', entryOffset, entryOffset + 4);
+    if (tag === 'name') {
+      nameTableOffset = buffer.readUInt32BE(entryOffset + 8);
+      nameTableLength = buffer.readUInt32BE(entryOffset + 12);
+      break;
+    }
+  }
+
+  if (!nameTableOffset || !nameTableLength) return null;
+  const tableStart = fontOffset + nameTableOffset;
+  if (tableStart + nameTableLength > buffer.length || tableStart + 6 > buffer.length) return null;
+
+  const recordCount = buffer.readUInt16BE(tableStart + 2);
+  const stringOffset = buffer.readUInt16BE(tableStart + 4);
+  const stringBase = tableStart + stringOffset;
+  const records: (FontNameRecord & { text: string })[] = [];
+
+  for (let i = 0; i < recordCount; i += 1) {
+    const recordOffset = tableStart + 6 + i * 12;
+    if (recordOffset + 12 > buffer.length) break;
+    const record: FontNameRecord = {
+      platformId: buffer.readUInt16BE(recordOffset),
+      encodingId: buffer.readUInt16BE(recordOffset + 2),
+      languageId: buffer.readUInt16BE(recordOffset + 4),
+      nameId: buffer.readUInt16BE(recordOffset + 6),
+      length: buffer.readUInt16BE(recordOffset + 8),
+      offset: buffer.readUInt16BE(recordOffset + 10),
+    };
+    const text = decodeNameRecord(buffer, record, stringBase);
+    if (text) records.push({ ...record, text: text.trim() });
+  }
+
+  return { records, stringBase };
+}
+
+function pickName(records: Array<FontNameRecord & { text: string }>, nameIds: number[], languages: number[]): string | null {
+  for (const lang of languages) {
+    const match = records.find(record => nameIds.includes(record.nameId) && record.languageId === lang && record.text);
+    if (match?.text) return match.text;
+  }
+  const fallback = records.find(record => nameIds.includes(record.nameId) && record.text);
+  return fallback?.text ?? null;
+}
+
+function extractFontLabelFromBuffer(buffer: Buffer, fontOffset: number): string | null {
+  const nameTable = readNameTable(buffer, fontOffset);
+  if (!nameTable) return null;
+
+  const fullName = pickName(nameTable.records, [4], PREFERRED_NAME_LANGS)
+    ?? pickName(nameTable.records, [4], []);
+  const familyName = pickName(nameTable.records, [1], PREFERRED_NAME_LANGS)
+    ?? pickName(nameTable.records, [1], []);
+  const subfamily = pickName(nameTable.records, [2], PREFERRED_NAME_LANGS)
+    ?? pickName(nameTable.records, [2], []);
+
+  const combinedFamily = familyName && subfamily && !/^(regular|normal)$/i.test(subfamily) ? `${familyName} ${subfamily}` : familyName;
+  return (fullName || combinedFamily || familyName)?.replace(/\s+/g, ' ').trim() || null;
+}
+
+function extractFontLabelFromTtc(buffer: Buffer): string | null {
+  if (buffer.length < 16) return null;
+  const numFonts = buffer.readUInt32BE(8);
+  for (let i = 0; i < numFonts; i += 1) {
+    const fontOffset = buffer.readUInt32BE(12 + i * 4);
+    const label = extractFontLabelFromBuffer(buffer, fontOffset);
+    if (label) return label;
+  }
+  return null;
+}
+
+function readFontLabelFromMetadata(filePath: string): string | null {
+  if (metadataLabelCache.has(filePath)) return metadataLabelCache.get(filePath) ?? null;
+
+  const ext = path.extname(filePath).toLowerCase();
+  if (!FONT_METADATA_EXTENSIONS.has(ext)) {
+    metadataLabelCache.set(filePath, null);
+    return null;
+  }
+
+  try {
+    const buffer = readFileSync(filePath);
+    const isTtc = buffer.subarray(0, 4).toString('ascii') === 'ttcf';
+    const label = isTtc ? extractFontLabelFromTtc(buffer) : extractFontLabelFromBuffer(buffer, 0);
+    metadataLabelCache.set(filePath, label || null);
+    return label || null;
+  } catch {
+    metadataLabelCache.set(filePath, null);
+    return null;
+  }
 }
 
 function readFontLabelsFromFontconfig(): Record<string, string> {
@@ -128,7 +266,7 @@ export function listSystemFonts(): SystemFontInfo[] {
     return true;
   }).map(font => ({
     ...font,
-    label: font.label || buildFallbackFontLabel(font.name),
+    label: font.label || readFontLabelFromMetadata(font.filePath) || buildFallbackFontLabel(font.name),
   })).sort((a, b) => (a.label || a.name).localeCompare(b.label || b.name, 'zh-Hans-CN'));
 
   return cachedFontList;

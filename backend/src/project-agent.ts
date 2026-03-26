@@ -191,6 +191,7 @@ export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimo
     '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
     '必须尽量完整实现用户要的 PPT 内容，不能只给最小骨架或占位内容。',
     '在你认为已经完成时，必须先调用 run-project 检查脚本是否能运行；如果失败，要继续修复直到成功或明确说明阻塞原因。',
+    '生成完 PPT 以后，要检查每一页是否有文字重叠或挤在一起，如有重叠需要调整字号、行距或排版再重新生成，直到版式干净可读。',
     '如果你要在代码、文案或文本内容里表达换行，必须直接写真正的换行，不要把换行写成两个字符的“\\n”。',
     '如果用户问你“你能做什么”或“怎么用”，请按下面的能力清单，用自然中文做简短介绍，不要展开成长文：',
     buildToolCapabilitySummary(enabledToolNames),

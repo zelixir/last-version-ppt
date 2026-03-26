@@ -75,6 +75,10 @@ export async function runProject({ projectId }: RunProjectOptions): Promise<RunP
     const finalPptx = output instanceof PptxGenJS ? output : pptx;
     return { ok: true, logs, warnings, slideCount: (finalPptx as any)._slides?.length ?? 0, pptx: finalPptx };
   } catch (error) {
+    const detail = error instanceof Error ? error.stack || error.message : String(error);
+    console.error(`[PPT 脚本异常] 项目 ${projectId}: ${detail}`);
+    if (logs.length) console.error(`[PPT 脚本日志] 项目 ${projectId}:\n${logs.join('\n')}`);
+    if (warnings.length) console.warn(`[PPT 脚本提醒] 项目 ${projectId}:\n${warnings.join('\n')}`);
     return {
       ok: false,
       logs,
