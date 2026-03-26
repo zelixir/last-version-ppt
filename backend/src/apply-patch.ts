@@ -36,6 +36,8 @@ const PUNCT_EQUIV: Record<string, string> = {
   '\u202F': ' ',
 };
 
+const APPLY_PATCH_FAILURE_DIR = path.resolve(process.cwd(), 'apply-patch-fail-case');
+
 export const APPLY_PATCH_TOOL_DESCRIPTION = [
   'Use the `apply-patch` tool to edit files.',
   'Your patch language is a stripped-down, file-oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high-level envelope:',
@@ -186,6 +188,49 @@ export interface AppliedPatchSummary {
 }
 
 export class DiffError extends Error {}
+
+export function recordApplyPatchFailureCase(payload: {
+  projectId: string;
+  input?: string;
+  fileName?: string;
+  search?: string;
+  replace?: string;
+  replaceAll?: boolean;
+  error: unknown;
+}): void {
+  try {
+    mkdirSync(APPLY_PATCH_FAILURE_DIR, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeProjectId = payload.projectId.replace(/[^\w.-]/g, '_') || 'unknown-project';
+    const maxLength = 200_000;
+    const trimmedInput = typeof payload.input === 'string' && payload.input.length > maxLength
+      ? payload.input.slice(0, maxLength)
+      : payload.input;
+    const failCasePath = path.join(
+      APPLY_PATCH_FAILURE_DIR,
+      `${timestamp}-${Math.random().toString(36).slice(2, 8)}-${safeProjectId}.json`,
+    );
+    const serializedError = payload.error instanceof Error
+      ? { name: payload.error.name, message: payload.error.message, stack: payload.error.stack }
+      : { message: String(payload.error) };
+    const body = {
+      projectId: payload.projectId,
+      input: trimmedInput,
+      inputTruncated: !!payload.input && payload.input.length > (trimmedInput?.length ?? 0),
+      legacy: payload.input ? undefined : {
+        fileName: payload.fileName,
+        search: payload.search,
+        replace: payload.replace,
+        replaceAll: payload.replaceAll,
+      },
+      error: serializedError,
+      savedAt: new Date().toISOString(),
+    };
+    writeFileSync(failCasePath, JSON.stringify(body, null, 2), 'utf8');
+  } catch {
+    /* best-effort only */
+  }
+}
 
 export class InvalidContextError extends DiffError {
   readonly file: string;

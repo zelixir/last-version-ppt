@@ -4,3 +4,4 @@ backend/exec-output/
 dist/
 out/
 preview-test-output/
+apply-patch-fail-case/

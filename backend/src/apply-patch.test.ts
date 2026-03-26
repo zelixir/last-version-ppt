@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { APPLY_PATCH_AGENT_INSTRUCTIONS, APPLY_PATCH_TOOL_DESCRIPTION, applyProjectPatch, parseApplyPatch } from './apply-patch.ts';
+import { APPLY_PATCH_AGENT_INSTRUCTIONS, APPLY_PATCH_TOOL_DESCRIPTION, applyProjectPatch, parseApplyPatch, recordApplyPatchFailureCase } from './apply-patch.ts';
 
 function withTempProject(run: (projectRoot: string) => void): void {
   const projectRoot = mkdtempSync(path.join(os.tmpdir(), 'last-version-ppt-apply-patch-'));
@@ -150,4 +150,19 @@ test('apply-patch prompt strings expose the complete patch format', () => {
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /prefer `apply-patch` over `create-file`/);
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /leading `\/` still means “inside the current project”/);
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /input/);
+});
+
+test('recordApplyPatchFailureCase stores the failed patch payload', () => {
+  const failDir = path.resolve(process.cwd(), 'apply-patch-fail-case');
+  rmSync(failDir, { recursive: true, force: true });
+  recordApplyPatchFailureCase({
+    projectId: 'case-project',
+    input: '*** Begin Patch\n*** End Patch',
+    error: new Error('boom'),
+  });
+  const files = readdirSync(failDir, { withFileTypes: true }).filter(entry => entry.isFile());
+  assert.ok(files.length > 0);
+  const payload = JSON.parse(readFileSync(path.join(failDir, files[0].name), 'utf8'));
+  assert.equal(payload.projectId, 'case-project');
+  rmSync(failDir, { recursive: true, force: true });
 });
