@@ -3,7 +3,7 @@ import { useChat } from '@ai-sdk/react'
 import Editor from '@monaco-editor/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Trash2, Type } from 'lucide-react'
+import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Square, Trash2, Type } from 'lucide-react'
 import type { AiModel, PreviewPresentation, ProjectChatMessageMetadata, ProjectConversationDetail, ProjectConversationSummary, ProjectFile, ProjectSummary } from '../types'
 import { PromptInput } from '../components/ai-elements/prompt-input'
 import { Button } from '../components/ui/button'
@@ -271,6 +271,7 @@ export default function Project() {
     sendMessage,
     setMessages: setChatMessages,
     status: chatStatus,
+    stop: stopChatStream,
   } = useChat<ConversationMessage>({
     id: chatSessionId,
     messages: chatSeedMessages,
@@ -693,6 +694,11 @@ export default function Project() {
     setChatInput(promptHistory[nextIndex] ?? '')
   }
 
+  const stopCurrentChat = () => {
+    setPageError(null)
+    void stopChatStream()
+  }
+
   const sendChat = async (content?: string, modelIdOverride?: number) => {
     const text = (content ?? chatInput).trim()
     const modelId = modelIdOverride ?? selectedModelId
@@ -958,9 +964,16 @@ export default function Project() {
                   placeholder={selectedModelId ? '例如：做一个三页的产品发布会 PPT，强调问题、方案和优势。也可以先问我：你可以帮我做什么？' : '请先在模型配置中启用模型'}
                   className="min-h-28 items-stretch bg-gray-900"
                 >
-                  <Button onClick={() => sendChat()} disabled={chatLoading || !selectedModelId || !chatInput.trim()} className="self-end">
-                    <Send className="h-4 w-4" />发送
-                  </Button>
+                  <div className="flex items-center gap-2 self-end">
+                    {chatLoading && (
+                      <Button type="button" variant="outline" size="sm" onClick={stopCurrentChat} className="gap-1">
+                        <Square className="h-4 w-4" />停止
+                      </Button>
+                    )}
+                    <Button onClick={() => sendChat()} disabled={chatLoading || !selectedModelId || !chatInput.trim()} className="self-end">
+                      <Send className="h-4 w-4" />发送
+                    </Button>
+                  </div>
                 </PromptInput>
               </div>
             </div>

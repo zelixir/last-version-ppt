@@ -40,6 +40,14 @@ const macintoshDecoder = (() => {
 })();
 const metadataLabelCache = new Map<string, string | null>();
 
+function sanitizeFontLabel(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const cleaned = raw.replace(/\p{C}+/gu, ' ').replace(/\uFFFD+/g, '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return null;
+  if (!/[\p{L}\p{N}]/u.test(cleaned)) return null;
+  return cleaned.slice(0, 160);
+}
+
 function normalizePath(filePath: string): string {
   return path.normalize(filePath).toLowerCase();
 }
@@ -49,20 +57,21 @@ function buildFallbackFontLabel(fileName: string): string {
   return base.replace(/[_-]+/g, ' ') || base;
 }
 
-function decodeNameRecord(buffer: Buffer, record: FontNameRecord, stringBase: number): string | null {
+function decodeNameRecord(buffer: Buffer, record: FontNameRecord, stringBase: number, tableStart: number, tableLength: number): string | null {
   const start = stringBase + record.offset;
   const end = start + record.length;
-  if (start < 0 || end > buffer.length) return null;
+  const tableEnd = tableStart + tableLength;
+  if (start < tableStart || end > tableEnd || start < 0 || end > buffer.length) return null;
   const slice = buffer.subarray(start, end);
 
   if (record.platformId === 0 || record.platformId === 3) {
-    return utf16beDecoder.decode(slice);
+    return sanitizeFontLabel(utf16beDecoder.decode(slice));
   }
   if (record.platformId === 1) {
-    return macintoshDecoder.decode(slice);
+    return sanitizeFontLabel(macintoshDecoder.decode(slice));
   }
 
-  return slice.toString('utf8');
+  return sanitizeFontLabel(slice.toString('utf8'));
 }
 
 function readNameTable(buffer: Buffer, fontOffset: number): { records: (FontNameRecord & { text: string })[]; stringBase: number } | null {
@@ -86,10 +95,12 @@ function readNameTable(buffer: Buffer, fontOffset: number): { records: (FontName
   if (!nameTableOffset || !nameTableLength) return null;
   const tableStart = fontOffset + nameTableOffset;
   if (tableStart + nameTableLength > buffer.length || tableStart + 6 > buffer.length) return null;
+  const tableEnd = tableStart + nameTableLength;
 
   const recordCount = buffer.readUInt16BE(tableStart + 2);
   const stringOffset = buffer.readUInt16BE(tableStart + 4);
   const stringBase = tableStart + stringOffset;
+  if (stringBase < tableStart || stringBase > tableEnd) return null;
   const records: (FontNameRecord & { text: string })[] = [];
 
   for (let i = 0; i < recordCount; i += 1) {
@@ -103,8 +114,8 @@ function readNameTable(buffer: Buffer, fontOffset: number): { records: (FontName
       length: buffer.readUInt16BE(recordOffset + 8),
       offset: buffer.readUInt16BE(recordOffset + 10),
     };
-    const text = decodeNameRecord(buffer, record, stringBase);
-    if (text) records.push({ ...record, text: text.trim() });
+    const text = decodeNameRecord(buffer, record, stringBase, tableStart, nameTableLength);
+    if (text) records.push({ ...record, text });
   }
 
   return { records, stringBase };
@@ -158,8 +169,9 @@ function readFontLabelFromMetadata(filePath: string): string | null {
     const buffer = readFileSync(filePath);
     const isTtc = buffer.subarray(0, 4).toString('ascii') === 'ttcf';
     const label = isTtc ? extractFontLabelFromTtc(buffer) : extractFontLabelFromBuffer(buffer, 0);
-    metadataLabelCache.set(filePath, label || null);
-    return label || null;
+    const sanitized = sanitizeFontLabel(label);
+    metadataLabelCache.set(filePath, sanitized || null);
+    return sanitized || null;
   } catch {
     metadataLabelCache.set(filePath, null);
     return null;
@@ -179,7 +191,7 @@ function readFontLabelsFromFontconfig(): Record<string, string> {
       if (!filePath) continue;
       const family = familyRaw.trim();
       const style = styleRaw.trim();
-      const label = [family, style].filter(Boolean).join(' ');
+      const label = sanitizeFontLabel([family, style].filter(Boolean).join(' '));
       if (!label) continue;
       labels[normalizePath(filePath)] = label;
     }
@@ -285,3 +297,8 @@ export function getSystemFontData(fontName: string): { data: Buffer; mimeType: s
     return null;
   }
 }
+
+export const __systemFontTestUtils = {
+  extractFontLabelFromBuffer,
+  sanitizeFontLabel,
+};
