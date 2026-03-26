@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { __systemFontTestUtils } from './system-fonts.ts';
 
-const { extractFontLabelFromBuffer, sanitizeFontLabel } = __systemFontTestUtils;
+const { extractFontLabelFromBuffer, looksLikeGarbledFontLabel, sanitizeFontLabel } = __systemFontTestUtils;
 
 function toUtf16Be(value: string): Buffer {
   const le = Buffer.from(value, 'utf16le');
@@ -47,6 +47,45 @@ function buildNameTableBuffer(label: string, options?: { truncate?: boolean }): 
   return buffer;
 }
 
+function buildMultiRecordNameTableBuffer(records: Array<{ platformId: number; languageId: number; nameId: number; text: string; utf16be?: boolean }>): Buffer {
+  const nameTableOffset = 32;
+  const encodedRecords = records.map(record => ({
+    ...record,
+    data: record.utf16be === false ? Buffer.from(record.text, 'latin1') : toUtf16Be(record.text),
+  }));
+  const stringOffset = 6 + encodedRecords.length * 12;
+  const stringDataLength = encodedRecords.reduce((total, record) => total + record.data.length, 0);
+  const buffer = Buffer.alloc(nameTableOffset + stringOffset + stringDataLength);
+
+  buffer.writeUInt32BE(0x00010000, 0);
+  buffer.writeUInt16BE(1, 4);
+
+  const dirStart = 12;
+  buffer.write('name', dirStart, 'ascii');
+  buffer.writeUInt32BE(0, dirStart + 4);
+  buffer.writeUInt32BE(nameTableOffset, dirStart + 8);
+  buffer.writeUInt32BE(stringOffset + stringDataLength, dirStart + 12);
+
+  buffer.writeUInt16BE(0, nameTableOffset);
+  buffer.writeUInt16BE(encodedRecords.length, nameTableOffset + 2);
+  buffer.writeUInt16BE(stringOffset, nameTableOffset + 4);
+
+  let currentOffset = 0;
+  for (const [index, record] of encodedRecords.entries()) {
+    const recordOffset = nameTableOffset + 6 + index * 12;
+    buffer.writeUInt16BE(record.platformId, recordOffset);
+    buffer.writeUInt16BE(record.platformId === 1 ? 0 : 1, recordOffset + 2);
+    buffer.writeUInt16BE(record.languageId, recordOffset + 4);
+    buffer.writeUInt16BE(record.nameId, recordOffset + 6);
+    buffer.writeUInt16BE(record.data.length, recordOffset + 8);
+    buffer.writeUInt16BE(currentOffset, recordOffset + 10);
+    record.data.copy(buffer, nameTableOffset + stringOffset + currentOffset);
+    currentOffset += record.data.length;
+  }
+
+  return buffer;
+}
+
 test('extractFontLabelFromBuffer ignores strings outside the declared name table', () => {
   const buffer = buildNameTableBuffer('简洁测试字体 Regular', { truncate: true });
   assert.equal(extractFontLabelFromBuffer(buffer, 0), null);
@@ -60,4 +99,17 @@ test('extractFontLabelFromBuffer returns a cleaned UTF-16 label', () => {
 test('sanitizeFontLabel removes control characters and empty outputs', () => {
   assert.equal(sanitizeFontLabel('\u0002  微软雅黑  \u0000 Regular'), '微软雅黑 Regular');
   assert.equal(sanitizeFontLabel('\u0000\u0001'), null);
+});
+
+test('extractFontLabelFromBuffer prefers Windows Unicode names over garbled Macintosh records', () => {
+  const buffer = buildMultiRecordNameTableBuffer([
+    { platformId: 1, languageId: 0, nameId: 4, text: ', < 6 T . b 6 * L J F T 8 R X $ - " R 0 T * *', utf16be: false },
+    { platformId: 3, languageId: 0, nameId: 4, text: '微软雅黑 Regular' },
+  ]);
+  assert.equal(extractFontLabelFromBuffer(buffer, 0), '微软雅黑 Regular');
+});
+
+test('sanitizeFontLabel rejects spaced-out garbled names', () => {
+  assert.equal(looksLikeGarbledFontLabel(', < 6 T . b 6 * L J F T 8 R X $ - " R 0 T * * L J F T 8 N o r m a l'), true);
+  assert.equal(sanitizeFontLabel(', < 6 T . b 6 * L J F T 8 R X $ - " R 0 T * * L J F T 8 N o r m a l'), null);
 });

@@ -30,21 +30,35 @@ type FontNameRecord = {
 
 const PREFERRED_NAME_LANGS = [0x0804, 0x0c04, 0x1004, 0x1404, 0x0404, 0x0409];
 const FONT_METADATA_EXTENSIONS = new Set(['.ttf', '.ttc', '.otf']);
-const utf16beDecoder = new TextDecoder('utf-16be');
-const macintoshDecoder = (() => {
-  try {
-    return new TextDecoder('macintosh');
-  } catch {
-    return new TextDecoder('latin1');
-  }
-})();
 const metadataLabelCache = new Map<string, string | null>();
+
+function decodeUtf16Be(slice: Buffer): string {
+  const evenLength = slice.length - (slice.length % 2);
+  if (evenLength <= 0) return '';
+  const littleEndian = Buffer.allocUnsafe(evenLength);
+  for (let i = 0; i < evenLength; i += 2) {
+    littleEndian[i] = slice[i + 1];
+    littleEndian[i + 1] = slice[i];
+  }
+  return littleEndian.toString('utf16le');
+}
+
+// Some broken name records decode into dozens of single ASCII characters split by spaces,
+// for example `, < 6 T . b ... N o r m a l`. Those strings are not useful display names,
+// so we reject only long, token-heavy cases to preserve legitimate short Latin names.
+function looksLikeGarbledFontLabel(value: string): boolean {
+  const tokens = value.split(/\s+/).filter(Boolean);
+  if (value.length < 24 || tokens.length < 12) return false;
+  const singleAsciiTokens = tokens.filter(token => token.length === 1 && /^[\x20-\x7E]$/.test(token)).length;
+  return singleAsciiTokens / tokens.length >= 0.6;
+}
 
 function sanitizeFontLabel(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const cleaned = raw.replace(/\p{C}+/gu, ' ').replace(/\uFFFD+/g, '').replace(/\s+/g, ' ').trim();
   if (!cleaned) return null;
   if (!/[\p{L}\p{N}]/u.test(cleaned)) return null;
+  if (looksLikeGarbledFontLabel(cleaned)) return null;
   return cleaned.slice(0, 160);
 }
 
@@ -65,10 +79,10 @@ function decodeNameRecord(buffer: Buffer, record: FontNameRecord, stringBase: nu
   const slice = buffer.subarray(start, end);
 
   if (record.platformId === 0 || record.platformId === 3) {
-    return sanitizeFontLabel(utf16beDecoder.decode(slice));
+    return sanitizeFontLabel(decodeUtf16Be(slice));
   }
   if (record.platformId === 1) {
-    return sanitizeFontLabel(macintoshDecoder.decode(slice));
+    return sanitizeFontLabel(slice.toString('latin1'));
   }
 
   return sanitizeFontLabel(slice.toString('utf8'));
@@ -121,13 +135,32 @@ function readNameTable(buffer: Buffer, fontOffset: number): { records: (FontName
   return { records, stringBase };
 }
 
+function calculateNameRecordPriority(record: FontNameRecord & { text: string }, languages: number[]): {
+  languagePriority: number;
+  platformPriority: number;
+  lengthPriority: number;
+} {
+  const languageRank = languages.indexOf(record.languageId);
+  return {
+    languagePriority: languageRank === -1 ? languages.length : languageRank,
+    platformPriority: record.platformId === 3 ? 0 : record.platformId === 0 ? 1 : record.platformId === 1 ? 2 : 3,
+    lengthPriority: record.text.length >= 2 ? 0 : 1,
+  };
+}
+
 function pickName(records: Array<FontNameRecord & { text: string }>, nameIds: number[], languages: number[]): string | null {
-  for (const lang of languages) {
-    const match = records.find(record => nameIds.includes(record.nameId) && record.languageId === lang && record.text);
-    if (match?.text) return match.text;
-  }
-  const fallback = records.find(record => nameIds.includes(record.nameId) && record.text);
-  return fallback?.text ?? null;
+  const candidates = records.filter(record => nameIds.includes(record.nameId) && record.text);
+  if (candidates.length === 0) return null;
+  const ranked = [...candidates].sort((a, b) => {
+    const aPriority = calculateNameRecordPriority(a, languages);
+    const bPriority = calculateNameRecordPriority(b, languages);
+    // Windows name records are the most common source of reliable CJK labels in practice,
+    // then Unicode platform records, while Macintosh records are more likely to decode into garbage.
+    return aPriority.languagePriority - bPriority.languagePriority
+      || aPriority.platformPriority - bPriority.platformPriority
+      || aPriority.lengthPriority - bPriority.lengthPriority;
+  });
+  return ranked[0]?.text ?? null;
 }
 
 function extractFontLabelFromBuffer(buffer: Buffer, fontOffset: number): string | null {
@@ -156,7 +189,7 @@ function extractFontLabelFromTtc(buffer: Buffer): string | null {
   return null;
 }
 
-function readFontLabelFromMetadata(filePath: string): string | null {
+export function readFontLabelFromMetadata(filePath: string): string | null {
   if (metadataLabelCache.has(filePath)) return metadataLabelCache.get(filePath) ?? null;
 
   const ext = path.extname(filePath).toLowerCase();
@@ -299,6 +332,9 @@ export function getSystemFontData(fontName: string): { data: Buffer; mimeType: s
 }
 
 export const __systemFontTestUtils = {
+  decodeUtf16Be,
   extractFontLabelFromBuffer,
+  looksLikeGarbledFontLabel,
+  readFontLabelFromMetadata,
   sanitizeFontLabel,
 };
