@@ -1,5 +1,5 @@
 import { rgbaToPng } from '@matbee/libreoffice-converter';
-import { replaceProjectPreviewImages, type ProjectPreviewImageInfo } from './project-preview-cache.ts';
+import { buildProjectPreviewImageResponse, replaceProjectPreviewImages } from './project-preview-cache.ts';
 import { getSharedConverter } from './shared-libreoffice-converter.ts';
 
 const PREVIEW_WIDTH = 1600;
@@ -26,17 +26,13 @@ export interface PreviewProgressUpdate {
   percent?: number;
 }
 
-function buildPreviewImageUrl(projectId: string, image: ProjectPreviewImageInfo): string {
-  return `/api/projects/${encodeURIComponent(projectId)}/files/raw?fileName=${encodeURIComponent(`preview/${image.fileName}`)}&t=${encodeURIComponent(image.updatedAt)}`;
-}
-
-function buildPreviewGenerationResult(projectId: string, images: ProjectPreviewImageInfo[]): ProjectPreviewGenerationResult {
+function buildPreviewGenerationResult(
+  projectId: string,
+  images: Array<{ pageNumber: number; fileName: string; updatedAt: string }>,
+): ProjectPreviewGenerationResult {
   return {
     slideCount: images.length,
-    images: images.map(image => ({
-      pageNumber: image.pageNumber,
-      url: buildPreviewImageUrl(projectId, image),
-    })),
+    images: images.map(image => buildProjectPreviewImageResponse(projectId, image)),
   };
 }
 
