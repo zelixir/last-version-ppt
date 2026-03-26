@@ -189,12 +189,10 @@ export interface AppliedPatchSummary {
 
 export class DiffError extends Error {}
 
-const APPLY_PATCH_SOURCE_FALLBACK = '未能从这次失败现场提取原始文件内容。\n常见原因：这是直接应用 patch.diff 的失败，或在读取原文件前就已报错。\n';
-
 export function recordApplyPatchFailureCase(payload: {
   projectId: string;
   input?: string;
-  sourceContent?: string;
+  sourceContent: string;
   fileName?: string;
   search?: string;
   replace?: string;
@@ -233,7 +231,7 @@ export function recordApplyPatchFailureCase(payload: {
       `errorMessage: ${serializedError.message}`,
       serializedError.stack ? `errorStack:\n${serializedError.stack}` : undefined,
     ].filter(Boolean).join('\n');
-    writeFileSync(path.join(failCaseDir, 'source.js'), payload.sourceContent ?? APPLY_PATCH_SOURCE_FALLBACK, 'utf8');
+    writeFileSync(path.join(failCaseDir, 'source.js'), payload.sourceContent, 'utf8');
     writeFileSync(path.join(failCaseDir, 'patch.diff'), trimmedInput ?? legacyPatchBody, 'utf8');
     writeFileSync(path.join(failCaseDir, 'error.log'), errorLog, 'utf8');
   } catch {
@@ -781,6 +779,39 @@ export function identifyFilesNeeded(text: string): string[] {
     if (line.startsWith(DELETE_FILE_PREFIX)) result.add(line.slice(DELETE_FILE_PREFIX.length));
   }
   return [...result];
+}
+
+export function collectApplyPatchSourceContent(projectRoot: string, input: string): string {
+  const neededFiles = identifyFilesNeeded(input);
+  if (neededFiles.length === 0) {
+    return '';
+  }
+
+  const entries = neededFiles.flatMap(filePath => {
+    let resolved: string;
+    try {
+      resolved = resolvePatchPath(projectRoot, filePath);
+    } catch (error) {
+      if (!(error instanceof InvalidPatchFormatError)) {
+        throw error;
+      }
+      return [];
+    }
+    if (!existsSync(resolved)) {
+      return [];
+    }
+    return [{
+      relativePath: path.relative(projectRoot, resolved).replace(/\\/g, '/'),
+      content: readFileSync(resolved, 'utf8'),
+    }];
+  });
+
+  if (entries.length === 1 && neededFiles.length === 1) {
+    const [entry] = entries;
+    return entry.content;
+  }
+
+  return entries.map(({ relativePath, content }) => `// ${relativePath}\n${content}`).join('\n\n');
 }
 
 function getUpdatedFile(text: string, action: PatchAction, filePath: string): string {
