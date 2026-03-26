@@ -189,6 +189,8 @@ export interface AppliedPatchSummary {
 
 export class DiffError extends Error {}
 
+const APPLY_PATCH_SOURCE_FALLBACK = '未能从这次失败现场提取原始文件内容。\n常见原因：这是直接应用 patch.diff 的失败，或在读取原文件前就已报错。\n';
+
 export function recordApplyPatchFailureCase(payload: {
   projectId: string;
   input?: string;
@@ -221,7 +223,7 @@ export function recordApplyPatchFailureCase(payload: {
       typeof payload.search === 'string' ? `search:\n${payload.search}` : undefined,
       typeof payload.replace === 'string' ? `replace:\n${payload.replace}` : undefined,
       typeof payload.replaceAll === 'boolean' ? `replaceAll: ${payload.replaceAll}` : undefined,
-    ].filter(Boolean).join('\n\n');
+    ].filter(Boolean).join('\n');
     const errorLog = [
       `savedAt: ${savedAt}`,
       `projectId: ${payload.projectId}`,
@@ -231,7 +233,7 @@ export function recordApplyPatchFailureCase(payload: {
       `errorMessage: ${serializedError.message}`,
       serializedError.stack ? `errorStack:\n${serializedError.stack}` : undefined,
     ].filter(Boolean).join('\n');
-    writeFileSync(path.join(failCaseDir, 'source.js'), payload.sourceContent ?? '', 'utf8');
+    writeFileSync(path.join(failCaseDir, 'source.js'), payload.sourceContent ?? APPLY_PATCH_SOURCE_FALLBACK, 'utf8');
     writeFileSync(path.join(failCaseDir, 'patch.diff'), trimmedInput ?? legacyPatchBody, 'utf8');
     writeFileSync(path.join(failCaseDir, 'error.log'), errorLog, 'utf8');
   } catch {

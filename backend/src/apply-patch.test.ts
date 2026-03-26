@@ -164,7 +164,10 @@ test('recordApplyPatchFailureCase stores failure files in a dedicated folder', (
   assert.equal(cases.length, 1);
   const caseDir = path.join(failDir, cases[0].name);
   assert.equal(readFileSync(path.join(caseDir, 'patch.diff'), 'utf8'), '*** Begin Patch\n*** End Patch');
-  assert.equal(readFileSync(path.join(caseDir, 'source.js'), 'utf8'), '');
+  assert.equal(
+    readFileSync(path.join(caseDir, 'source.js'), 'utf8'),
+    '未能从这次失败现场提取原始文件内容。\n常见原因：这是直接应用 patch.diff 的失败，或在读取原文件前就已报错。\n',
+  );
   assert.match(readFileSync(path.join(caseDir, 'error.log'), 'utf8'), /projectId: case-project/);
   assert.match(readFileSync(path.join(caseDir, 'error.log'), 'utf8'), /errorMessage: boom/);
   rmSync(failDir, { recursive: true, force: true });
