@@ -32,6 +32,18 @@ test('大文件会提示改用按行读取工具', async () => {
   });
 });
 
+test('index.js 可以读取到 50KB，但超过后仍会提示改用按行读取', async () => {
+  await withTestProject(async projectId => {
+    writeFileSync(resolveProjectFile(projectId, 'index.js'), 'A'.repeat(50 * 1024), 'utf8');
+    const file = readProjectTextFile(projectId, '/index.js');
+    assert.equal(file.size, 50 * 1024);
+    assert.equal(file.content.length, 50 * 1024);
+
+    writeFileSync(resolveProjectFile(projectId, 'index.js'), 'B'.repeat(50 * 1024 + 1), 'utf8');
+    assert.throws(() => readProjectTextFile(projectId, 'index.js'), /文件超过 50KB/);
+  });
+});
+
 test('图片工具结果会保留给多模态模型使用的图片内容', () => {
   const output = buildImageToolModelOutput('图片 cover.svg', 'cover.svg', 'image/svg+xml', 'PHN2Zz48L3N2Zz4=');
   assert.equal(output.type, 'content');
