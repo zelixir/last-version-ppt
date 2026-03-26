@@ -481,6 +481,7 @@ function buildProjectTools(options: {
       execute: async ({ input, fileName, search, replace, replaceAll }) => {
         emitter.start('apply-patch', { fileName });
         const currentProjectId = options.getProjectId();
+        let originalContent: string | undefined;
         try {
           if (input) {
             const summary = applyProjectPatch(getProjectDir(currentProjectId), input);
@@ -502,8 +503,8 @@ function buildProjectTools(options: {
             throw new Error('apply-patch 缺少必要的 legacy 参数');
           }
           const targetPath = resolveProjectFile(currentProjectId, fileName);
-          const original = readFileSync(targetPath, 'utf8');
-          const updated = applyLegacySearchReplace(original, search, replace, replaceAll);
+          originalContent = readFileSync(targetPath, 'utf8');
+          const updated = applyLegacySearchReplace(originalContent, search, replace, replaceAll);
           writeFileSync(targetPath, updated, 'utf8');
           emitter.finish('apply-patch', `修改 ${fileName}`);
           return { changed: [fileName], legacy: true, lineCount: countTextLines(updated) };
@@ -511,6 +512,7 @@ function buildProjectTools(options: {
           recordApplyPatchFailureCase({
             projectId: currentProjectId,
             input,
+            sourceContent: originalContent,
             fileName,
             search,
             replace,
