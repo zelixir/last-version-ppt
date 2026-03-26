@@ -836,7 +836,7 @@ const app = new Elysia()
       const cachedPreview = getCachedProjectPreview(params.id, scriptHash);
       if (cachedPreview) return cachedPreview;
 
-      const previewResult = await generateProjectPreview(params.id, { scriptHash });
+      const previewResult = await generateProjectPreview(params.id, { scriptHash: scriptHash ?? undefined });
       updateProjectRecord(params.id, { touch: true });
       return previewResult;
     } catch (error) {

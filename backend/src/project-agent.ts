@@ -39,6 +39,47 @@ function countTextLines(value: string): number {
   return value.split(/\r?\n/).length;
 }
 
+function isTextOverlapWarning(message: string): boolean {
+  return /重叠/.test(message);
+}
+
+function getWarningPageKey(message: string): string {
+  const trimmed = message.trim();
+  if (!trimmed) return '';
+  const prefixMatch = trimmed.match(/^([^：:\n]+)[：:]/);
+  if (prefixMatch?.[1]) return prefixMatch[1].trim();
+  const pageMatch = trimmed.match(/^(第[0-9一二三四五六七八九十百千万两零]+页)/);
+  return pageMatch?.[1] ?? '';
+}
+
+export function limitRunProjectWarningsForTool(warnings: string[]): string[] {
+  const visibleWarnings: string[] = [];
+  const overlapCountsByPage = new Map<string, number>();
+  const omittedCountsByPage = new Map<string, number>();
+
+  for (const warning of warnings) {
+    if (!isTextOverlapWarning(warning)) {
+      visibleWarnings.push(warning);
+      continue;
+    }
+
+    const pageKey = getWarningPageKey(warning) || warning.trim();
+    const shownCount = overlapCountsByPage.get(pageKey) ?? 0;
+    if (shownCount < 5) {
+      visibleWarnings.push(warning);
+    } else {
+      omittedCountsByPage.set(pageKey, (omittedCountsByPage.get(pageKey) ?? 0) + 1);
+    }
+    overlapCountsByPage.set(pageKey, shownCount + 1);
+  }
+
+  for (const [pageKey, omittedCount] of omittedCountsByPage) {
+    visibleWarnings.push(`${pageKey}：其余 ${omittedCount} 条文字重叠提醒已省略，请查看控制台里的完整提醒。`);
+  }
+
+  return visibleWarnings;
+}
+
 function isProjectIdAvailable(projectId: string) {
   return !getProjectById(projectId) && !existsSync(getProjectDir(projectId));
 }
@@ -50,7 +91,7 @@ export type ProjectAgentStreamEvent =
 export type ProjectChatUiMessage = UIMessage<{ projectId?: string }>;
 
 const generateMessageId = createIdGenerator({ prefix: 'msg', size: 16 });
-const MAX_TOOL_LOOP_STEPS = 20;
+const MAX_TOOL_LOOP_STEPS = 200;
 
 const TOOL_CAPABILITY_GROUPS = [
   {
@@ -191,7 +232,7 @@ export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimo
     '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
     '必须尽量完整实现用户要的 PPT 内容，不能只给最小骨架或占位内容。',
     '在你认为已经完成时，必须先调用 run-project 检查脚本是否能运行；如果失败，要继续修复直到成功或明确说明阻塞原因。',
-    '生成完 PPT 以后，如果存在文字重叠警告，需要调整字号、行距或排版后再重新生成，直到版式干净可读。',
+    '生成完 PPT 以后，如果出现文字重叠等排版提醒，优先修复明显影响阅读的问题；工具结果里这类提醒会按页节选展示，完整提醒请结合控制台日志判断。',
     '如果你要在代码、文案或文本内容里表达换行，必须直接写真正的换行，不要把换行写成两个字符的“\\n”。',
     '如果用户问你“你能做什么”或“怎么用”，请按下面的能力清单，用自然中文做简短介绍，不要展开成长文：',
     buildToolCapabilitySummary(enabledToolNames),
@@ -367,7 +408,7 @@ function buildProjectTools(options: {
           ok: runResult.ok,
           slideCount: runResult.slideCount,
           logs: includeLogs ? runResult.logs : undefined,
-          warnings: runResult.warnings,
+          warnings: limitRunProjectWarningsForTool(runResult.warnings),
           error: runResult.error,
         };
       },

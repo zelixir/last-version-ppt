@@ -1,4 +1,5 @@
 import { rgbaToPng } from '@matbee/libreoffice-converter';
+import type { ProjectPreviewImageInfo } from './project-preview-cache.ts';
 import { buildProjectPreviewImageResponse, replaceProjectPreviewImages } from './project-preview-cache.ts';
 import { getSharedConverter } from './shared-libreoffice-converter.ts';
 
@@ -28,7 +29,7 @@ export interface PreviewProgressUpdate {
 
 function buildPreviewGenerationResult(
   projectId: string,
-  images: Array<{ pageNumber: number; fileName: string; updatedAt: string }>,
+  images: ProjectPreviewImageInfo[],
 ): ProjectPreviewGenerationResult {
   return {
     slideCount: images.length,

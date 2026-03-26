@@ -73,6 +73,7 @@ export async function runProject({ projectId }: RunProjectOptions): Promise<RunP
 
     const output = await buildPresentation(context);
     const finalPptx = output instanceof PptxGenJS ? output : pptx;
+    if (warnings.length) console.warn(`[PPT 脚本提醒] 项目 ${projectId}:\n${warnings.join('\n')}`);
     return { ok: true, logs, warnings, slideCount: (finalPptx as any)._slides?.length ?? 0, pptx: finalPptx };
   } catch (error) {
     const detail = error instanceof Error ? error.stack || error.message : String(error);

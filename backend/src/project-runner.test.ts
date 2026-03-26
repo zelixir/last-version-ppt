@@ -98,3 +98,34 @@ test('runProject 的 assert 会收集 warning 而不是中断脚本', async () =
     assert.match(result.logs.join('\n'), /脚本仍然继续执行/);
   });
 });
+
+test('runProject 成功时也会把完整 warning 打到控制台', async () => {
+  await withTestProject(async projectId => {
+    writeFileSync(
+      resolveProjectFile(projectId, 'index.js'),
+      `module.exports = async function buildPresentation({ pptx, assert }) {
+  pptx.addSlide();
+  assert(false, '第一页：标题和副标题发生重叠');
+  assert(false, '第一页：正文和图片发生重叠');
+};`,
+      'utf8',
+    );
+
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (message?: unknown, ...rest: unknown[]) => {
+      warnings.push([message, ...rest].map(item => String(item)).join(' '));
+    };
+    try {
+      const result = await runProject({ projectId });
+      assert.equal(result.ok, true, result.error);
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0] ?? '', /\[PPT 脚本提醒\] 项目/);
+    assert.match(warnings[0] ?? '', /第一页：标题和副标题发生重叠/);
+    assert.match(warnings[0] ?? '', /第一页：正文和图片发生重叠/);
+  });
+});
