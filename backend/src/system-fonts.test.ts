@@ -109,7 +109,7 @@ test('extractFontLabelFromBuffer prefers Windows Unicode names over garbled Maci
   assert.equal(extractFontLabelFromBuffer(buffer, 0), '微软雅黑 Regular');
 });
 
-test('sanitizeFontLabel rejects spaced-out乱码名称', () => {
+test('sanitizeFontLabel rejects spaced-out garbled names', () => {
   assert.equal(looksLikeGarbledFontLabel(', < 6 T . b 6 * L J F T 8 R X $ - " R 0 T * * L J F T 8 N o r m a l'), true);
   assert.equal(sanitizeFontLabel(', < 6 T . b 6 * L J F T 8 R X $ - " R 0 T * * L J F T 8 N o r m a l'), null);
 });

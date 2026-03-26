@@ -43,6 +43,9 @@ function decodeUtf16Be(slice: Buffer): string {
   return littleEndian.toString('utf16le');
 }
 
+// Some broken name records decode into dozens of single ASCII characters split by spaces,
+// for example `, < 6 T . b ... N o r m a l`. Those strings are not useful display names,
+// so we reject only long, token-heavy cases to preserve legitimate short Latin names.
 function looksLikeGarbledFontLabel(value: string): boolean {
   const tokens = value.split(/\s+/).filter(Boolean);
   if (value.length < 24 || tokens.length < 12) return false;
@@ -132,22 +135,30 @@ function readNameTable(buffer: Buffer, fontOffset: number): { records: (FontName
   return { records, stringBase };
 }
 
-function getNameRecordRank(record: FontNameRecord & { text: string }, languages: number[]): [number, number, number] {
+function calculateNameRecordPriority(record: FontNameRecord & { text: string }, languages: number[]): {
+  languagePriority: number;
+  platformPriority: number;
+  lengthPriority: number;
+} {
   const languageRank = languages.indexOf(record.languageId);
-  const platformRank = record.platformId === 3 ? 0 : record.platformId === 0 ? 1 : record.platformId === 1 ? 2 : 3;
-  const lengthRank = record.text.length >= 2 ? 0 : 1;
-  return [languageRank === -1 ? languages.length : languageRank, platformRank, lengthRank];
+  return {
+    languagePriority: languageRank === -1 ? languages.length : languageRank,
+    platformPriority: record.platformId === 3 ? 0 : record.platformId === 0 ? 1 : record.platformId === 1 ? 2 : 3,
+    lengthPriority: record.text.length >= 2 ? 0 : 1,
+  };
 }
 
 function pickName(records: Array<FontNameRecord & { text: string }>, nameIds: number[], languages: number[]): string | null {
   const candidates = records.filter(record => nameIds.includes(record.nameId) && record.text);
   if (candidates.length === 0) return null;
   const ranked = [...candidates].sort((a, b) => {
-    const [aLanguageRank, aPlatformRank, aLengthRank] = getNameRecordRank(a, languages);
-    const [bLanguageRank, bPlatformRank, bLengthRank] = getNameRecordRank(b, languages);
-    return aLanguageRank - bLanguageRank
-      || aPlatformRank - bPlatformRank
-      || aLengthRank - bLengthRank;
+    const aPriority = calculateNameRecordPriority(a, languages);
+    const bPriority = calculateNameRecordPriority(b, languages);
+    // Windows name records are the most common source of reliable CJK labels in practice,
+    // then Unicode platform records, while Macintosh records are more likely to decode into garbage.
+    return aPriority.languagePriority - bPriority.languagePriority
+      || aPriority.platformPriority - bPriority.platformPriority
+      || aPriority.lengthPriority - bPriority.lengthPriority;
   });
   return ranked[0]?.text ?? null;
 }
