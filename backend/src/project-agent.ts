@@ -8,7 +8,7 @@ import { appendTextPart, mergeToolPart } from './chat-message-parts.ts';
 import { PPTXGENJS_GUIDE } from './pptxgenjs-guide.ts';
 import { exampleApiKeys, summarizeModelConfigurationError } from './project-support.ts';
 import { runProject } from './project-runner.ts';
-import { APPLY_PATCH_AGENT_INSTRUCTIONS, APPLY_PATCH_TOOL_DESCRIPTION, applyLegacySearchReplace, applyProjectPatch, recordApplyPatchFailureCase } from './apply-patch.ts';
+import { APPLY_PATCH_AGENT_INSTRUCTIONS, APPLY_PATCH_TOOL_DESCRIPTION, applyLegacySearchReplace, applyProjectPatch, collectApplyPatchSourceContent, recordApplyPatchFailureCase } from './apply-patch.ts';
 import {
   buildRenamedProjectId,
   buildUniqueProjectId,
@@ -481,9 +481,10 @@ function buildProjectTools(options: {
       execute: async ({ input, fileName, search, replace, replaceAll }) => {
         emitter.start('apply-patch', { fileName });
         const currentProjectId = options.getProjectId();
-        let originalContent: string | undefined;
+        let originalContent = '';
         try {
           if (input) {
+            originalContent = collectApplyPatchSourceContent(getProjectDir(currentProjectId), input);
             const summary = applyProjectPatch(getProjectDir(currentProjectId), input);
             const details = summary.changedFiles.length > 0
               ? `修改 ${summary.changedFiles.join(', ')}`
