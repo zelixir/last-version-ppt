@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { rmSync } from 'fs';
+import { rmSync, writeFileSync } from 'fs';
 import {
   buildProjectPreviewImageResponses,
   computeProjectScriptHash,
@@ -9,7 +9,7 @@ import {
   writeProjectPreviewMetadata,
 } from './project-preview-cache.ts';
 import { getCachedProjectPreview } from './project-preview.ts';
-import { createProjectFiles, getProjectDir } from './storage.ts';
+import { createProjectFiles, getProjectDir, resolveProjectFile } from './storage.ts';
 
 async function withTestProject(run: (projectId: string) => Promise<void> | void) {
   const projectId = `preview-cache-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -45,5 +45,17 @@ test('getCachedProjectPreview 会在脚本未改动时直接返回已缓存的�
 
     const mismatched = getCachedProjectPreview(projectId, 'different-hash');
     assert.equal(mismatched, null);
+  });
+});
+
+test('computeProjectScriptHash 会随着分页脚本变化而变化', async () => {
+  await withTestProject(async projectId => {
+    const originalHash = computeProjectScriptHash(projectId);
+    assert.ok(originalHash);
+
+    writeFileSync(resolveProjectFile(projectId, 'page01.js'), "module.exports = async function ({ slide }) { slide.addText('第一页', { x: 0.5, y: 0.5, w: 2, h: 0.6 }); };\n", 'utf8');
+    const nextHash = computeProjectScriptHash(projectId);
+    assert.ok(nextHash);
+    assert.notEqual(nextHash, originalHash);
   });
 });

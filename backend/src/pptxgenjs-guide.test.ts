@@ -5,6 +5,9 @@ import { PPTXGENJS_GUIDE } from './pptxgenjs-guide.ts';
 
 test('PPTXGENJS_GUIDE includes detailed examples and common APIs', () => {
   assert.match(PPTXGENJS_GUIDE, /module\.exports = async function buildPresentation/);
+  assert.match(PPTXGENJS_GUIDE, /page01\.js/);
+  assert.match(PPTXGENJS_GUIDE, /addPage/);
+  assert.match(PPTXGENJS_GUIDE, /store/);
   assert.match(PPTXGENJS_GUIDE, /measureText/);
   assert.match(PPTXGENJS_GUIDE, /addSlide/);
   assert.match(PPTXGENJS_GUIDE, /addText/);
@@ -19,11 +22,12 @@ test('PPTXGENJS_GUIDE matches the actual runtime shape of pptx and pptxgenjs', (
   assert.match(PPTXGENJS_GUIDE, /pptxgenjs：PptxGenJS 构造函数本身/);
   assert.match(PPTXGENJS_GUIDE, /pptx instanceof pptxgenjs/);
   assert.match(PPTXGENJS_GUIDE, /context\.assert\(condition, message\)/);
+  assert.match(PPTXGENJS_GUIDE, /context\.store/);
   assert.match(PPTXGENJS_GUIDE, /pptx\.ShapeType\.roundRect/);
   assert.match(PPTXGENJS_GUIDE, /pptx\.ChartType\.bar/);
   assert.match(PPTXGENJS_GUIDE, /LAYOUT_16x9/);
   assert.match(PPTXGENJS_GUIDE, /LAYOUT_4x3/);
-  assert.match(PPTXGENJS_GUIDE, /fontFace: 'Microsoft YaHei'/);
+  assert.match(PPTXGENJS_GUIDE, /fontFace = 'Microsoft YaHei'/);
   assert.doesNotMatch(PPTXGENJS_GUIDE, /pptxgenjs\.ShapeType/);
   assert.doesNotMatch(PPTXGENJS_GUIDE, /pptxgenjs\.ChartType/);
   assert.doesNotMatch(PPTXGENJS_GUIDE, /LAYOUT_16X9/);

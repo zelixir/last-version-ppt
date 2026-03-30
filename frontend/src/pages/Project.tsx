@@ -581,7 +581,7 @@ export default function Project() {
     }
     setEditorDirty(false)
     await fetchProject()
-    if (currentFile.name === 'index.js') await refreshPreview()
+    if (/\.js$/i.test(currentFile.name)) await refreshPreview()
   }
 
   const deleteSelectedFile = async () => {
@@ -595,6 +595,7 @@ export default function Project() {
       return
     }
     await fetchProject()
+    if (/\.js$/i.test(selectedFile.name)) await refreshPreview()
   }
 
   const uploadFiles = async (files: FileList | File[]) => {
@@ -776,7 +777,7 @@ export default function Project() {
                   </div>
                 ) : (
                   <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-2 text-sm text-gray-300"><input type="checkbox" checked={showIndexSource} onChange={e => setShowIndexSource(e.target.checked)} />显示 PPT 脚本</label>
+                    <label className="flex items-center gap-2 text-sm text-gray-300"><input type="checkbox" checked={showIndexSource} onChange={e => setShowIndexSource(e.target.checked)} />显示入口脚本</label>
                     <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><ImageUp className="h-4 w-4" />上传文件</Button>
                     <input ref={fileInputRef} className="hidden" type="file" multiple onChange={event => event.target.files && uploadFiles(event.target.files).catch(err => setPageError(err instanceof Error ? err.message : String(err)))} />
                   </div>
@@ -862,7 +863,7 @@ export default function Project() {
                         <div className="mt-1 text-[11px] text-gray-500">{FILE_KIND_LABELS[file.kind]} · {Math.max(1, Math.round(file.size / 1024))} KB</div>
                       </button>
                     ))}
-                    {visibleFiles.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-400">暂时还没有资源文件。你可以把文件直接拖到这里上传，也可以点上方按钮选择文件；如果想看脚本，也可以勾选“显示 PPT 脚本”。</div>}
+                    {visibleFiles.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-400">暂时还没有资源文件。你可以把文件直接拖到这里上传，也可以点上方按钮选择文件；如果想看入口脚本，也可以勾选“显示入口脚本”。</div>}
                   </div>
                   <div className="min-h-0 overflow-hidden rounded-2xl border border-gray-800 bg-gray-900/60">
                     {selectedFile ? (

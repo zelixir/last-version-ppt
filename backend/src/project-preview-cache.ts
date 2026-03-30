@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { createHash } from 'crypto';
 import path from 'path';
 import type { PreviewPresentation } from './project-preview.ts';
-import { resolveProjectFile } from './storage.ts';
+import { getProjectDir, resolveProjectFile } from './storage.ts';
 
 const PREVIEW_DIR_NAME = 'preview';
 const PREVIEW_FILE_PATTERN = /^slide-(\d+)\.png$/i;
@@ -25,11 +25,23 @@ export interface ProjectPreviewMetadata {
 }
 
 export function computeProjectScriptHash(projectId: string): string | null {
-  const scriptPath = resolveProjectFile(projectId, 'index.js');
-  if (!existsSync(scriptPath)) return null;
+  const projectDir = getProjectDir(projectId);
+  if (!existsSync(projectDir)) return null;
+
+  const scriptFiles = readdirSync(projectDir, { withFileTypes: true })
+    .filter(entry => entry.isFile() && entry.name.toLowerCase().endsWith('.js'))
+    .map(entry => entry.name)
+    .sort((a, b) => a.localeCompare(b));
+  if (!scriptFiles.length) return null;
+
   try {
-    const content = readFileSync(scriptPath);
-    return createHash('sha256').update(content).digest('hex');
+    const hash = createHash('sha256');
+    for (const fileName of scriptFiles) {
+      hash.update(`file:${fileName}\n`);
+      hash.update(readFileSync(resolveProjectFile(projectId, fileName)));
+      hash.update('\n');
+    }
+    return hash.digest('hex');
   } catch {
     return null;
   }

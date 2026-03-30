@@ -6,12 +6,16 @@ import { resolveProjectFile } from './storage.ts';
 export const TEXT_FILE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.csv', '.html', '.css', '.xml', '.yml', '.yaml', '.svg']);
 export const IMAGE_FILE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
 export const MAX_READ_FILE_BYTES = 20 * 1024;
-export const MAX_READ_INDEX_FILE_BYTES = 50 * 1024;
+export const MAX_READ_PRESENTATION_SCRIPT_BYTES = 50 * 1024;
 
-function getReadFileByteLimit(fileName: string): number {
+function isPresentationScriptFile(fileName: string): boolean {
   const normalized = fileName.replace(/\\/g, '/').replace(/^\/+/, '');
   const segments = normalized.split('/').filter(Boolean);
-  return segments.length === 1 && segments[0] === 'index.js' ? MAX_READ_INDEX_FILE_BYTES : MAX_READ_FILE_BYTES;
+  return segments.length === 1 && (segments[0] === 'index.js' || /^page\d+\.js$/i.test(segments[0]));
+}
+
+function getReadFileByteLimit(fileName: string): number {
+  return isPresentationScriptFile(fileName) ? MAX_READ_PRESENTATION_SCRIPT_BYTES : MAX_READ_FILE_BYTES;
 }
 
 export function isTextFile(fileName: string): boolean {

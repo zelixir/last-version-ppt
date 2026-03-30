@@ -748,7 +748,7 @@ const app = new Elysia()
   })
   .post('/api/projects/:id/files/rename', ({ params, body }) => {
     const payload = body as { oldName: string; newName: string };
-    if (payload.oldName === 'index.js') return errorResponse('index.js 不能重命名');
+    if (payload.oldName === 'index.js') return errorResponse('入口脚本 index.js 不能重命名');
     const sourcePath = resolveProjectFile(params.id, payload.oldName);
     const targetPath = resolveProjectFile(params.id, payload.newName);
     mkdirSync(path.dirname(targetPath), { recursive: true });
@@ -760,7 +760,7 @@ const app = new Elysia()
   .delete('/api/projects/:id/files', ({ params, query }) => {
     const fileName = String((query as any).fileName ?? '');
     if (!fileName) return errorResponse('缺少 fileName 参数');
-    if (fileName === 'index.js') return errorResponse('index.js 不能删除');
+    if (fileName === 'index.js') return errorResponse('入口脚本 index.js 不能删除');
     const filePath = resolveProjectFile(params.id, fileName);
     if (existsSync(filePath)) unlinkSync(filePath);
     updateProjectRecord(params.id, { touch: true });

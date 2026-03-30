@@ -398,7 +398,7 @@ function buildProjectTools(options: {
       },
     }),
     'run-project': tool({
-      description: '运行当前项目的 index.js，检查是否成功。',
+      description: '运行当前项目入口脚本 index.js（它会继续加载各页脚本），检查是否成功。',
       inputSchema: z.object({ includeLogs: z.boolean().optional() }),
       execute: async ({ includeLogs }) => {
         emitter.start('run-project', { includeLogs });
@@ -476,7 +476,7 @@ function buildProjectTools(options: {
       inputSchema: z.object({ oldName: z.string(), newName: z.string() }),
       execute: async ({ oldName, newName }) => {
         emitter.start('rename-file', { oldName, newName });
-        if (oldName === 'index.js') throw new Error('不能重命名 index.js');
+        if (oldName === 'index.js') throw new Error('不能重命名入口脚本 index.js');
         const currentProjectId = options.getProjectId();
         const sourcePath = resolveProjectFile(currentProjectId, oldName);
         const targetPath = resolveProjectFile(currentProjectId, newName);
@@ -486,11 +486,11 @@ function buildProjectTools(options: {
       },
     }),
     'delete-file': tool({
-      description: '删除当前项目中的文件，但不能删除 index.js。',
+      description: '删除当前项目中的文件，但不能删除入口脚本 index.js。',
       inputSchema: z.object({ fileName: z.string() }),
       execute: async ({ fileName }) => {
         emitter.start('delete-file', { fileName });
-        if (fileName === 'index.js') throw new Error('不能删除 index.js');
+        if (fileName === 'index.js') throw new Error('不能删除入口脚本 index.js');
         rmSync(resolveProjectFile(options.getProjectId(), fileName), { recursive: true, force: true });
         emitter.finish('delete-file', `删除 ${fileName}`);
         return { deleted: fileName };

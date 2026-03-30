@@ -4,7 +4,7 @@ import path from 'path';
 
 export const APP_FOLDER_NAME = 'last-version-ppt';
 const MAX_PROJECT_ID_SUFFIX = 10_000;
-export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentation({ pptx, measureText, log, assert }) {
+export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentation({ pptx, measureText, log, assert, addPage, store }) {
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'last-version-ppt';
   pptx.subject = '自动生成演示文稿';
@@ -55,7 +55,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
       y,
       maxWidth,
       bounds,
-      expectedLines = Math.max(1, String(text).split(/\\r?\\n/u).length),
+      expectedLines = Math.max(1, String(text).split(/\r?\n/u).length),
       widthSlack = 0.18,
       ...textStyle
     } = options;
@@ -69,49 +69,67 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     return { ...metrics, ...rect, bottom: y + metrics.safeHeight };
   };
 
-  const cover = pptx.addSlide();
-  cover.background = { color: '0F172A' };
-  const coverLayout = createTextLayout('封面');
-  let coverCursorY = page.coverTop;
-  const coverTitle = await addMeasuredText(cover, coverLayout, '新的演示文稿', {
+  store.page = page;
+  store.slideBounds = slideBounds;
+  store.fontFace = fontFace;
+  store.textOptions = textOptions;
+  store.round = round;
+  store.createTextLayout = createTextLayout;
+  store.addMeasuredText = addMeasuredText;
+
+  await addPage('page01.js');
+  await addPage('page02.js');
+  await addPage('page03.js');
+
+  log('模板已创建，默认包含封面、目录和正文 3 页结构');
+};
+`;
+
+export const DEFAULT_PAGE_FILES: Record<string, string> = {
+  'page01.js': `module.exports = async function buildPage({ slide, store }) {
+  slide.background = { color: '0F172A' };
+  const coverLayout = store.createTextLayout('封面');
+  let coverCursorY = store.page.coverTop;
+  const coverTitle = await store.addMeasuredText(slide, coverLayout, '新的演示文稿', {
     name: '封面标题',
-    x: page.left,
+    x: store.page.left,
     y: coverCursorY,
-    maxWidth: page.width,
+    maxWidth: store.page.width,
     fontSize: 88,
     bold: true,
     color: 'FFFFFF',
     widthSlack: 0.28,
   });
   coverCursorY = coverTitle.bottom + 0.44;
-  const coverSubtitle = await addMeasuredText(cover, coverLayout, '先说清主题。', {
+  const coverSubtitle = await store.addMeasuredText(slide, coverLayout, '先说清主题。', {
     name: '封面副标题',
-    x: page.left,
+    x: store.page.left,
     y: coverCursorY,
-    maxWidth: page.width,
+    maxWidth: store.page.width,
     fontSize: 56,
     color: 'CBD5E1',
     widthSlack: 0.24,
   });
   coverCursorY = coverSubtitle.bottom + 0.28;
-  await addMeasuredText(cover, coverLayout, '有资料就上传。', {
+  await store.addMeasuredText(slide, coverLayout, '有资料就上传。', {
     name: '封面说明',
-    x: page.left,
+    x: store.page.left,
     y: coverCursorY,
-    maxWidth: page.width,
+    maxWidth: store.page.width,
     fontSize: 48,
     color: 'E2E8F0',
     widthSlack: 0.24,
   });
-
-  const agenda = pptx.addSlide();
-  agenda.background = { color: 'F8FAFC' };
-  const agendaLayout = createTextLayout('目录');
-  const agendaTitle = await addMeasuredText(agenda, agendaLayout, '演示稿结构', {
+};
+`,
+  'page02.js': `module.exports = async function buildPage({ slide, store, measureText }) {
+  slide.background = { color: 'F8FAFC' };
+  const agendaLayout = store.createTextLayout('目录');
+  const agendaTitle = await store.addMeasuredText(slide, agendaLayout, '演示稿结构', {
     name: '目录标题',
-    x: page.left,
-    y: page.titleTop,
-    maxWidth: page.width,
+    x: store.page.left,
+    y: store.page.titleTop,
+    maxWidth: store.page.width,
     fontSize: 72,
     bold: true,
     color: '0F172A',
@@ -124,9 +142,9 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     { no: '03', title: '正文', desc: '展开重点动作。' },
   ]) {
     const rowTop = agendaCursorY;
-    const noMetrics = await addMeasuredText(agenda, agendaLayout, item.no, {
+    const noMetrics = await store.addMeasuredText(slide, agendaLayout, item.no, {
       name: '目录编号 ' + item.no,
-      x: page.left,
+      x: store.page.left,
       y: rowTop,
       maxWidth: 1.2,
       fontSize: 56,
@@ -134,9 +152,9 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
       color: '2563EB',
       widthSlack: 0.1,
     });
-    const titlePreview = await measureText(item.title, { fontSize: 48, fontFace });
-    const titleY = rowTop + Math.max(0, round((noMetrics.safeHeight - titlePreview.safeHeight) / 2));
-    const titleMetrics = await addMeasuredText(agenda, agendaLayout, item.title, {
+    const titlePreview = await measureText(item.title, { fontSize: 48, fontFace: store.fontFace });
+    const titleY = rowTop + Math.max(0, store.round((noMetrics.safeHeight - titlePreview.safeHeight) / 2));
+    const titleMetrics = await store.addMeasuredText(slide, agendaLayout, item.title, {
       name: '目录标题 ' + item.no,
       x: 2.08,
       y: titleY,
@@ -146,9 +164,9 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
       color: '0F172A',
       widthSlack: 0.16,
     });
-    const descPreview = await measureText(item.desc, { fontSize: 48, fontFace });
-    const descY = rowTop + Math.max(0, round((noMetrics.safeHeight - descPreview.safeHeight) / 2));
-    const descMetrics = await addMeasuredText(agenda, agendaLayout, item.desc, {
+    const descPreview = await measureText(item.desc, { fontSize: 48, fontFace: store.fontFace });
+    const descY = rowTop + Math.max(0, store.round((noMetrics.safeHeight - descPreview.safeHeight) / 2));
+    const descMetrics = await store.addMeasuredText(slide, agendaLayout, item.desc, {
       name: '目录说明 ' + item.no,
       x: 5.02,
       y: descY,
@@ -159,22 +177,23 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     });
     agendaCursorY = Math.max(noMetrics.bottom, titleMetrics.bottom, descMetrics.bottom) + 0.3;
   }
-
-  const body = pptx.addSlide();
-  body.background = { color: 'FFFFFF' };
-  const bodyLayout = createTextLayout('正文');
-  const bodyTitle = await addMeasuredText(body, bodyLayout, '正文这样写', {
+};
+`,
+  'page03.js': `module.exports = async function buildPage({ slide, store, pptx }) {
+  slide.background = { color: 'FFFFFF' };
+  const bodyLayout = store.createTextLayout('正文');
+  const bodyTitle = await store.addMeasuredText(slide, bodyLayout, '正文这样写', {
     name: '正文标题',
-    x: page.left,
-    y: page.titleTop,
-    maxWidth: page.width,
+    x: store.page.left,
+    y: store.page.titleTop,
+    maxWidth: store.page.width,
     fontSize: 72,
     bold: true,
     color: '0F172A',
     widthSlack: 0.28,
   });
   const leftCard = {
-    x: page.left,
+    x: store.page.left,
     y: bodyTitle.bottom + 0.32,
     w: 5.4,
     h: 4.4,
@@ -185,7 +204,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     w: 6.1,
     h: 4.4,
   };
-  body.addShape(pptx.ShapeType.roundRect, {
+  slide.addShape(pptx.ShapeType.roundRect, {
     x: leftCard.x,
     y: leftCard.y,
     w: leftCard.w,
@@ -200,7 +219,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     w: leftCard.w - 0.16,
     h: leftCard.h - 0.3,
   };
-  const leftTitle = await addMeasuredText(body, bodyLayout, '核心信息', {
+  const leftTitle = await store.addMeasuredText(slide, bodyLayout, '核心信息', {
     name: '左侧标题',
     x: leftCard.x,
     y: leftCard.y + 0.22,
@@ -211,7 +230,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '0F172A',
     widthSlack: 0.18,
   });
-  await addMeasuredText(body, bodyLayout, '• 先写结论\\n• 再补原因\\n• 最后写动作', {
+  await store.addMeasuredText(slide, bodyLayout, '• 先写结论\n• 再补原因\n• 最后写动作', {
     name: '左侧要点',
     x: leftCard.x,
     y: leftTitle.bottom + 0.28,
@@ -222,7 +241,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '334155',
     widthSlack: 0.22,
   });
-  const bodyKeyNumber = await addMeasuredText(body, bodyLayout, '关键数字', {
+  const bodyKeyNumber = await store.addMeasuredText(slide, bodyLayout, '关键数字', {
     name: '右侧标题',
     x: rightPanel.x,
     y: rightPanel.y,
@@ -233,7 +252,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '1D4ED8',
     widthSlack: 0.18,
   });
-  const keyResult = await addMeasuredText(body, bodyLayout, '先放关键结果。', {
+  const keyResult = await store.addMeasuredText(slide, bodyLayout, '先放关键结果。', {
     name: '右侧结果',
     x: rightPanel.x,
     y: bodyKeyNumber.bottom + 0.12,
@@ -243,7 +262,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '1E3A8A',
     widthSlack: 0.2,
   });
-  const nextAction = await addMeasuredText(body, bodyLayout, '下一步动作', {
+  const nextAction = await store.addMeasuredText(slide, bodyLayout, '下一步动作', {
     name: '右侧动作标题',
     x: rightPanel.x,
     y: keyResult.bottom + 0.52,
@@ -254,7 +273,7 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '0F172A',
     widthSlack: 0.18,
   });
-  await addMeasuredText(body, bodyLayout, '写清时间安排。', {
+  await store.addMeasuredText(slide, bodyLayout, '写清时间安排。', {
     name: '右侧动作说明',
     x: rightPanel.x,
     y: nextAction.bottom + 0.12,
@@ -264,10 +283,9 @@ export const DEFAULT_INDEX_JS = `module.exports = async function buildPresentati
     color: '475569',
     widthSlack: 0.2,
   });
-
-  log('模板已创建，默认包含封面、目录和正文 3 页结构');
 };
-`;
+`,
+};
 
 function resolveStorageRoot(): string {
   if (process.env.APPDATA) return path.join(process.env.APPDATA, APP_FOLDER_NAME);
@@ -351,6 +369,12 @@ export function createProjectFiles(projectId: string): string {
   const indexPath = path.join(projectDir, 'index.js');
   if (!existsSync(indexPath)) {
     writeFileSync(indexPath, DEFAULT_INDEX_JS, 'utf8');
+  }
+  for (const [fileName, content] of Object.entries(DEFAULT_PAGE_FILES)) {
+    const filePath = path.join(projectDir, fileName);
+    if (!existsSync(filePath)) {
+      writeFileSync(filePath, content, 'utf8');
+    }
   }
   return projectDir;
 }
