@@ -27,7 +27,7 @@ const TOOL_LABELS: Record<string, string> = {
   'create-version': '保存版本',
   'rename-project': '项目改名',
   'get-current-project': '查看项目',
-  'run-project': '检查预览',
+  'run-project': '生成ppt',
   'list-file': '查看文件',
   'read-file': '读取文件',
   'read-range': '分段读取',
@@ -55,6 +55,14 @@ const PREVIEW_WHEEL_THROTTLE_MS = 160
 
 function buildMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function isScriptFile(fileName: string) {
+  return /\.js$/i.test(fileName)
+}
+
+function getVisibleProjectFiles(files: ProjectFile[], showScriptFiles: boolean) {
+  return showScriptFiles ? files : files.filter(file => !isScriptFile(file.name))
 }
 
 function getProjectTabStorageKey(projectKey: string) {
@@ -251,7 +259,7 @@ export default function Project() {
 
   const visibleFiles = useMemo(() => {
     if (!project) return []
-    return project.files.filter(file => showIndexSource || file.name !== 'index.js')
+    return getVisibleProjectFiles(project.files, showIndexSource)
   }, [project, showIndexSource])
 
   const selectedFile = useMemo(() => visibleFiles.find(file => file.name === selectedFileName) ?? null, [visibleFiles, selectedFileName])
@@ -305,7 +313,12 @@ export default function Project() {
     if (!response.ok) throw new Error('加载项目失败')
     const data = await response.json() as ProjectSummary
     setProject(data)
-    setSelectedFileName(current => current && data.files.some(file => file.name === current) ? current : data.files.find(file => file.name !== 'index.js')?.name ?? data.files[0]?.name ?? null)
+    setSelectedFileName(current => {
+      const nextVisibleFiles = getVisibleProjectFiles(data.files, showIndexSource)
+      return current && nextVisibleFiles.some(file => file.name === current)
+        ? current
+        : nextVisibleFiles[0]?.name ?? null
+    })
     await fetch(`/api/projects/${encodeURIComponent(projectKey)}/current`, { method: 'POST' })
     return data
   }
@@ -493,6 +506,15 @@ export default function Project() {
   useEffect(() => {
     if (selectedFile?.kind === 'text') loadTextFile(selectedFile)
   }, [selectedFile])
+
+  useEffect(() => {
+    setSelectedFileName(current => {
+      if (!visibleFiles.length) return null
+      return current && visibleFiles.some(file => file.name === current)
+        ? current
+        : visibleFiles[0]?.name ?? null
+    })
+  }, [visibleFiles])
 
   useEffect(() => () => {
     stopPreviewProgressWatch()
@@ -777,7 +799,7 @@ export default function Project() {
                   </div>
                 ) : (
                   <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-2 text-sm text-gray-300"><input type="checkbox" checked={showIndexSource} onChange={e => setShowIndexSource(e.target.checked)} />显示入口脚本</label>
+                    <label className="flex items-center gap-2 text-sm text-gray-300"><input type="checkbox" checked={showIndexSource} onChange={e => setShowIndexSource(e.target.checked)} />显示脚本文件</label>
                     <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><ImageUp className="h-4 w-4" />上传文件</Button>
                     <input ref={fileInputRef} className="hidden" type="file" multiple onChange={event => event.target.files && uploadFiles(event.target.files).catch(err => setPageError(err instanceof Error ? err.message : String(err)))} />
                   </div>
@@ -863,7 +885,7 @@ export default function Project() {
                         <div className="mt-1 text-[11px] text-gray-500">{FILE_KIND_LABELS[file.kind]} · {Math.max(1, Math.round(file.size / 1024))} KB</div>
                       </button>
                     ))}
-                    {visibleFiles.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-400">暂时还没有资源文件。你可以把文件直接拖到这里上传，也可以点上方按钮选择文件；如果想看入口脚本，也可以勾选“显示入口脚本”。</div>}
+                    {visibleFiles.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-400">暂时还没有可显示的资源文件。你可以把文件直接拖到这里上传，也可以点上方按钮选择文件；如果想看脚本文件，也可以勾选“显示脚本文件”。</div>}
                   </div>
                   <div className="min-h-0 overflow-hidden rounded-2xl border border-gray-800 bg-gray-900/60">
                     {selectedFile ? (

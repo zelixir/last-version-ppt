@@ -1,5 +1,11 @@
-module.exports = async function buildPage({ slide, store, measureText }) {
-  slide.background = { color: 'F8FAFC' };
+module.exports = async function buildPage({ slide, store, measureText, getResourcePath }) {
+  slide.addImage({
+    path: getResourcePath('agenda-background.svg'),
+    x: 0,
+    y: 0,
+    w: store.slideBounds.w,
+    h: store.slideBounds.h,
+  });
   const agendaLayout = store.createTextLayout('目录');
   const agendaTitle = await store.addMeasuredText(slide, agendaLayout, '演示稿结构', {
     name: '目录标题',
@@ -16,6 +22,7 @@ module.exports = async function buildPage({ slide, store, measureText }) {
     { no: '01', title: '封面', desc: '讲清主题重点。' },
     { no: '02', title: '目录', desc: '列出章节顺序。' },
     { no: '03', title: '正文', desc: '展开重点动作。' },
+    { no: '04', title: '致谢', desc: '收好结尾语气。' },
   ]) {
     const rowTop = agendaCursorY;
     const noMetrics = await store.addMeasuredText(slide, agendaLayout, item.no, {

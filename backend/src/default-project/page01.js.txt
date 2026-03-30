@@ -1,5 +1,11 @@
-module.exports = async function buildPage({ slide, store }) {
-  slide.background = { color: '0F172A' };
+module.exports = async function buildPage({ slide, store, getResourcePath }) {
+  slide.addImage({
+    path: getResourcePath('cover-background.svg'),
+    x: 0,
+    y: 0,
+    w: store.slideBounds.w,
+    h: store.slideBounds.h,
+  });
   const coverLayout = store.createTextLayout('封面');
   let coverCursorY = store.page.coverTop;
   const coverTitle = await store.addMeasuredText(slide, coverLayout, '新的演示文稿', {

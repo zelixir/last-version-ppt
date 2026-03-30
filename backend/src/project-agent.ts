@@ -190,7 +190,7 @@ function summarizeToolIntent(toolName: string, input: Record<string, unknown>): 
     case 'get-current-project':
       return '正在查看当前项目';
     case 'run-project':
-      return '正在检查这份 PPT 能否正常生成';
+      return '正在生成这份 ppt，并检查结果';
     case 'list-file':
       return '正在查看项目文件列表';
     case 'read-file':
@@ -401,12 +401,12 @@ function buildProjectTools(options: {
       },
     }),
     'run-project': tool({
-      description: '运行当前项目入口脚本 index.js（它会继续加载各页脚本），检查是否成功。',
+      description: '运行当前项目入口脚本 index.js（它会继续加载各页脚本），生成 ppt 并检查是否成功。',
       inputSchema: z.object({ includeLogs: z.boolean().optional() }),
       execute: async ({ includeLogs }) => {
         emitter.start('run-project', { includeLogs });
         const runResult = await runProject({ projectId: options.getProjectId(), includeLogs });
-        emitter.finish('run-project', runResult.ok ? `运行成功，${runResult.slideCount} 页` : '运行失败', runResult.ok);
+        emitter.finish('run-project', runResult.ok ? `生成成功，${runResult.slideCount} 页` : '生成失败', runResult.ok);
         return {
           ok: runResult.ok,
           slideCount: runResult.slideCount,

@@ -1,0 +1,23 @@
+默认模板里的 3 张背景图为仓库内原创 SVG 资源，创建项目时会一并复制到项目目录：
+
+1. cover-background.svg：用于封面
+2. agenda-background.svg：用于目录
+3. thanks-background.svg：用于致谢页
+
+这些背景图的配色与版式参考了公开可用的太空与商务风格图片，以降低版权风险并保证可长期随项目分发。参考来源如下：
+
+- NASA / Wikimedia Commons《The Earth seen from Apollo 17》
+  https://commons.wikimedia.org/wiki/File:The_Earth_seen_from_Apollo_17.jpg
+  Public Domain（美国政府作品）
+
+- NASA / ESA Hubble《Messier81 - HST》
+  https://commons.wikimedia.org/wiki/File:Messier81_-_HST_-_Potw1921a.jpg
+  Public Domain
+
+- NASA / ESA Hubble《Hubble ultra deep field》
+  https://commons.wikimedia.org/wiki/File:Hubble_ultra_deep_field.jpg
+  Public Domain
+
+说明：
+- 为了避免直接分发外部图片带来的兼容与版权管理问题，这里没有直接打包原图，而是基于公开领域图片的风格自行绘制了可编辑的 SVG 背景。
+- 这些 SVG 文件可随项目一起复制、导出和再次修改。

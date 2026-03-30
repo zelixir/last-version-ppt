@@ -5,6 +5,11 @@ import defaultIndexJs from './default-project/index.js.txt';
 import defaultPage01Js from './default-project/page01.js.txt';
 import defaultPage02Js from './default-project/page02.js.txt';
 import defaultPage03Js from './default-project/page03.js.txt';
+import defaultPage04Js from './default-project/page04.js.txt';
+import defaultAgendaBackgroundSvg from './default-project/agenda-background.svg.txt';
+import defaultCoverBackgroundSvg from './default-project/cover-background.svg.txt';
+import defaultThanksBackgroundSvg from './default-project/thanks-background.svg.txt';
+import defaultBackgroundSourcesText from './default-project/背景图片来源.txt';
 
 export const APP_FOLDER_NAME = 'last-version-ppt';
 const MAX_PROJECT_ID_SUFFIX = 10_000;
@@ -14,6 +19,14 @@ export const DEFAULT_PAGE_FILES: Record<string, string> = {
   'page01.js': defaultPage01Js,
   'page02.js': defaultPage02Js,
   'page03.js': defaultPage03Js,
+  'page04.js': defaultPage04Js,
+};
+
+export const DEFAULT_RESOURCE_FILES: Record<string, string> = {
+  'agenda-background.svg': defaultAgendaBackgroundSvg,
+  'cover-background.svg': defaultCoverBackgroundSvg,
+  'thanks-background.svg': defaultThanksBackgroundSvg,
+  '背景图片来源.txt': defaultBackgroundSourcesText,
 };
 
 function resolveStorageRoot(): string {
@@ -100,6 +113,12 @@ export function createProjectFiles(projectId: string): string {
     writeFileSync(indexPath, DEFAULT_INDEX_JS, 'utf8');
   }
   for (const [fileName, content] of Object.entries(DEFAULT_PAGE_FILES)) {
+    const filePath = path.join(projectDir, fileName);
+    if (!existsSync(filePath)) {
+      writeFileSync(filePath, content, 'utf8');
+    }
+  }
+  for (const [fileName, content] of Object.entries(DEFAULT_RESOURCE_FILES)) {
     const filePath = path.join(projectDir, fileName);
     if (!existsSync(filePath)) {
       writeFileSync(filePath, content, 'utf8');

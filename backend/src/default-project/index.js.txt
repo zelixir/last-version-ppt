@@ -74,6 +74,7 @@ module.exports = async function buildPresentation({ pptx, measureText, log, asse
   await addPage('page01.js');
   await addPage('page02.js');
   await addPage('page03.js');
+  await addPage('page04.js');
 
-  log('模板已创建，默认包含封面、目录和正文 3 页结构');
+  log('模板已创建，默认包含封面、目录、正文和致谢 4 页结构');
 };

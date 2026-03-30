@@ -89,13 +89,17 @@ const MIME_TYPES: Record<string, string> = {
   '.wav': 'audio/wav',
 };
 
-const TEXT_FILE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.csv', '.html', '.css', '.xml', '.yml', '.yaml', '.svg']);
+const TEXT_FILE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.csv', '.html', '.css', '.xml', '.yml', '.yaml']);
 const IMAGE_FILE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
 const MEDIA_FILE_EXTENSIONS = new Set(['.mp4', '.mp3', '.wav']);
 const CROSS_ORIGIN_ISOLATION_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'credentialless',
 } as const;
+
+if (TEXT_FILE_EXTENSIONS.has('.svg')) {
+  throw new Error('.svg 文件应按图片处理，不能同时放进文本扩展名列表');
+}
 
 function getBackendDir(): string {
   try {
@@ -141,8 +145,8 @@ function isTextFile(fileName: string): boolean {
 
 function getFileKind(fileName: string): 'text' | 'image' | 'media' | 'binary' {
   const ext = path.extname(fileName).toLowerCase();
-  if (TEXT_FILE_EXTENSIONS.has(ext)) return 'text';
   if (IMAGE_FILE_EXTENSIONS.has(ext)) return 'image';
+  if (TEXT_FILE_EXTENSIONS.has(ext)) return 'text';
   if (MEDIA_FILE_EXTENSIONS.has(ext)) return 'media';
   return 'binary';
 }

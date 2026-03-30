@@ -3,10 +3,14 @@ import readline from 'node:readline';
 import path from 'path';
 import { resolveProjectFile } from './storage.ts';
 
-export const TEXT_FILE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.csv', '.html', '.css', '.xml', '.yml', '.yaml', '.svg']);
+export const TEXT_FILE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.csv', '.html', '.css', '.xml', '.yml', '.yaml']);
 export const IMAGE_FILE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
 export const MAX_READ_FILE_BYTES = 20 * 1024;
 export const MAX_READ_PRESENTATION_SCRIPT_BYTES = 50 * 1024;
+
+if (TEXT_FILE_EXTENSIONS.has('.svg')) {
+  throw new Error('.svg 文件应按图片处理，不能同时放进文本扩展名列表');
+}
 
 function isPresentationScriptFile(fileName: string): boolean {
   const normalized = fileName.replace(/\\/g, '/').replace(/^\/+/, '');
