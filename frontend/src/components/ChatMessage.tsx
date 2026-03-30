@@ -30,7 +30,7 @@ const TOOL_INPUT_LABELS: Record<string, (input: Record<string, unknown>) => stri
   'list-file': () => '正在查看项目文件列表',
   'read-file': input => `正在读取 ${(input.fileName as string) || ''}`.trim(),
   'read-range': input => `正在分段读取 ${(input.fileName as string) || ''}`.trim(),
-  'create-file': input => `准备写入 ${(input.fileName as string) || ''}`.trim(),
+  'write-file': input => `准备写入 ${(input.fileName as string) || ''}`.trim(),
   'rename-file': input => `准备把 ${(input.oldName as string) || ''} 改成 ${(input.newName as string) || ''}`.trim(),
   'delete-file': input => `准备删除 ${(input.fileName as string) || ''}`.trim(),
   grep: input => `正在查找 ${(input.pattern as string) || ''}`.trim(),
@@ -86,7 +86,7 @@ function summarizeToolOutput(toolName: string, output: ToolLikePart['output']) {
     case 'read-file':
     case 'read-range':
       return typeof value.fileName === 'string' ? `已读取 ${value.fileName}` : '已读取文件'
-    case 'create-file':
+    case 'write-file':
       return typeof value.fileName === 'string'
         ? `已写入 ${value.fileName}${typeof value.lineCount === 'number' ? `（${value.lineCount}行）` : ''}`
         : '已写入文件'
@@ -115,7 +115,7 @@ function countLines(text: string) {
 }
 
 function getToolProgressLineCount(toolName: string, input: Record<string, unknown>) {
-  if (toolName === 'create-file' && typeof input.content === 'string') return countLines(input.content)
+  if (toolName === 'write-file' && typeof input.content === 'string') return countLines(input.content)
   if (toolName === 'apply-patch' && typeof input.input === 'string') return countLines(input.input)
   return null
 }

@@ -113,8 +113,8 @@ export const APPLY_PATCH_TOOL_DESCRIPTION = [
 export const APPLY_PATCH_AGENT_INSTRUCTIONS = [
   'To edit files in the current project, use the `apply-patch` tool.',
   'Always send the full patch in the `input` field. Do not send JSON fragments for individual hunks.',
-  'When you are changing an existing file, prefer `apply-patch` over `create-file`.',
-  'Use `create-file` only when creating a brand-new file or when the user explicitly needs a full-file overwrite.',
+  'When you are changing an existing file, prefer `apply-patch` over `write-file`.',
+  'Use `write-file` only when creating a brand-new file or when the user explicitly needs a full-file overwrite.',
   'Prefer `apply-patch` over ad-hoc search/replace because it is safer and supports add / update / delete / move in one tool call.',
   'When you write file paths, prefer project-relative paths such as `/index.js` or `/docs/outline.md`; a leading `/` still means “inside the current project”.',
   'Example tool call payload:',

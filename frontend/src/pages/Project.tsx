@@ -31,7 +31,7 @@ const TOOL_LABELS: Record<string, string> = {
   'list-file': '查看文件',
   'read-file': '读取文件',
   'read-range': '分段读取',
-  'create-file': '写入文件',
+  'write-file': '写入文件',
   'rename-file': '文件改名',
   'delete-file': '删除文件',
   grep: '查找内容',

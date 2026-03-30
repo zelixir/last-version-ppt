@@ -8,7 +8,7 @@ test('buildToolCapabilitySummary groups enabled tools into concise capability li
   const summary = buildToolCapabilitySummary([
     'create-project',
     'read-file',
-    'apply-patch',
+    'write-file',
     'run-project',
     'read-image-file',
   ]);
@@ -24,13 +24,25 @@ test('buildProjectAgentSystemPrompt 明确要求代码换行使用真实换行�
   const projectId = `test-project-agent-prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   createProjectFiles(projectId);
   try {
-    const prompt = buildProjectAgentSystemPrompt(projectId, true, ['run-project', 'read-file']);
+    const prompt = buildProjectAgentSystemPrompt(projectId, true, ['run-project', 'read-file', 'write-file']);
     assert.match(prompt, /真正的换行/);
     assert.match(prompt, /\\n/);
-    assert.match(prompt, /优先使用 apply-patch（应用补丁）/);
+    assert.match(prompt, /write-file/);
+    assert.doesNotMatch(prompt, /apply-patch/);
     assert.match(prompt, /文字重叠/);
     assert.match(prompt, /控制台日志/);
     assert.doesNotMatch(prompt, /挤在一起/);
+  } finally {
+    rmSync(getProjectDir(projectId), { recursive: true, force: true });
+  }
+});
+
+test('buildProjectAgentSystemPrompt 即使传入 apply-patch 也会被硬编码开关隐藏', () => {
+  const projectId = `test-project-agent-prompt-no-patch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  createProjectFiles(projectId);
+  try {
+    const prompt = buildProjectAgentSystemPrompt(projectId, true, ['run-project', 'read-file', 'write-file', 'apply-patch']);
+    assert.doesNotMatch(prompt, /apply-patch/);
   } finally {
     rmSync(getProjectDir(projectId), { recursive: true, force: true });
   }

@@ -30,6 +30,9 @@ import {
   readProjectTextFileRange,
 } from './project-tool-helpers.ts';
 
+const WRITE_FILE_TOOL_NAME = 'write-file';
+const APPLY_PATCH_TOOL_ENABLED = false;
+
 function summarizeToolEvent(toolName: string, details: string, success = true): ProjectChatToolEvent {
   return { toolName, summary: details, success };
 }
@@ -101,7 +104,7 @@ const TOOL_CAPABILITY_GROUPS = [
   },
   {
     title: '文件处理',
-    tools: ['list-file', 'read-file', 'read-range', 'create-file', 'rename-file', 'delete-file', 'grep', 'apply-patch'],
+    tools: ['list-file', 'read-file', 'read-range', WRITE_FILE_TOOL_NAME, 'rename-file', 'delete-file', 'grep', ...(APPLY_PATCH_TOOL_ENABLED ? ['apply-patch'] : [])],
     summary: '查看文件、按需读取内容、批量修改、写入新内容、重命名或删除资源。',
   },
   {
@@ -194,7 +197,7 @@ function summarizeToolIntent(toolName: string, input: Record<string, unknown>): 
       return `正在读取 ${(input.fileName as string) || ''}`.trim();
     case 'read-range':
       return `正在分段读取 ${(input.fileName as string) || ''}`.trim();
-    case 'create-file':
+    case WRITE_FILE_TOOL_NAME:
       return `准备写入 ${(input.fileName as string) || ''}`.trim();
     case 'rename-file':
       return `准备把 ${(input.oldName as string) || ''} 改成 ${(input.newName as string) || ''}`.trim();
@@ -237,8 +240,8 @@ export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimo
     '如果用户问你“你能做什么”或“怎么用”，请按下面的能力清单，用自然中文做简短介绍，不要展开成长文：',
     buildToolCapabilitySummary(enabledToolNames),
     '读取文本文件时，优先使用 read-file；如果文件较大或只需要局部内容，要改用 read-range 工具按行查看。',
-    '修改已有文件时，优先使用 apply-patch（应用补丁）；只有在新建文件或确实需要整份重写时，才使用 create-file。',
-    APPLY_PATCH_AGENT_INSTRUCTIONS,
+    `需要新建文本文件或整份覆盖内容时，使用 ${WRITE_FILE_TOOL_NAME}。`,
+    ...(APPLY_PATCH_TOOL_ENABLED ? [APPLY_PATCH_AGENT_INSTRUCTIONS] : []),
     allowedFonts.length
       ? `当前允许使用的字体：${allowedFonts.join('、')}。请在 fontFace 或其他字体参数里只使用这些名称，优先选择便于中文阅读的字体。`
       : '当前没有可用字体。请提醒用户在字体管理页面选择允许的字体，生成脚本时不要随意填入字体名。',
@@ -459,15 +462,15 @@ function buildProjectTools(options: {
         return result;
       },
     }),
-    'create-file': tool({
+    [WRITE_FILE_TOOL_NAME]: tool({
       description: '仅在新建文本文件，或确实需要整份覆盖文件内容时使用。',
       inputSchema: z.object({ fileName: z.string(), content: z.string() }),
       execute: async ({ fileName, content }) => {
-        emitter.start('create-file', { fileName });
+        emitter.start(WRITE_FILE_TOOL_NAME, { fileName });
         const filePath = resolveProjectFile(options.getProjectId(), fileName);
         mkdirSync(path.dirname(filePath), { recursive: true });
         writeFileSync(filePath, content, 'utf8');
-        emitter.finish('create-file', `写入 ${fileName}`);
+        emitter.finish(WRITE_FILE_TOOL_NAME, `写入 ${fileName}`);
         return { fileName, size: Buffer.byteLength(content, 'utf8'), lineCount: countTextLines(content) };
       },
     }),
@@ -506,7 +509,8 @@ function buildProjectTools(options: {
         return matches;
       },
     }),
-    'apply-patch': tool({
+    ...(APPLY_PATCH_TOOL_ENABLED ? {
+      'apply-patch': tool({
       description: APPLY_PATCH_TOOL_DESCRIPTION,
       inputSchema: z.object({
         input: z.string().optional(),
@@ -565,7 +569,8 @@ function buildProjectTools(options: {
           throw error;
         }
       },
-    }),
+      }),
+    } : {}),
     ...(options.supportsMultimodal ? {
       'read-image-file': tool({
         description: '读取当前项目中的图片，供支持看图的模型直接查看。',
