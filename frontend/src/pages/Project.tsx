@@ -61,6 +61,20 @@ function isScriptFile(fileName: string) {
   return /\.js$/i.test(fileName)
 }
 
+function getEditorLanguage(fileName: string) {
+  const normalizedName = fileName.trim().toLowerCase()
+
+  if (/\.(js|jsx|cjs|mjs)$/.test(normalizedName)) return 'javascript'
+  if (/\.(ts|tsx)$/.test(normalizedName)) return 'typescript'
+  if (/\.json$/.test(normalizedName)) return 'json'
+  if (/\.(md|markdown)$/.test(normalizedName)) return 'markdown'
+  if (/\.(css|scss|less)$/.test(normalizedName)) return 'css'
+  if (/\.(html|htm)$/.test(normalizedName)) return 'html'
+  if (/\.xml$/.test(normalizedName)) return 'xml'
+  if (/\.(yml|yaml)$/.test(normalizedName)) return 'yaml'
+  return 'plaintext'
+}
+
 function getVisibleProjectFiles(files: ProjectFile[], showScriptFiles: boolean) {
   return showScriptFiles ? files : files.filter(file => !isScriptFile(file.name))
 }
@@ -911,7 +925,7 @@ export default function Project() {
                                     void saveCurrentTextFile(editor.getValue()).catch(err => setPageError(err instanceof Error ? err.message : String(err)))
                                   })
                                 }}
-                                language={selectedFile.name.endsWith('.json') ? 'json' : selectedFile.name.endsWith('.md') ? 'markdown' : selectedFile.name.endsWith('.css') ? 'css' : selectedFile.name.endsWith('.html') ? 'html' : 'javascript'}
+                                language={getEditorLanguage(selectedFile.name)}
                                 theme="vs-dark"
                                 options={{ minimap: { enabled: false }, fontSize: 14, wordWrap: 'on', automaticLayout: true }}
                               />

@@ -9,7 +9,6 @@ import defaultPage04Js from './default-project/page04.js.txt';
 import defaultAgendaBackgroundSvg from './default-project/agenda-background.svg.txt';
 import defaultCoverBackgroundSvg from './default-project/cover-background.svg.txt';
 import defaultThanksBackgroundSvg from './default-project/thanks-background.svg.txt';
-import defaultBackgroundSourcesText from './default-project/背景图片来源.txt';
 
 export const APP_FOLDER_NAME = 'last-version-ppt';
 const MAX_PROJECT_ID_SUFFIX = 10_000;
@@ -26,7 +25,6 @@ export const DEFAULT_RESOURCE_FILES: Record<string, string> = {
   'agenda-background.svg': defaultAgendaBackgroundSvg,
   'cover-background.svg': defaultCoverBackgroundSvg,
   'thanks-background.svg': defaultThanksBackgroundSvg,
-  '背景图片来源.txt': defaultBackgroundSourcesText,
 };
 
 function resolveStorageRoot(): string {
