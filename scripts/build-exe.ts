@@ -26,7 +26,8 @@ const frontendDistDir = pathModule.join(frontendDir, 'dist');
 const outputDir = pathModule.join(rootDir, 'dist');
 const compileTarget = process.env.BUN_COMPILE_TARGET || 'bun-windows-x64';
 const outputFileName = compileTarget.includes('windows') ? 'last-version-ppt.exe' : 'last-version-ppt';
-const embeddedCompressionThreshold = 1024 * 1024;
+const embeddedCompressionLogThreshold = 1024 * 1024;
+const alwaysCompressExtensions = new Set(['.cjs', '.css', '.html', '.js', '.json', '.mjs']);
 const libreofficeWasmDir = pathModule.join(backendDir, 'libreoffice-document-converter', 'wasm');
 const libreofficeWasmFiles = [
   'loader.cjs',
@@ -56,11 +57,6 @@ function collectFiles(dir: string, results: string[] = []) {
     }
   }
   return results;
-}
-
-function toImportSpecifier(fromDir: string, targetPath: string) {
-  const relativePath = pathModule.relative(fromDir, targetPath).replace(/\\/g, '/');
-  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
 }
 
 function formatSize(bytes: number) {
@@ -111,6 +107,10 @@ function createCompressedResourcePath(
   return pathModule.join(compressedDir, compressedFileName);
 }
 
+function shouldCompressEmbeddedResource(filePath: string, fileSize: number) {
+  return fileSize >= embeddedCompressionLogThreshold || alwaysCompressExtensions.has(pathModule.extname(filePath));
+}
+
 function buildEmbeddedResourceEntries(tempDir: string) {
   const compressedDir = pathModule.join(tempDir, 'compressed');
   mkdirSync(compressedDir, { recursive: true });
@@ -123,8 +123,7 @@ function buildEmbeddedResourceEntries(tempDir: string) {
     const stats = statSync(filePath);
     let importPath = filePath;
     let embeddedSize = stats.size;
-
-    if (stats.size >= embeddedCompressionThreshold) {
+    if (shouldCompressEmbeddedResource(filePath, stats.size)) {
       const compressedPath = createCompressedResourcePath(
         compressedDir,
         pathModule.basename(filePath),
@@ -135,7 +134,9 @@ function buildEmbeddedResourceEntries(tempDir: string) {
       writeFileSync(compressedPath, compressedBytes);
       importPath = compressedPath;
       embeddedSize = compressedBytes.length;
-      console.log(`🗜️  压缩前端资源: ${relativePath} ${formatSize(stats.size)} -> ${formatSize(embeddedSize)}`);
+      if (stats.size >= embeddedCompressionLogThreshold) {
+        console.log(`🗜️  压缩前端资源: ${relativePath} ${formatSize(stats.size)} -> ${formatSize(embeddedSize)}`);
+      }
     }
 
     entries.push({
@@ -151,8 +152,7 @@ function buildEmbeddedResourceEntries(tempDir: string) {
     const stats = statSync(filePath);
     let importPath = filePath;
     let embeddedSize = stats.size;
-
-    if (stats.size >= embeddedCompressionThreshold) {
+    if (shouldCompressEmbeddedResource(filePath, stats.size)) {
       const compressedPath = createCompressedResourcePath(
         compressedDir,
         fileName,
@@ -163,7 +163,9 @@ function buildEmbeddedResourceEntries(tempDir: string) {
       writeFileSync(compressedPath, compressedBytes);
       importPath = compressedPath;
       embeddedSize = compressedBytes.length;
-      console.log(`🗜️  压缩 LibreOffice 资源: wasm/${fileName} ${formatSize(stats.size)} -> ${formatSize(embeddedSize)}`);
+      if (stats.size >= embeddedCompressionLogThreshold) {
+        console.log(`🗜️  压缩 LibreOffice 资源: wasm/${fileName} ${formatSize(stats.size)} -> ${formatSize(embeddedSize)}`);
+      }
     }
 
     entries.push({
@@ -175,22 +177,6 @@ function buildEmbeddedResourceEntries(tempDir: string) {
   }
 
   return entries;
-}
-
-function writeCompileEntry(tempDir: string, resources: EmbeddedResourceEntry[]) {
-  const entryPath = pathModule.join(tempDir, 'compiled-entry.ts');
-  const backendEntryPath = pathModule.join(backendDir, 'src', 'index.ts');
-  const importLines = resources.map(resource =>
-    `import ${JSON.stringify(toImportSpecifier(tempDir, resource.importPath))} with { type: "file" };`
-  );
-
-  const source = `${importLines.join('\n')}
-
-await import(${JSON.stringify(toImportSpecifier(tempDir, backendEntryPath))});
-`;
-
-  writeFileSync(entryPath, source);
-  return entryPath;
 }
 
 ensureLibreOfficeSubmoduleReady();
@@ -216,8 +202,8 @@ const totalOriginalSize = embeddedResources.reduce((sum, entry) => sum + entry.o
 const totalEmbeddedSize = embeddedResources.reduce((sum, entry) => sum + entry.embeddedSize, 0);
 console.log(`✅ 准备完成：前端 ${frontendResourceCount} 个文件，LibreOffice ${libreofficeResourceCount} 个文件`);
 console.log(`   嵌入前 ${formatSize(totalOriginalSize)}，处理后 ${formatSize(totalEmbeddedSize)}`);
-
-const compileEntryPath = writeCompileEntry(tempDir, embeddedResources);
+const backendEntryPath = pathModule.join(backendDir, 'src', 'index.ts');
+const compiledInputPaths = [backendEntryPath, ...embeddedResources.map(resource => resource.importPath)];
 
 if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
 const exePath = pathModule.join(outputDir, outputFileName);
@@ -235,7 +221,7 @@ const backendBuild = spawnSync(
     `--target=${compileTarget}`,
     '--outfile',
     exePath,
-    compileEntryPath,
+    ...compiledInputPaths,
   ],
   { cwd: rootDir, stdio: 'inherit' }
 );
