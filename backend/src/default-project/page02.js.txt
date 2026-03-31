@@ -1,0 +1,63 @@
+module.exports = async function buildPage({ slide, store, measureText, getResourcePath }) {
+  slide.addImage({
+    path: getResourcePath('agenda-background.svg'),
+    x: 0,
+    y: 0,
+    w: store.slideBounds.w,
+    h: store.slideBounds.h,
+  });
+  const agendaLayout = store.createTextLayout('目录');
+  const agendaTitle = await store.addMeasuredText(slide, agendaLayout, '演示稿结构', {
+    name: '目录标题',
+    x: store.page.left,
+    y: store.page.titleTop,
+    maxWidth: store.page.width,
+    fontSize: 72,
+    bold: true,
+    color: '0F172A',
+    widthSlack: 0.32,
+  });
+  let agendaCursorY = agendaTitle.bottom + 0.28;
+  for (const item of [
+    { no: '01', title: '封面', desc: '讲清主题重点。' },
+    { no: '02', title: '目录', desc: '列出章节顺序。' },
+    { no: '03', title: '正文', desc: '展开重点动作。' },
+    { no: '04', title: '致谢', desc: '收好结尾语气。' },
+  ]) {
+    const rowTop = agendaCursorY;
+    const noMetrics = await store.addMeasuredText(slide, agendaLayout, item.no, {
+      name: '目录编号 ' + item.no,
+      x: store.page.left,
+      y: rowTop,
+      maxWidth: 1.2,
+      fontSize: 56,
+      bold: true,
+      color: '2563EB',
+      widthSlack: 0.1,
+    });
+    const titlePreview = await measureText(item.title, { fontSize: 48, fontFace: store.fontFace });
+    const titleY = rowTop + Math.max(0, store.round((noMetrics.safeHeight - titlePreview.safeHeight) / 2));
+    const titleMetrics = await store.addMeasuredText(slide, agendaLayout, item.title, {
+      name: '目录标题 ' + item.no,
+      x: 2.08,
+      y: titleY,
+      maxWidth: 2.6,
+      fontSize: 48,
+      bold: true,
+      color: '0F172A',
+      widthSlack: 0.16,
+    });
+    const descPreview = await measureText(item.desc, { fontSize: 48, fontFace: store.fontFace });
+    const descY = rowTop + Math.max(0, store.round((noMetrics.safeHeight - descPreview.safeHeight) / 2));
+    const descMetrics = await store.addMeasuredText(slide, agendaLayout, item.desc, {
+      name: '目录说明 ' + item.no,
+      x: 5.02,
+      y: descY,
+      maxWidth: 6.98,
+      fontSize: 48,
+      color: '475569',
+      widthSlack: 0.2,
+    });
+    agendaCursorY = Math.max(noMetrics.bottom, titleMetrics.bottom, descMetrics.bottom) + 0.3;
+  }
+};

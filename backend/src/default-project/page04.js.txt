@@ -1,0 +1,31 @@
+module.exports = async function buildPage({ slide, store, getResourcePath }) {
+  slide.addImage({
+    path: getResourcePath('thanks-background.svg'),
+    x: 0,
+    y: 0,
+    w: store.slideBounds.w,
+    h: store.slideBounds.h,
+  });
+
+  const thanksLayout = store.createTextLayout('致谢');
+  const thanksTitle = await store.addMeasuredText(slide, thanksLayout, '感谢聆听', {
+    name: '致谢标题',
+    x: store.page.left,
+    y: 1.3,
+    maxWidth: store.page.width,
+    fontSize: 86,
+    bold: true,
+    color: 'FFFFFF',
+    widthSlack: 0.3,
+  });
+
+  await store.addMeasuredText(slide, thanksLayout, '欢迎继续交流下一步安排。', {
+    name: '致谢说明',
+    x: store.page.left,
+    y: thanksTitle.bottom + 0.34,
+    maxWidth: store.page.width,
+    fontSize: 44,
+    color: 'D6E5FF',
+    widthSlack: 0.22,
+  });
+};

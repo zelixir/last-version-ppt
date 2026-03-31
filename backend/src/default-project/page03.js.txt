@@ -1,0 +1,105 @@
+module.exports = async function buildPage({ slide, store, pptx }) {
+  slide.background = { color: 'FFFFFF' };
+  const bodyLayout = store.createTextLayout('正文');
+  const bodyTitle = await store.addMeasuredText(slide, bodyLayout, '正文这样写', {
+    name: '正文标题',
+    x: store.page.left,
+    y: store.page.titleTop,
+    maxWidth: store.page.width,
+    fontSize: 72,
+    bold: true,
+    color: '0F172A',
+    widthSlack: 0.28,
+  });
+  const leftCard = {
+    x: store.page.left,
+    y: bodyTitle.bottom + 0.32,
+    w: 5.4,
+    h: 4.4,
+  };
+  const rightPanel = {
+    x: 6.32,
+    y: leftCard.y,
+    w: 6.1,
+    h: 4.4,
+  };
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: leftCard.x,
+    y: leftCard.y,
+    w: leftCard.w,
+    h: leftCard.h,
+    rectRadius: 0.08,
+    fill: { color: 'F8FAFC' },
+    line: { color: 'E2E8F0', pt: 1 }
+  });
+  const leftContentBounds = {
+    x: leftCard.x,
+    y: leftCard.y + 0.22,
+    w: leftCard.w - 0.16,
+    h: leftCard.h - 0.3,
+  };
+  const leftTitle = await store.addMeasuredText(slide, bodyLayout, '核心信息', {
+    name: '左侧标题',
+    x: leftCard.x,
+    y: leftCard.y + 0.22,
+    maxWidth: 3.4,
+    bounds: leftContentBounds,
+    fontSize: 56,
+    bold: true,
+    color: '0F172A',
+    widthSlack: 0.18,
+  });
+  await store.addMeasuredText(slide, bodyLayout, '• 先写结论\n• 再补原因\n• 最后写动作', {
+    name: '左侧要点',
+    x: leftCard.x,
+    y: leftTitle.bottom + 0.28,
+    maxWidth: 5.24,
+    bounds: leftContentBounds,
+    expectedLines: 3,
+    fontSize: 48,
+    color: '334155',
+    widthSlack: 0.22,
+  });
+  const bodyKeyNumber = await store.addMeasuredText(slide, bodyLayout, '关键数字', {
+    name: '右侧标题',
+    x: rightPanel.x,
+    y: rightPanel.y,
+    maxWidth: 3.6,
+    bounds: rightPanel,
+    fontSize: 56,
+    bold: true,
+    color: '1D4ED8',
+    widthSlack: 0.18,
+  });
+  const keyResult = await store.addMeasuredText(slide, bodyLayout, '先放关键结果。', {
+    name: '右侧结果',
+    x: rightPanel.x,
+    y: bodyKeyNumber.bottom + 0.12,
+    maxWidth: 5.2,
+    bounds: rightPanel,
+    fontSize: 48,
+    color: '1E3A8A',
+    widthSlack: 0.2,
+  });
+  const nextAction = await store.addMeasuredText(slide, bodyLayout, '下一步动作', {
+    name: '右侧动作标题',
+    x: rightPanel.x,
+    y: keyResult.bottom + 0.52,
+    maxWidth: 4.2,
+    bounds: rightPanel,
+    fontSize: 56,
+    bold: true,
+    color: '0F172A',
+    widthSlack: 0.18,
+  });
+  await store.addMeasuredText(slide, bodyLayout, '写清时间安排。', {
+    name: '右侧动作说明',
+    x: rightPanel.x,
+    y: nextAction.bottom + 0.12,
+    maxWidth: 5.16,
+    bounds: rightPanel,
+    fontSize: 48,
+    color: '475569',
+    widthSlack: 0.2,
+  });
+};

@@ -8,6 +8,7 @@ export interface ProjectPreviewRunResult {
 
 export interface PreviewProgressStatus {
   message: string
+  percent?: number
 }
 
 export async function runProjectPreview(
@@ -31,5 +32,19 @@ export async function runProjectPreview(
     presentation: data.presentation,
     images: Array.isArray(data.images) ? data.images : [],
     imageError: typeof data.imageError === 'string' ? data.imageError : undefined,
+  }
+}
+
+export async function fetchPreviewProgress(projectId: string): Promise<PreviewProgressStatus | null> {
+  try {
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/preview/progress`);
+    if (!response.ok) return null;
+    const data = await response.json() as { progress?: PreviewProgressStatus | null };
+    if (data && data.progress && typeof data.progress.message === 'string') {
+      return data.progress;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }

@@ -76,6 +76,52 @@ test('runProject 提供的 PPT 脚本运行环境与指南示例一致', async (
   });
 });
 
+test('runProject 支持 index.js 按页加载脚本并共享 store', async () => {
+  await withTestProject(async projectId => {
+    writeFileSync(
+      resolveProjectFile(projectId, 'index.js'),
+      `module.exports = async function buildPresentation({ pptx, addPage, addSlide, store, log }) {
+  pptx.layout = 'LAYOUT_WIDE';
+  pptx.author = 'last-version-ppt';
+  store.themeColor = '2563EB';
+  store.seen = [];
+  if (typeof addPage !== 'function') throw new Error('缺少 addPage');
+  if (typeof addSlide !== 'function') throw new Error('缺少 addSlide');
+  await addPage('page01.js');
+  await addSlide('page02.js');
+  log(JSON.stringify({ seen: store.seen, author: pptx.author }));
+};`,
+      'utf8',
+    );
+    writeFileSync(
+      resolveProjectFile(projectId, 'page01.js'),
+      `module.exports = async function buildPage({ slide, store, pptx, log }) {
+  if (!slide) throw new Error('缺少 slide');
+  slide.background = { color: 'F8FAFC' };
+  slide.addText('第一页', { x: 0.5, y: 0.5, w: 2, h: 0.6, fontSize: 24, color: store.themeColor });
+  store.seen.push('page01');
+  log(pptx.layout);
+};`,
+      'utf8',
+    );
+    writeFileSync(
+      resolveProjectFile(projectId, 'page02.js'),
+      `module.exports = async function buildPage({ slide, store }) {
+  slide.addText('第二页', { x: 0.5, y: 0.5, w: 2, h: 0.6, fontSize: 24, color: store.themeColor });
+  store.seen.push('page02');
+};`,
+      'utf8',
+    );
+
+    const result = await runProject({ projectId });
+    assert.equal(result.ok, true, result.error);
+    assert.equal(result.slideCount, 2);
+    const runtimeInfo = JSON.parse(result.logs.at(-1) ?? '{}');
+    assert.deepEqual(runtimeInfo.seen, ['page01', 'page02']);
+    assert.equal(runtimeInfo.author, 'last-version-ppt');
+  });
+});
+
 test('runProject 的 assert 会收集 warning 而不是中断脚本', async () => {
   await withTestProject(async projectId => {
     writeFileSync(
@@ -96,5 +142,36 @@ test('runProject 的 assert 会收集 warning 而不是中断脚本', async () =
     assert.equal(result.slideCount, 1);
     assert.deepEqual(result.warnings, ['第一页标题超出安全区', '编号不匹配']);
     assert.match(result.logs.join('\n'), /脚本仍然继续执行/);
+  });
+});
+
+test('runProject 成功时也会把完整 warning 打到控制台', async () => {
+  await withTestProject(async projectId => {
+    writeFileSync(
+      resolveProjectFile(projectId, 'index.js'),
+      `module.exports = async function buildPresentation({ pptx, assert }) {
+  pptx.addSlide();
+  assert(false, '第一页：标题和副标题发生重叠');
+  assert(false, '第一页：正文和图片发生重叠');
+};`,
+      'utf8',
+    );
+
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (message?: unknown, ...rest: unknown[]) => {
+      warnings.push([message, ...rest].map(item => String(item)).join(' '));
+    };
+    try {
+      const result = await runProject({ projectId });
+      assert.equal(result.ok, true, result.error);
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0] ?? '', /\[PPT 脚本提醒\] 项目/);
+    assert.match(warnings[0] ?? '', /第一页：标题和副标题发生重叠/);
+    assert.match(warnings[0] ?? '', /第一页：正文和图片发生重叠/);
   });
 });

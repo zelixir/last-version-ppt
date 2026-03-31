@@ -3,6 +3,7 @@ import Home from './pages/Home'
 import Models from './pages/Models'
 import Project from './pages/Project'
 import Help from './pages/Help'
+import Fonts from './pages/Fonts'
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/projects/:projectId" element={<Project />} />
         <Route path="/models" element={<Models />} />
+        <Route path="/fonts" element={<Fonts />} />
         <Route path="/help" element={<Help />} />
       </Routes>
     </BrowserRouter>

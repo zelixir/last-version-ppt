@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { APPLY_PATCH_AGENT_INSTRUCTIONS, APPLY_PATCH_TOOL_DESCRIPTION, applyProjectPatch, parseApplyPatch } from './apply-patch.ts';
+import { APPLY_PATCH_AGENT_INSTRUCTIONS, APPLY_PATCH_TOOL_DESCRIPTION, applyProjectPatch, collectApplyPatchSourceContent, parseApplyPatch, recordApplyPatchFailureCase } from './apply-patch.ts';
 
 function withTempProject(run: (projectRoot: string) => void): void {
   const projectRoot = mkdtempSync(path.join(os.tmpdir(), 'last-version-ppt-apply-patch-'));
@@ -142,12 +142,57 @@ test('applyProjectPatch treats leading-slash paths as project-relative paths', (
   });
 });
 
+test('collectApplyPatchSourceContent returns the original content for patch targets', () => {
+  withTempProject(projectRoot => {
+    mkdirSync(path.join(projectRoot, 'docs'), { recursive: true });
+    writeFileSync(path.join(projectRoot, 'index.js'), 'module.exports = 1;\n', 'utf8');
+    writeFileSync(path.join(projectRoot, 'docs', 'guide.txt'), '第一行\n', 'utf8');
+
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: /index.js',
+      '@@',
+      '-module.exports = 1;',
+      '+module.exports = 2;',
+      '*** Delete File: /docs/guide.txt',
+      '*** End Patch',
+    ].join('\n');
+
+    assert.equal(
+      collectApplyPatchSourceContent(projectRoot, patch),
+      '// index.js\nmodule.exports = 1;\n\n\n// docs/guide.txt\n第一行\n',
+    );
+  });
+});
+
 test('apply-patch prompt strings expose the complete patch format', () => {
   assert.match(APPLY_PATCH_TOOL_DESCRIPTION, /\*\*\* Begin Patch/);
   assert.match(APPLY_PATCH_TOOL_DESCRIPTION, /Patch := Begin \{ FileOp \} End/);
   assert.match(APPLY_PATCH_TOOL_DESCRIPTION, /\/index\.js/);
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /apply-patch/);
-  assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /prefer `apply-patch` over `create-file`/);
+  assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /prefer `apply-patch` over `write-file`/);
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /leading `\/` still means “inside the current project”/);
   assert.match(APPLY_PATCH_AGENT_INSTRUCTIONS, /input/);
+});
+
+test('recordApplyPatchFailureCase stores failure files in a dedicated folder', () => {
+  const failDir = path.resolve(process.cwd(), 'apply-patch-fail-case');
+  rmSync(failDir, { recursive: true, force: true });
+  recordApplyPatchFailureCase({
+    projectId: 'case-project',
+    input: '*** Begin Patch\n*** End Patch',
+    sourceContent: 'const source = true;\n',
+    error: new Error('boom'),
+  });
+  const cases = readdirSync(failDir, { withFileTypes: true }).filter(entry => entry.isDirectory());
+  assert.equal(cases.length, 1);
+  const caseDir = path.join(failDir, cases[0].name);
+  assert.equal(readFileSync(path.join(caseDir, 'patch.diff'), 'utf8'), '*** Begin Patch\n*** End Patch');
+  assert.equal(
+    readFileSync(path.join(caseDir, 'source.js'), 'utf8'),
+    'const source = true;\n',
+  );
+  assert.match(readFileSync(path.join(caseDir, 'error.log'), 'utf8'), /projectId: case-project/);
+  assert.match(readFileSync(path.join(caseDir, 'error.log'), 'utf8'), /errorMessage: boom/);
+  rmSync(failDir, { recursive: true, force: true });
 });

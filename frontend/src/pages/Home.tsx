@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, BrainCircuit, CopyPlus, FolderOpen, LoaderCircle, Plus, Search, Settings2, Sparkles, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BrainCircuit, CopyPlus, FolderOpen, LoaderCircle, Plus, Search, Settings2, Sparkles, Trash2, Type } from 'lucide-react'
 import type { AiModel, ConfigStatus, ProjectSummary } from '../types'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -181,14 +181,20 @@ export default function Home() {
                 </div>
               </div>
             </div>
-            <Button
-              variant={configStatus?.needsAttention ? 'destructive' : 'outline'}
-              onClick={() => navigate('/models')}
-              className={configStatus?.needsAttention ? 'animate-pulse' : ''}
-            >
-              <Settings2 className="h-4 w-4" />
-              模型配置
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant={configStatus?.needsAttention ? 'destructive' : 'outline'}
+                onClick={() => navigate('/models')}
+                className={configStatus?.needsAttention ? 'animate-pulse' : ''}
+              >
+                <Settings2 className="h-4 w-4" />
+                模型配置
+              </Button>
+              <Button variant="outline" onClick={() => navigate('/fonts')}>
+                <Type className="h-4 w-4" />
+                字体管理
+              </Button>
+            </div>
           </div>
 
           {configStatus?.needsAttention && (

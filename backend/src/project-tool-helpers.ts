@@ -3,9 +3,24 @@ import readline from 'node:readline';
 import path from 'path';
 import { resolveProjectFile } from './storage.ts';
 
-export const TEXT_FILE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.csv', '.html', '.css', '.xml', '.yml', '.yaml', '.svg']);
+export const TEXT_FILE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.csv', '.html', '.css', '.xml', '.yml', '.yaml']);
 export const IMAGE_FILE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
 export const MAX_READ_FILE_BYTES = 20 * 1024;
+export const MAX_READ_PRESENTATION_SCRIPT_BYTES = 50 * 1024;
+
+if (TEXT_FILE_EXTENSIONS.has('.svg')) {
+  throw new Error('.svg 文件应按图片处理，不能同时放进文本扩展名列表');
+}
+
+function isPresentationScriptFile(fileName: string): boolean {
+  const normalized = fileName.replace(/\\/g, '/').replace(/^\/+/, '');
+  const segments = normalized.split('/').filter(Boolean);
+  return segments.length === 1 && (segments[0] === 'index.js' || /^page\d+\.js$/i.test(segments[0]));
+}
+
+function getReadFileByteLimit(fileName: string): number {
+  return isPresentationScriptFile(fileName) ? MAX_READ_PRESENTATION_SCRIPT_BYTES : MAX_READ_FILE_BYTES;
+}
 
 export function isTextFile(fileName: string): boolean {
   return TEXT_FILE_EXTENSIONS.has(path.extname(fileName).toLowerCase());
@@ -38,8 +53,9 @@ export function readProjectTextFile(projectId: string, fileName: string): { file
   const filePath = resolveProjectFile(projectId, fileName);
   if (!existsSync(filePath) || statSync(filePath).isDirectory()) throw new Error(`文件 ${fileName} 不存在`);
   const size = statSync(filePath).size;
-  if (size > MAX_READ_FILE_BYTES) {
-    throw new Error('文件超过 20KB，请改用 read-range 工具按行读取。');
+  const maxBytes = getReadFileByteLimit(fileName);
+  if (size > maxBytes) {
+    throw new Error(`文件超过 ${Math.floor(maxBytes / 1024)}KB，请改用 read-range 工具按行读取。`);
   }
   return { fileName, content: readFileSync(filePath, 'utf8'), size };
 }

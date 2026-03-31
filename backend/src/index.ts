@@ -4,7 +4,6 @@ import { cors } from '@elysiajs/cors';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, type FSWatcher, unlinkSync, watch, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { frontendAssets } from './frontend-assets.ts';
 import exampleProviderData from '../model-provider.example.json';
 import exampleModelData from '../models.example.json';
 import {
@@ -38,6 +37,7 @@ import { createProjectChatResponse, generateProjectName, type ProjectChatUiMessa
 import { runProject } from './project-runner.ts';
 import { exampleApiKeys } from './project-support.ts';
 import { buildAttachmentDisposition } from './http-headers.ts';
+import { buildConfigStatus } from './config-status.ts';
 import {
   buildRenamedProjectId,
   buildUniqueProjectId,
@@ -55,11 +55,15 @@ import {
   storageRoot,
   stripVersionSuffix,
 } from './storage.ts';
-import { replaceProjectPreviewImages } from './project-preview-cache.ts';
+import { computeProjectScriptHash, replaceProjectPreviewImages } from './project-preview-cache.ts';
 import { generateProjectPreviewImages } from './project-preview-generator.ts';
-import { generateProjectPreview } from './project-preview.ts';
+import { generateProjectPreview, getCachedProjectPreview } from './project-preview.ts';
 import { getProjectRecordSyncDiff } from './project-record-sync.ts';
 import { listSystemFonts, getSystemFontData } from './system-fonts.ts';
+import { clearFontCache, getDefaultFontCandidates, getSelectedFontNames, listFontsWithSelection, setSelectedFontNames } from './font-preferences.ts';
+import { clearPreviewProgress, getPreviewProgress, setPreviewProgress } from './preview-progress.ts';
+import { isCompiledBuild, readCompiledEmbeddedFile } from './compiled-embedded-files.ts';
+import { invalidateSharedConverter } from './shared-libreoffice-converter.ts';
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -86,13 +90,17 @@ const MIME_TYPES: Record<string, string> = {
   '.wav': 'audio/wav',
 };
 
-const TEXT_FILE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.csv', '.html', '.css', '.xml', '.yml', '.yaml', '.svg']);
+const TEXT_FILE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.csv', '.html', '.css', '.xml', '.yml', '.yaml']);
 const IMAGE_FILE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
 const MEDIA_FILE_EXTENSIONS = new Set(['.mp4', '.mp3', '.wav']);
 const CROSS_ORIGIN_ISOLATION_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'credentialless',
 } as const;
+
+if (TEXT_FILE_EXTENSIONS.has('.svg')) {
+  throw new Error('.svg 文件应按图片处理，不能同时放进文本扩展名列表');
+}
 
 function getBackendDir(): string {
   try {
@@ -103,7 +111,7 @@ function getBackendDir(): string {
 }
 
 const backendDir = getBackendDir();
-const isExeMode = frontendAssets !== null;
+const isExeMode = isCompiledBuild();
 const backendRoot = isExeMode ? backendDir : path.join(backendDir, '..');
 
 const modelProviderPath = path.join(backendRoot, 'model-provider.json');
@@ -138,8 +146,8 @@ function isTextFile(fileName: string): boolean {
 
 function getFileKind(fileName: string): 'text' | 'image' | 'media' | 'binary' {
   const ext = path.extname(fileName).toLowerCase();
-  if (TEXT_FILE_EXTENSIONS.has(ext)) return 'text';
   if (IMAGE_FILE_EXTENSIONS.has(ext)) return 'image';
+  if (TEXT_FILE_EXTENSIONS.has(ext)) return 'text';
   if (MEDIA_FILE_EXTENSIONS.has(ext)) return 'media';
   return 'binary';
 }
@@ -156,8 +164,17 @@ function findFrontendDistDir(): string | null {
   return null;
 }
 
-const embeddedAssets = frontendAssets;
-const frontendDistDir = embeddedAssets ? null : findFrontendDistDir();
+function toFrontendAssetRelativePath(requestPath: string): string {
+  const normalizedPath = path.posix.normalize(requestPath.startsWith('/') ? requestPath : `/${requestPath}`);
+  const trimmedPath = normalizedPath.replace(/^\/+/, '');
+  return trimmedPath || 'index.html';
+}
+
+function toCompiledFrontendAssetPath(requestPath: string): string {
+  return `frontend/${toFrontendAssetRelativePath(requestPath)}`;
+}
+
+const frontendDistDir = isExeMode ? null : findFrontendDistDir();
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
@@ -165,6 +182,20 @@ function json(data: unknown, status = 200): Response {
 
 function errorResponse(message: string, status = 400): Response {
   return json({ error: message }, status);
+}
+
+function formatErrorDetail(error: unknown): string {
+  if (error instanceof Error) return error.stack || error.message || String(error);
+  return String(error);
+}
+
+function logBackendError(context: string, error: unknown): void {
+  console.error(`[后端异常] ${context}: ${formatErrorDetail(error)}`);
+}
+
+function respondWithServerError(context: string, error: unknown, status = 500): Response {
+  logBackendError(context, error);
+  return errorResponse(error instanceof Error ? error.message : String(error), status);
 }
 
 function createSseResponse(run: (push: (event: string, payload: unknown) => void) => Promise<void>): Response {
@@ -178,6 +209,7 @@ function createSseResponse(run: (push: (event: string, payload: unknown) => void
       try {
         await run(push);
       } catch (error) {
+        logBackendError('事件推送', error);
         push('error', { error: error instanceof Error ? error.message : String(error) });
       } finally {
         controller.close();
@@ -285,7 +317,7 @@ async function handleProjectChatRequest(projectId: string, payload: { id?: strin
       },
     });
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : String(error), 500);
+    return respondWithServerError(`项目 ${projectId} 对话`, error, 500);
   }
 }
 
@@ -393,18 +425,7 @@ function openBrowserUrl(url: string): void {
 }
 
 function configStatus() {
-  const providers = getProviders();
-  const enabledModels = getAiModels(true);
-  const usableProviders = providers.filter(provider => provider.api_key && !exampleApiKeys.has(provider.api_key));
-  const usableModels = enabledModels.filter(model => usableProviders.some(provider => provider.name === model.provider));
-  const hasStubProviders = providers.some(provider => exampleApiKeys.has(provider.api_key));
-  return {
-    hasStubProviders,
-    hasEnabledModels: enabledModels.length > 0,
-    hasUsableModel: usableModels.length > 0,
-    needsAttention: hasStubProviders || usableModels.length === 0,
-    firstUsableModelId: usableModels[0]?.id ?? null,
-  };
+  return buildConfigStatus(getProviders(), getAiModels(true));
 }
 
 function filterUsableModels(models: ReturnType<typeof getAiModels>) {
@@ -730,7 +751,7 @@ const app = new Elysia()
   })
   .post('/api/projects/:id/files/rename', ({ params, body }) => {
     const payload = body as { oldName: string; newName: string };
-    if (payload.oldName === 'index.js') return errorResponse('index.js 不能重命名');
+    if (payload.oldName === 'index.js') return errorResponse('入口脚本 index.js 不能重命名');
     const sourcePath = resolveProjectFile(params.id, payload.oldName);
     const targetPath = resolveProjectFile(params.id, payload.newName);
     mkdirSync(path.dirname(targetPath), { recursive: true });
@@ -742,7 +763,7 @@ const app = new Elysia()
   .delete('/api/projects/:id/files', ({ params, query }) => {
     const fileName = String((query as any).fileName ?? '');
     if (!fileName) return errorResponse('缺少 fileName 参数');
-    if (fileName === 'index.js') return errorResponse('index.js 不能删除');
+    if (fileName === 'index.js') return errorResponse('入口脚本 index.js 不能删除');
     const filePath = resolveProjectFile(params.id, fileName);
     if (existsSync(filePath)) unlinkSync(filePath);
     updateProjectRecord(params.id, { touch: true });
@@ -769,46 +790,60 @@ const app = new Elysia()
 
     const form = await request.formData();
     const pptxFile = form.get('pptx');
-    if (pptxFile instanceof File) {
-      const previewResult = await generateProjectPreviewImages(params.id, new Uint8Array(await pptxFile.arrayBuffer()));
+    try {
+      if (pptxFile instanceof File) {
+        setPreviewProgress(params.id, { message: '正在生成高保真预览图…', percent: 10 });
+        const previewResult = await generateProjectPreviewImages(params.id, new Uint8Array(await pptxFile.arrayBuffer()), {
+          onProgress: progress => setPreviewProgress(params.id, progress),
+        });
+        updateProjectRecord(params.id, { touch: true });
+        return previewResult;
+      }
+
+      const files = form.getAll('files');
+      const images: Array<{ pageNumber: number; data: Uint8Array }> = [];
+
+      for (const entry of files) {
+        if (!(entry instanceof File)) continue;
+        const match = entry.name.match(/^slide-(\d+)\.png$/i);
+        if (!match) continue;
+        images.push({
+          pageNumber: Number(match[1]),
+          data: new Uint8Array(await entry.arrayBuffer()),
+        });
+      }
+
+      const storedImages = replaceProjectPreviewImages(params.id, images);
       updateProjectRecord(params.id, { touch: true });
-      return previewResult;
+
+      return {
+        slideCount: storedImages.length,
+        images: storedImages.map(image => ({
+          pageNumber: image.pageNumber,
+          url: `/api/projects/${encodeURIComponent(params.id)}/files/raw?fileName=${encodeURIComponent(`preview/${image.fileName}`)}&t=${encodeURIComponent(image.updatedAt)}`,
+        })),
+      };
+    } finally {
+      clearPreviewProgress(params.id);
     }
-
-    const files = form.getAll('files');
-    const images: Array<{ pageNumber: number; data: Uint8Array }> = [];
-
-    for (const entry of files) {
-      if (!(entry instanceof File)) continue;
-      const match = entry.name.match(/^slide-(\d+)\.png$/i);
-      if (!match) continue;
-      images.push({
-        pageNumber: Number(match[1]),
-        data: new Uint8Array(await entry.arrayBuffer()),
-      });
-    }
-
-    const storedImages = replaceProjectPreviewImages(params.id, images);
-    updateProjectRecord(params.id, { touch: true });
-
-    return {
-      slideCount: storedImages.length,
-      images: storedImages.map(image => ({
-        pageNumber: image.pageNumber,
-        url: `/api/projects/${encodeURIComponent(params.id)}/files/raw?fileName=${encodeURIComponent(`preview/${image.fileName}`)}&t=${encodeURIComponent(image.updatedAt)}`,
-      })),
-    };
+  })
+  .get('/api/projects/:id/preview/progress', ({ params }) => {
+    return { progress: getPreviewProgress(params.id) };
   })
   .post('/api/projects/:id/preview', async ({ params }) => {
     const project = getProjectById(params.id);
     if (!project) return new Response('Not found', { status: 404 });
 
     try {
-      const previewResult = await generateProjectPreview(params.id);
+      const scriptHash = computeProjectScriptHash(params.id);
+      const cachedPreview = getCachedProjectPreview(params.id, scriptHash);
+      if (cachedPreview) return cachedPreview;
+
+      const previewResult = await generateProjectPreview(params.id, { scriptHash: scriptHash ?? undefined });
       updateProjectRecord(params.id, { touch: true });
       return previewResult;
     } catch (error) {
-      return errorResponse(error instanceof Error ? error.message : String(error), 500);
+      return respondWithServerError(`生成预览 ${params.id}`, error, 500);
     }
   })
   .post('/api/projects/:id/open-folder', ({ params }) => {
@@ -821,23 +856,42 @@ const app = new Elysia()
     const payload = body as { includeLogs?: boolean };
     const project = getProjectById(params.id);
     if (!project) return new Response('Not found', { status: 404 });
-    const result = await runProject({ projectId: params.id, includeLogs: payload?.includeLogs });
-    return result.ok
-      ? { ok: true, slideCount: result.slideCount, logs: result.logs, warnings: result.warnings }
-      : errorResponse(result.error || '项目运行失败', 500);
+    try {
+      const result = await runProject({ projectId: params.id, includeLogs: payload?.includeLogs });
+      return result.ok
+        ? { ok: true, slideCount: result.slideCount, logs: result.logs, warnings: result.warnings }
+        : errorResponse(result.error || '项目运行失败', 500);
+    } catch (error) {
+      return respondWithServerError(`运行项目 ${params.id}`, error, 500);
+    }
   })
   .get('/api/projects/:id/export', async ({ params }) => {
     const project = getProjectById(params.id);
     if (!project) return new Response('Not found', { status: 404 });
-    const result = await runProject({ projectId: params.id, includeLogs: true });
-    if (!result.ok || !result.pptx) return errorResponse(result.error || '导出失败', 500);
-    const buffer = await result.pptx.write({ outputType: 'nodebuffer' });
-    return new Response(buffer, {
-      headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'Content-Disposition': buildAttachmentDisposition(`${params.id}.pptx`),
-      },
-    });
+    try {
+      const result = await runProject({ projectId: params.id, includeLogs: true });
+      if (!result.ok || !result.pptx) return errorResponse(result.error || '导出失败', 500);
+      const buffer = await result.pptx.write({ outputType: 'nodebuffer' });
+      return new Response(buffer, {
+        headers: {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          'Content-Disposition': buildAttachmentDisposition(`${params.id}.pptx`),
+        },
+      });
+    } catch (error) {
+      return respondWithServerError(`导出项目 ${params.id}`, error, 500);
+    }
+  })
+  .get('/api/fonts', () => {
+    const fonts = listFontsWithSelection();
+    return { fonts, selected: getSelectedFontNames(), defaults: getDefaultFontCandidates() };
+  })
+  .post('/api/fonts', ({ body }) => {
+    const payload = body as { selected?: string[] };
+    const selected = setSelectedFontNames(Array.isArray(payload?.selected) ? payload.selected : []);
+    clearFontCache();
+    invalidateSharedConverter();
+    return { selected, defaults: getDefaultFontCandidates() };
   })
   .get('/api/system-fonts', () => {
     const fonts = listSystemFonts();
@@ -855,7 +909,7 @@ const app = new Elysia()
       }),
     });
   })
-  .get('/*', ({ request }) => {
+  .get('/*', async ({ request }) => {
     const url = new URL(request.url);
     const reqPath = decodeURIComponent(url.pathname);
     const segments = reqPath.split('/').filter(Boolean);
@@ -876,19 +930,25 @@ const app = new Elysia()
       }
     }
 
-    if (embeddedAssets) {
-      const asset = embeddedAssets.get(reqPath) || embeddedAssets.get('/index.html');
-      if (asset) {
-        return new Response(asset.content, {
-          headers: withCrossOriginIsolationHeaders({ 'Content-Type': asset.mimeType, 'Cache-Control': 'no-cache' }),
+    if (isExeMode) {
+      const requestedPath = toCompiledFrontendAssetPath(reqPath);
+      const requestedFile = await readCompiledEmbeddedFile(requestedPath);
+      if (requestedFile) {
+        return new Response(requestedFile, {
+          headers: withCrossOriginIsolationHeaders({ 'Content-Type': getMimeType(requestedPath), 'Cache-Control': 'no-cache' }),
+        });
+      }
+      const indexFile = await readCompiledEmbeddedFile('frontend/index.html');
+      if (indexFile) {
+        return new Response(indexFile, {
+          headers: withCrossOriginIsolationHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }),
         });
       }
       return new Response('Not Found', { status: 404 });
     }
 
     if (frontendDistDir) {
-      let filePath = reqPath.startsWith('/') ? reqPath.slice(1) : reqPath;
-      if (!filePath) filePath = 'index.html';
+      const filePath = toFrontendAssetRelativePath(reqPath);
       const fullPath = path.join(frontendDistDir, filePath);
       if (existsSync(fullPath) && statSync(fullPath).isFile()) {
         return new Response(readFileSync(fullPath), {
@@ -904,6 +964,13 @@ const app = new Elysia()
     }
 
     return new Response('Not Found', { status: 404 });
+  })
+  .onError(({ code, error, request }) => {
+    if (code !== 'NOT_FOUND') {
+      const method = request?.method || 'UNKNOWN';
+      const url = request?.url || '未知路径';
+      logBackendError(`${method} ${url} (${code})`, error);
+    }
   })
   .listen(3101);
 

@@ -1,0 +1,41 @@
+module.exports = async function buildPage({ slide, store, getResourcePath }) {
+  slide.addImage({
+    path: getResourcePath('cover-background.svg'),
+    x: 0,
+    y: 0,
+    w: store.slideBounds.w,
+    h: store.slideBounds.h,
+  });
+  const coverLayout = store.createTextLayout('封面');
+  let coverCursorY = store.page.coverTop;
+  const coverTitle = await store.addMeasuredText(slide, coverLayout, '新的演示文稿', {
+    name: '封面标题',
+    x: store.page.left,
+    y: coverCursorY,
+    maxWidth: store.page.width,
+    fontSize: 88,
+    bold: true,
+    color: 'FFFFFF',
+    widthSlack: 0.28,
+  });
+  coverCursorY = coverTitle.bottom + 0.44;
+  const coverSubtitle = await store.addMeasuredText(slide, coverLayout, '先说清主题。', {
+    name: '封面副标题',
+    x: store.page.left,
+    y: coverCursorY,
+    maxWidth: store.page.width,
+    fontSize: 56,
+    color: 'CBD5E1',
+    widthSlack: 0.24,
+  });
+  coverCursorY = coverSubtitle.bottom + 0.28;
+  await store.addMeasuredText(slide, coverLayout, '有资料就上传。', {
+    name: '封面说明',
+    x: store.page.left,
+    y: coverCursorY,
+    maxWidth: store.page.width,
+    fontSize: 48,
+    color: 'E2E8F0',
+    widthSlack: 0.24,
+  });
+};

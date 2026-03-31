@@ -54,6 +54,30 @@ function buildModelErrors(form: ModelForm): ModelFormErrors {
   return errors
 }
 
+function buildCopiedModelName(modelName: string, models: AiModel[]) {
+  const existingNames = new Set(models.map(model => model.model_name))
+  const baseName = `${modelName}-copy`
+  if (!existingNames.has(baseName)) return baseName
+
+  let index = 2
+  while (existingNames.has(`${baseName}-${index}`)) {
+    index += 1
+  }
+  return `${baseName}-${index}`
+}
+
+function buildCopiedDisplayName(displayName: string, models: AiModel[]) {
+  const existingNames = new Set(models.map(model => model.display_name || model.model_name))
+  const baseName = `${displayName}（副本）`
+  if (!existingNames.has(baseName)) return baseName
+
+  let index = 2
+  while (existingNames.has(`${displayName}（副本${index}）`)) {
+    index += 1
+  }
+  return `${displayName}（副本${index}）`
+}
+
 export default function Models() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -157,11 +181,15 @@ export default function Models() {
     fetchModels()
   }
 
+  const markCopied = (copiedKey: string) => {
+    setCopiedState(copiedKey)
+    window.setTimeout(() => setCopiedState(current => (current === copiedKey ? null : current)), 1500)
+  }
+
   const copyApiKey = async (apiKey: string, key: string) => {
     try {
       await navigator.clipboard.writeText(apiKey)
-      setCopiedState(key)
-      window.setTimeout(() => setCopiedState(current => (current === key ? null : current)), 1500)
+      markCopied(key)
     } catch (err) {
       console.error(err)
       setError('复制失败，请手动复制。')
@@ -177,6 +205,27 @@ export default function Models() {
 
   const deleteModel = async (id: number) => {
     await fetch(`/api/ai-models/${id}`, { method: 'DELETE' })
+    fetchModels()
+  }
+
+  const duplicateModel = async (model: AiModel) => {
+    const payload = {
+      model_name: buildCopiedModelName(model.model_name, models),
+      display_name: buildCopiedDisplayName(model.display_name || model.model_name, models),
+      provider: model.provider,
+      capabilities: model.capabilities,
+      enabled: model.enabled,
+    }
+    const response = await fetch('/api/ai-models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) {
+      const detail = (await response.text()).trim()
+      throw new Error(detail || `复制模型失败（状态码 ${response.status}）`)
+    }
+    markCopied(`model-${model.id}`)
     fetchModels()
   }
 
@@ -418,6 +467,9 @@ export default function Models() {
                               setModelErrors({})
                               setModelForm({ model_name: model.model_name, display_name: model.display_name || model.model_name, provider: model.provider, enabled: model.enabled })
                             }}><Pencil className="h-4 w-4" />编辑</Button>
+                            <Button size="sm" variant="ghost" onClick={() => duplicateModel(model).catch(err => setError(err instanceof Error ? err.message : String(err)))}>
+                              {copiedState === `model-${model.id}` ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}{copiedState === `model-${model.id}` ? '已复制' : '复制'}
+                            </Button>
                             <Button size="sm" variant="ghost" onClick={() => setConfirmState({ type: 'model', id: model.id, name: model.display_name || model.model_name })}><Trash2 className="h-4 w-4" />删除</Button>
                           </div>
                         </div>

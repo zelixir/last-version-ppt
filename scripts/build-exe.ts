@@ -1,11 +1,21 @@
 #!/usr/bin/env bun
 /**
- * Build script: packages last-version-ppt as a single Windows exe.
+ * Build script: packages last-version-ppt as a single Bun executable.
  */
 
-import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
-import pathModule from 'path';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'fs';
 import { spawnSync } from 'child_process';
+import { tmpdir } from 'os';
+import pathModule from 'path';
+import { gzipSync } from 'zlib';
 import { fileURLToPath } from 'url';
 
 const __dirname = pathModule.dirname(fileURLToPath(import.meta.url));
@@ -13,43 +23,163 @@ const rootDir = pathModule.join(__dirname, '..');
 const frontendDir = pathModule.join(rootDir, 'frontend');
 const backendDir = pathModule.join(rootDir, 'backend');
 const frontendDistDir = pathModule.join(frontendDir, 'dist');
-const embeddedAssetsFile = pathModule.join(backendDir, 'src', 'frontend-assets.ts');
 const outputDir = pathModule.join(rootDir, 'dist');
+const compileTarget = process.env.BUN_COMPILE_TARGET || 'bun-windows-x64';
+const outputFileName = compileTarget.includes('windows') ? 'last-version-ppt.exe' : 'last-version-ppt';
+const embeddedCompressionLogThreshold = 1024 * 1024;
+const alwaysCompressExtensions = new Set(['.cjs', '.css', '.html', '.js', '.json', '.mjs']);
+const libreofficeWasmDir = pathModule.join(backendDir, 'libreoffice-document-converter', 'wasm');
+const libreofficeWasmFiles = [
+  'loader.cjs',
+  'soffice.cjs',
+  'soffice.js',
+  'soffice.data',
+  'soffice.wasm',
+  'soffice.worker.cjs',
+  'soffice.worker.js',
+  'soffice-bun-worker.cjs',
+] as const;
 
-const MIME_TYPES: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'application/javascript',
-  '.mjs': 'application/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-  '.txt': 'text/plain',
-};
-
-function getMimeType(filePath: string): string {
-  const ext = pathModule.extname(filePath).toLowerCase();
-  return MIME_TYPES[ext] || 'application/octet-stream';
+interface EmbeddedResourceEntry {
+  logicalPath: string;
+  importPath: string;
+  originalSize: number;
+  embeddedSize: number;
 }
 
-function collectFiles(dir: string, base: string, results: Array<{ urlPath: string; absPath: string }> = []) {
+function collectFiles(dir: string, results: string[] = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const absPath = pathModule.join(dir, entry.name);
-    const urlPath = pathModule.posix.join(base || '/', entry.name);
     if (entry.isDirectory()) {
-      collectFiles(absPath, urlPath, results);
+      collectFiles(absPath, results);
     } else {
-      results.push({ urlPath, absPath });
+      results.push(absPath);
     }
   }
   return results;
 }
+
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function ensureLibreOfficeSubmoduleReady() {
+  if (!existsSync(pathModule.join(libreofficeWasmDir, 'loader.cjs'))) {
+    console.error('缺少 backend/libreoffice-document-converter/wasm/loader.cjs');
+    console.error('请先执行：git submodule update --init --recursive');
+    process.exit(1);
+  }
+}
+
+function assertUniqueEmbeddedFileNames(resources: EmbeddedResourceEntry[]) {
+  const fileNameToLogicalPath = new Map<string, string>();
+
+  for (const resource of resources) {
+    const embeddedFileName = pathModule.basename(resource.importPath);
+    const existingLogicalPath = fileNameToLogicalPath.get(embeddedFileName);
+    if (existingLogicalPath) {
+      console.error(`嵌入资源文件名重复：${embeddedFileName}`);
+      console.error(`  - ${existingLogicalPath}`);
+      console.error(`  - ${resource.logicalPath}`);
+      console.error('请避免不同资源在嵌入后出现同名文件，否则运行时无法正确定位。');
+      process.exit(1);
+    }
+    fileNameToLogicalPath.set(embeddedFileName, resource.logicalPath);
+  }
+}
+
+function createCompressedResourcePath(
+  compressedDir: string,
+  sourceFileName: string,
+  logicalPath: string,
+  usedCompressedFileNames: Set<string>,
+) {
+  const compressedFileName = `${sourceFileName}.gz`;
+  if (usedCompressedFileNames.has(compressedFileName)) {
+    console.error(`压缩后的嵌入资源文件名重复：${compressedFileName}`);
+    console.error(`  - ${logicalPath}`);
+    console.error('请调整资源命名，避免多个文件在压缩后写入同一个临时文件。');
+    process.exit(1);
+  }
+  usedCompressedFileNames.add(compressedFileName);
+  return pathModule.join(compressedDir, compressedFileName);
+}
+
+function shouldCompressEmbeddedResource(filePath: string, fileSize: number) {
+  return fileSize >= embeddedCompressionLogThreshold || alwaysCompressExtensions.has(pathModule.extname(filePath));
+}
+
+function buildEmbeddedResourceEntries(tempDir: string) {
+  const compressedDir = pathModule.join(tempDir, 'compressed');
+  mkdirSync(compressedDir, { recursive: true });
+
+  const entries: EmbeddedResourceEntry[] = [];
+  const usedCompressedFileNames = new Set<string>();
+
+  for (const filePath of collectFiles(frontendDistDir).sort()) {
+    const relativePath = pathModule.relative(frontendDistDir, filePath).replace(/\\/g, '/');
+    const stats = statSync(filePath);
+    let importPath = filePath;
+    let embeddedSize = stats.size;
+    if (shouldCompressEmbeddedResource(filePath, stats.size)) {
+      const compressedPath = createCompressedResourcePath(
+        compressedDir,
+        pathModule.basename(filePath),
+        `frontend/${relativePath}`,
+        usedCompressedFileNames,
+      );
+      const compressedBytes = gzipSync(readFileSync(filePath), { level: 9 });
+      writeFileSync(compressedPath, compressedBytes);
+      importPath = compressedPath;
+      embeddedSize = compressedBytes.length;
+      if (stats.size >= embeddedCompressionLogThreshold) {
+        console.log(`🗜️  压缩前端资源: ${relativePath} ${formatSize(stats.size)} -> ${formatSize(embeddedSize)}`);
+      }
+    }
+
+    entries.push({
+      logicalPath: `frontend/${relativePath}`,
+      importPath,
+      originalSize: stats.size,
+      embeddedSize,
+    });
+  }
+
+  for (const fileName of libreofficeWasmFiles) {
+    const filePath = pathModule.join(libreofficeWasmDir, fileName);
+    const stats = statSync(filePath);
+    let importPath = filePath;
+    let embeddedSize = stats.size;
+    if (shouldCompressEmbeddedResource(filePath, stats.size)) {
+      const compressedPath = createCompressedResourcePath(
+        compressedDir,
+        fileName,
+        `libreoffice/wasm/${fileName}`,
+        usedCompressedFileNames,
+      );
+      const compressedBytes = gzipSync(readFileSync(filePath), { level: 9 });
+      writeFileSync(compressedPath, compressedBytes);
+      importPath = compressedPath;
+      embeddedSize = compressedBytes.length;
+      if (stats.size >= embeddedCompressionLogThreshold) {
+        console.log(`🗜️  压缩 LibreOffice 资源: wasm/${fileName} ${formatSize(stats.size)} -> ${formatSize(embeddedSize)}`);
+      }
+    }
+
+    entries.push({
+      logicalPath: `libreoffice/wasm/${fileName}`,
+      importPath,
+      originalSize: stats.size,
+      embeddedSize,
+    });
+  }
+
+  return entries;
+}
+
+ensureLibreOfficeSubmoduleReady();
 
 console.log('📦 Building frontend...');
 const frontendBuild = spawnSync('bun', ['run', 'build'], { cwd: frontendDir, stdio: 'inherit' });
@@ -62,25 +192,23 @@ if (!existsSync(frontendDistDir)) {
 }
 console.log('✅ Frontend built');
 
-console.log('🗜️  Embedding frontend assets...');
-const files = collectFiles(frontendDistDir, '');
-const entries: string[] = [];
-
-for (const { urlPath, absPath } of files) {
-  const content = readFileSync(absPath);
-  const mimeType = getMimeType(absPath);
-  const base64 = content.toString('base64');
-  entries.push(`  [${JSON.stringify(urlPath)}, { content: Buffer.from(${JSON.stringify(base64)}, 'base64'), mimeType: ${JSON.stringify(mimeType)} }]`);
-}
-
-const assetMapCode = `// AUTO-GENERATED by scripts/build-exe.ts — do not edit manually\nexport const frontendAssets: Map<string, { content: Buffer; mimeType: string }> = new Map([\n${entries.join(',\n')}\n]);\n`;
-writeFileSync(embeddedAssetsFile, assetMapCode, 'utf-8');
-console.log(`✅ Embedded ${files.length} frontend files`);
+console.log('📦 Preparing embedded resources...');
+const tempDir = mkdtempSync(pathModule.join(tmpdir(), 'last-version-ppt-build-'));
+const embeddedResources = buildEmbeddedResourceEntries(tempDir);
+assertUniqueEmbeddedFileNames(embeddedResources);
+const frontendResourceCount = embeddedResources.filter(entry => entry.logicalPath.startsWith('frontend/')).length;
+const libreofficeResourceCount = embeddedResources.length - frontendResourceCount;
+const totalOriginalSize = embeddedResources.reduce((sum, entry) => sum + entry.originalSize, 0);
+const totalEmbeddedSize = embeddedResources.reduce((sum, entry) => sum + entry.embeddedSize, 0);
+console.log(`✅ 准备完成：前端 ${frontendResourceCount} 个文件，LibreOffice ${libreofficeResourceCount} 个文件`);
+console.log(`   嵌入前 ${formatSize(totalOriginalSize)}，处理后 ${formatSize(totalEmbeddedSize)}`);
+const backendEntryPath = pathModule.join(backendDir, 'src', 'index.ts');
+const compiledInputPaths = [backendEntryPath, ...embeddedResources.map(resource => resource.importPath)];
 
 if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
-const exePath = pathModule.join(outputDir, 'last-version-ppt.exe');
+const exePath = pathModule.join(outputDir, outputFileName);
 
-console.log('🔨 Compiling Windows exe (target: bun-windows-x64)...');
+console.log(`🔨 Compiling executable (target: ${compileTarget})...`);
 console.log(`   Output: ${exePath}`);
 const backendBuild = spawnSync(
   'bun',
@@ -88,10 +216,12 @@ const backendBuild = spawnSync(
     'build',
     '--compile',
     '--minify',
-    '--target=bun-windows-x64',
+    '--define',
+    '__LAST_VERSION_PPT_COMPILED__=true',
+    `--target=${compileTarget}`,
     '--outfile',
     exePath,
-    pathModule.join(backendDir, 'src', 'index.ts'),
+    ...compiledInputPaths,
   ],
   { cwd: rootDir, stdio: 'inherit' }
 );
@@ -99,14 +229,11 @@ if (backendBuild.status !== 0) {
   process.exit(backendBuild.status ?? 1);
 }
 
-const STUB_CONTENT = `// Stub file — overwritten by scripts/build-exe.ts when packaging the Windows exe.\n// In dev mode this exports null, causing the backend to serve files from the filesystem.\nexport const frontendAssets: Map<string, { content: Buffer; mimeType: string }> | null = null;\n`;
-writeFileSync(embeddedAssetsFile, STUB_CONTENT, 'utf-8');
-console.log('✅ Restored frontend-assets.ts stub');
 console.log('');
 console.log('🎉 Build complete!');
 console.log(`   Executable: ${exePath}`);
 console.log('');
 console.log('📋 Distribution notes:');
-console.log('   • Run last-version-ppt.exe — no additional files required');
+console.log(`   • Run ${outputFileName} — no additional files required`);
 console.log('   • On first run, providers and models are auto-seeded from built-in examples');
 console.log('   • The SQLite database is auto-created in the same directory');

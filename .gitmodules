@@ -1,0 +1,3 @@
+[submodule "backend/libreoffice-document-converter"]
+	path = backend/libreoffice-document-converter
+	url = https://github.com/prajnaparamitopadesa/libreoffice-document-converter

@@ -3,14 +3,14 @@ import { useChat } from '@ai-sdk/react'
 import Editor from '@monaco-editor/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Trash2 } from 'lucide-react'
+import { ArrowLeft, BrainCircuit, Download, Eye, FileCode2, FolderOpen, History, ImageUp, LoaderCircle, Plus, RefreshCcw, Save, Send, Square, Trash2, Type } from 'lucide-react'
 import type { AiModel, PreviewPresentation, ProjectChatMessageMetadata, ProjectConversationDetail, ProjectConversationSummary, ProjectFile, ProjectSummary } from '../types'
 import { PromptInput } from '../components/ai-elements/prompt-input'
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import ChatMessage from '../components/ChatMessage'
 import ProjectHistoryDialog from '../components/ProjectHistoryDialog'
-import { runProjectPreview } from '../lib/project-preview'
+import { fetchPreviewProgress, runProjectPreview } from '../lib/project-preview'
 import { getInitialSelectedModelId, readStoredSelectedModelId, writeStoredSelectedModelId } from '../lib/selected-model-storage'
 
 const FILE_KIND_LABELS: Record<ProjectFile['kind'], string> = {
@@ -27,11 +27,11 @@ const TOOL_LABELS: Record<string, string> = {
   'create-version': '保存版本',
   'rename-project': '项目改名',
   'get-current-project': '查看项目',
-  'run-project': '检查预览',
+  'run-project': '生成ppt',
   'list-file': '查看文件',
   'read-file': '读取文件',
   'read-range': '分段读取',
-  'create-file': '写入文件',
+  'write-file': '写入文件',
   'rename-file': '文件改名',
   'delete-file': '删除文件',
   grep: '查找内容',
@@ -55,6 +55,28 @@ const PREVIEW_WHEEL_THROTTLE_MS = 160
 
 function buildMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function isScriptFile(fileName: string) {
+  return /\.js$/i.test(fileName)
+}
+
+function getEditorLanguage(fileName: string) {
+  const normalizedName = fileName.trim().toLowerCase()
+
+  if (/\.(js|jsx|cjs|mjs)$/.test(normalizedName)) return 'javascript'
+  if (/\.(ts|tsx)$/.test(normalizedName)) return 'typescript'
+  if (/\.json$/.test(normalizedName)) return 'json'
+  if (/\.(md|markdown)$/.test(normalizedName)) return 'markdown'
+  if (/\.(css|scss|less)$/.test(normalizedName)) return 'css'
+  if (/\.(html|htm)$/.test(normalizedName)) return 'html'
+  if (/\.xml$/.test(normalizedName)) return 'xml'
+  if (/\.(yml|yaml)$/.test(normalizedName)) return 'yaml'
+  return 'plaintext'
+}
+
+function getVisibleProjectFiles(files: ProjectFile[], showScriptFiles: boolean) {
+  return showScriptFiles ? files : files.filter(file => !isScriptFile(file.name))
 }
 
 function getProjectTabStorageKey(projectKey: string) {
@@ -182,11 +204,42 @@ export default function Project() {
   const projectKeyRef = useRef(projectKey)
   const projectRef = useRef<ProjectSummary | null>(null)
   const selectedFileNameRef = useRef<string | null>(selectedFileName)
+  const showIndexSourceRef = useRef(showIndexSource)
   const editorDirtyRef = useRef(editorDirty)
   const editorValueRef = useRef(editorValue)
   const previewRefreshPromiseRef = useRef<Promise<void> | null>(null)
   const previewRefreshQueuedRef = useRef(false)
   const previewRefreshRunIdRef = useRef(0)
+  const previewProgressTimerRef = useRef<number | null>(null)
+
+  const formatPreviewProgress = (progress: { message: string; percent?: number } | null) => {
+    if (!progress) return null
+    const percentText = typeof progress.percent === 'number' && Number.isFinite(progress.percent)
+      ? `${Math.max(0, Math.min(100, Math.round(progress.percent)))}%`
+      : null
+    return percentText ? `${progress.message}（${percentText}）` : progress.message
+  }
+
+  const stopPreviewProgressWatch = () => {
+    if (previewProgressTimerRef.current !== null) {
+      window.clearInterval(previewProgressTimerRef.current)
+      previewProgressTimerRef.current = null
+    }
+  }
+
+  const pollPreviewProgress = async () => {
+    const progress = await fetchPreviewProgress(projectKeyRef.current)
+    const text = formatPreviewProgress(progress)
+    if (text) setPreviewImageStatus(text)
+  }
+
+  const startPreviewProgressWatch = () => {
+    stopPreviewProgressWatch()
+    pollPreviewProgress().catch(() => undefined)
+    previewProgressTimerRef.current = window.setInterval(() => {
+      pollPreviewProgress().catch(() => undefined)
+    }, 900)
+  }
 
   useEffect(() => {
     selectedModelIdRef.current = selectedModelId
@@ -205,6 +258,10 @@ export default function Project() {
   }, [selectedFileName])
 
   useEffect(() => {
+    showIndexSourceRef.current = showIndexSource
+  }, [showIndexSource])
+
+  useEffect(() => {
     editorDirtyRef.current = editorDirty
   }, [editorDirty])
 
@@ -221,7 +278,7 @@ export default function Project() {
 
   const visibleFiles = useMemo(() => {
     if (!project) return []
-    return project.files.filter(file => showIndexSource || file.name !== 'index.js')
+    return getVisibleProjectFiles(project.files, showIndexSource)
   }, [project, showIndexSource])
 
   const selectedFile = useMemo(() => visibleFiles.find(file => file.name === selectedFileName) ?? null, [visibleFiles, selectedFileName])
@@ -241,6 +298,7 @@ export default function Project() {
     sendMessage,
     setMessages: setChatMessages,
     status: chatStatus,
+    stop: stopChatStream,
   } = useChat<ConversationMessage>({
     id: chatSessionId,
     messages: chatSeedMessages,
@@ -269,12 +327,18 @@ export default function Project() {
   })
   const chatLoading = chatStatus === 'submitted' || chatStatus === 'streaming'
 
-  const fetchProject = async () => {
+  const fetchProject = async (preferredFileName?: string) => {
+    const nextPreferredFileName = preferredFileName ?? selectedFileNameRef.current
     const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}`)
     if (!response.ok) throw new Error('加载项目失败')
     const data = await response.json() as ProjectSummary
     setProject(data)
-    setSelectedFileName(current => current && data.files.some(file => file.name === current) ? current : data.files.find(file => file.name !== 'index.js')?.name ?? data.files[0]?.name ?? null)
+    setSelectedFileName(() => {
+      const nextVisibleFiles = getVisibleProjectFiles(data.files, showIndexSourceRef.current)
+      return nextPreferredFileName && nextVisibleFiles.some(file => file.name === nextPreferredFileName)
+        ? nextPreferredFileName
+        : nextVisibleFiles[0]?.name ?? null
+    })
     await fetch(`/api/projects/${encodeURIComponent(projectKey)}/current`, { method: 'POST' })
     return data
   }
@@ -303,8 +367,15 @@ export default function Project() {
       setPreviewImageStatus('正在请服务器准备预览…')
       setPreviewImages([])
       setPreviewImageLoading(true)
-      const rendered = await runProjectPreview(targetProjectKey, progress => setPreviewImageStatus(progress.message))
+      startPreviewProgressWatch()
+      const rendered = await runProjectPreview(targetProjectKey, progress => {
+        const text = formatPreviewProgress(progress)
+        if (text) setPreviewImageStatus(text)
+      })
       if (isStale()) return
+      if (rendered.presentation.logs?.length) {
+        console.info('生成记录：\n' + rendered.presentation.logs.join('\n'))
+      }
       setPreview(rendered.presentation)
       setSelectedSlideIndex(0)
       setPreviewImages(rendered.images)
@@ -317,6 +388,7 @@ export default function Project() {
       setPreviewImageLoading(false)
       setPreviewImageStatus(null)
     } finally {
+      stopPreviewProgressWatch()
       if (isStale()) return
       setPreviewImageLoading(false)
       setPreviewImageStatus(null)
@@ -413,11 +485,11 @@ export default function Project() {
       const changedFileName = typeof payload.fileName === 'string' && payload.fileName.trim()
         ? payload.fileName
         : null
+      const currentFileName = selectedFileNameRef.current
       if (changedFileName === 'preview' || changedFileName?.startsWith('preview/')) return
-      fetchProject().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+      fetchProject(currentFileName ?? undefined).catch(err => setPageError(err instanceof Error ? err.message : String(err)))
       refreshPreview().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
 
-      const currentFileName = selectedFileNameRef.current
       if (!currentFileName || editorDirtyRef.current) return
       if (changedFileName && changedFileName !== currentFileName) return
       const currentFile = projectRef.current?.files.find(file => file.name === currentFileName)
@@ -439,6 +511,7 @@ export default function Project() {
   }, [projectKey])
 
   useEffect(() => {
+    stopPreviewProgressWatch()
     setActiveTab(readStoredProjectTab(projectKey))
     setPromptHistory(readStoredPromptHistory(projectKey))
     setPromptHistoryIndex(null)
@@ -455,7 +528,35 @@ export default function Project() {
   }, [selectedFile])
 
   useEffect(() => {
+    setSelectedFileName(current => {
+      if (!visibleFiles.length) return null
+      return current && visibleFiles.some(file => file.name === current)
+        ? current
+        : visibleFiles[0]?.name ?? null
+    })
+  }, [visibleFiles])
+
+  useEffect(() => () => {
+    stopPreviewProgressWatch()
+  }, [])
+
+  useEffect(() => {
+    if (!projectKey || autoPromptRef.current) return
+    const pending = readPendingAutoPrompt(projectKey)
+    if (!pending?.autoPrompt) return
+    autoPromptRef.current = pending.autoPrompt
+    if (pending.suggestedModelId) {
+      setSelectedModelId(current => current ?? pending.suggestedModelId ?? null)
+    }
+  }, [projectKey, selectedModelId])
+
+  useEffect(() => {
     if (!autoPromptRef.current || !selectedModelId || chatLoading) return
+    if (project?.chatHistory?.length) {
+      clearPendingAutoPrompt(projectKey)
+      autoPromptRef.current = null
+      return
+    }
     const timeoutId = window.setTimeout(() => {
       const prompt = autoPromptRef.current
       if (!prompt) return
@@ -464,7 +565,7 @@ export default function Project() {
       sendChat(prompt, selectedModelId)
     }, 200)
     return () => window.clearTimeout(timeoutId)
-  }, [selectedModelId, projectId, projectKey, chatLoading])
+  }, [selectedModelId, projectId, projectKey, chatLoading, project?.chatHistory?.length])
 
   useEffect(() => {
     document.title = buildProjectPageTitle(project, projectId)
@@ -522,7 +623,7 @@ export default function Project() {
     }
     setEditorDirty(false)
     await fetchProject()
-    if (currentFile.name === 'index.js') await refreshPreview()
+    if (/\.js$/i.test(currentFile.name)) await refreshPreview()
   }
 
   const deleteSelectedFile = async () => {
@@ -536,6 +637,7 @@ export default function Project() {
       return
     }
     await fetchProject()
+    if (/\.js$/i.test(selectedFile.name)) await refreshPreview()
   }
 
   const uploadFiles = async (files: FileList | File[]) => {
@@ -635,6 +737,11 @@ export default function Project() {
     setChatInput(promptHistory[nextIndex] ?? '')
   }
 
+  const stopCurrentChat = () => {
+    setPageError(null)
+    void stopChatStream()
+  }
+
   const sendChat = async (content?: string, modelIdOverride?: number) => {
     const text = (content ?? chatInput).trim()
     const modelId = modelIdOverride ?? selectedModelId
@@ -688,6 +795,7 @@ export default function Project() {
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => fetch(`/api/projects/${encodeURIComponent(projectId)}/open-folder`, { method: 'POST' })}><FolderOpen className="h-4 w-4" />打开资源管理器</Button>
             <Button variant="outline" size="sm" onClick={() => navigate('/models', { state: { returnTo: location.pathname } })}><BrainCircuit className="h-4 w-4" />模型配置</Button>
+            <Button variant="outline" size="sm" onClick={() => navigate('/fonts', { state: { returnTo: location.pathname } })}><Type className="h-4 w-4" />字体管理</Button>
           </div>
         </header>
 
@@ -711,7 +819,7 @@ export default function Project() {
                   </div>
                 ) : (
                   <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-2 text-sm text-gray-300"><input type="checkbox" checked={showIndexSource} onChange={e => setShowIndexSource(e.target.checked)} />显示 PPT 脚本</label>
+                    <label className="flex items-center gap-2 text-sm text-gray-300"><input type="checkbox" checked={showIndexSource} onChange={e => setShowIndexSource(e.target.checked)} />显示脚本文件</label>
                     <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><ImageUp className="h-4 w-4" />上传文件</Button>
                     <input ref={fileInputRef} className="hidden" type="file" multiple onChange={event => event.target.files && uploadFiles(event.target.files).catch(err => setPageError(err instanceof Error ? err.message : String(err)))} />
                   </div>
@@ -767,12 +875,6 @@ export default function Project() {
                           {previewImageLoading && <div className="text-blue-300">{previewImageStatus || '正在生成高保真预览图，请稍等…'}</div>}
                           {previewImageError && <div className="text-amber-300">这次没能生成预览图，请再试一次。原因：{previewImageError}</div>}
                         </div>
-                        {preview.logs.length > 0 && (
-                          <div className="rounded-xl border border-gray-800 bg-gray-950/70 p-4">
-                            <div className="mb-2 text-sm font-medium text-white">生成记录</div>
-                            <div className="space-y-1 text-xs text-gray-400">{preview.logs.map((log, index) => <div key={index}>{log}</div>)}</div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -803,18 +905,17 @@ export default function Project() {
                         <div className="mt-1 text-[11px] text-gray-500">{FILE_KIND_LABELS[file.kind]} · {Math.max(1, Math.round(file.size / 1024))} KB</div>
                       </button>
                     ))}
-                    {visibleFiles.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-400">暂时还没有资源文件。你可以把文件直接拖到这里上传，也可以点上方按钮选择文件；如果想看脚本，也可以勾选“显示 PPT 脚本”。</div>}
+                    {visibleFiles.length === 0 && <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-400">暂时还没有可显示的资源文件。你可以把文件直接拖到这里上传，也可以点上方按钮选择文件；如果想看脚本文件，也可以勾选“显示脚本文件”。</div>}
                   </div>
                   <div className="min-h-0 overflow-hidden rounded-2xl border border-gray-800 bg-gray-900/60">
                     {selectedFile ? (
-                      <div className="flex h-full min-h-0 flex-col">
-                        <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
-                          <div>
-                            <div className="text-sm font-medium text-white">{selectedFile.name}</div>
-                            <div className="text-xs text-gray-500">按删除键可删除当前文件（PPT 脚本除外）</div>
-                          </div>
-                          <div className="flex gap-2">
-                            {selectedFile.kind === 'text' && <Button size="sm" variant="outline" onClick={() => saveCurrentTextFile().catch(err => setPageError(err instanceof Error ? err.message : String(err)))} disabled={!editorDirty}><Save className="h-4 w-4" />保存</Button>}
+                        <div className="flex h-full min-h-0 flex-col">
+                          <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+                            <div>
+                              <div className="text-sm font-medium text-white">{selectedFile.name}</div>
+                            </div>
+                            <div className="flex gap-2">
+                              {selectedFile.kind === 'text' && <Button size="sm" variant="outline" onClick={() => saveCurrentTextFile().catch(err => setPageError(err instanceof Error ? err.message : String(err)))} disabled={!editorDirty}><Save className="h-4 w-4" />保存</Button>}
                             {selectedFile.name !== 'index.js' && <Button size="sm" variant="destructive" onClick={deleteSelectedFile}><Trash2 className="h-4 w-4" />删除</Button>}
                           </div>
                         </div>
@@ -829,7 +930,7 @@ export default function Project() {
                                     void saveCurrentTextFile(editor.getValue()).catch(err => setPageError(err instanceof Error ? err.message : String(err)))
                                   })
                                 }}
-                                language={selectedFile.name.endsWith('.json') ? 'json' : selectedFile.name.endsWith('.md') ? 'markdown' : selectedFile.name.endsWith('.css') ? 'css' : selectedFile.name.endsWith('.html') ? 'html' : 'javascript'}
+                                language={getEditorLanguage(selectedFile.name)}
                                 theme="vs-dark"
                                 options={{ minimap: { enabled: false }, fontSize: 14, wordWrap: 'on', automaticLayout: true }}
                               />
@@ -905,9 +1006,18 @@ export default function Project() {
                   placeholder={selectedModelId ? '例如：做一个三页的产品发布会 PPT，强调问题、方案和优势。也可以先问我：你可以帮我做什么？' : '请先在模型配置中启用模型'}
                   className="min-h-28 items-stretch bg-gray-900"
                 >
-                  <Button onClick={() => sendChat()} disabled={chatLoading || !selectedModelId || !chatInput.trim()} className="self-end">
-                    <Send className="h-4 w-4" />发送
-                  </Button>
+                  <div className="flex items-center gap-2 self-end">
+                    <Button
+                      type="button"
+                      onClick={chatLoading ? () => stopCurrentChat() : () => { void sendChat() }}
+                      disabled={!chatLoading && (!selectedModelId || !chatInput.trim())}
+                      variant={chatLoading ? 'outline' : 'default'}
+                      className="self-end gap-1"
+                    >
+                      {chatLoading ? <Square className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                      {chatLoading ? '停止' : '发送'}
+                    </Button>
+                  </div>
                 </PromptInput>
               </div>
             </div>

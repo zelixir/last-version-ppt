@@ -36,6 +36,8 @@ const PUNCT_EQUIV: Record<string, string> = {
   '\u202F': ' ',
 };
 
+const APPLY_PATCH_FAILURE_DIR = path.resolve(process.cwd(), 'apply-patch-fail-case');
+
 export const APPLY_PATCH_TOOL_DESCRIPTION = [
   'Use the `apply-patch` tool to edit files.',
   'Your patch language is a stripped-down, file-oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high-level envelope:',
@@ -111,8 +113,8 @@ export const APPLY_PATCH_TOOL_DESCRIPTION = [
 export const APPLY_PATCH_AGENT_INSTRUCTIONS = [
   'To edit files in the current project, use the `apply-patch` tool.',
   'Always send the full patch in the `input` field. Do not send JSON fragments for individual hunks.',
-  'When you are changing an existing file, prefer `apply-patch` over `create-file`.',
-  'Use `create-file` only when creating a brand-new file or when the user explicitly needs a full-file overwrite.',
+  'When you are changing an existing file, prefer `apply-patch` over `write-file`.',
+  'Use `write-file` only when creating a brand-new file or when the user explicitly needs a full-file overwrite.',
   'Prefer `apply-patch` over ad-hoc search/replace because it is safer and supports add / update / delete / move in one tool call.',
   'When you write file paths, prefer project-relative paths such as `/index.js` or `/docs/outline.md`; a leading `/` still means “inside the current project”.',
   'Example tool call payload:',
@@ -186,6 +188,56 @@ export interface AppliedPatchSummary {
 }
 
 export class DiffError extends Error {}
+
+export function recordApplyPatchFailureCase(payload: {
+  projectId: string;
+  input?: string;
+  sourceContent: string;
+  fileName?: string;
+  search?: string;
+  replace?: string;
+  replaceAll?: boolean;
+  error: unknown;
+}): void {
+  try {
+    mkdirSync(APPLY_PATCH_FAILURE_DIR, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeProjectId = payload.projectId.replace(/[^\w.-]/g, '_') || 'unknown-project';
+    const maxLength = 200_000;
+    const trimmedInput = typeof payload.input === 'string' && payload.input.length > maxLength
+      ? payload.input.slice(0, maxLength)
+      : payload.input;
+    const failCaseDir = path.join(
+      APPLY_PATCH_FAILURE_DIR,
+      `${timestamp}-${Math.random().toString(36).slice(2, 8)}-${safeProjectId}`,
+    );
+    mkdirSync(failCaseDir, { recursive: true });
+    const serializedError = payload.error instanceof Error
+      ? { name: payload.error.name, message: payload.error.message, stack: payload.error.stack }
+      : { message: String(payload.error) };
+    const savedAt = new Date().toISOString();
+    const legacyPatchBody = [
+      payload.fileName ? `fileName: ${payload.fileName}` : undefined,
+      typeof payload.search === 'string' ? `search:\n${payload.search}` : undefined,
+      typeof payload.replace === 'string' ? `replace:\n${payload.replace}` : undefined,
+      typeof payload.replaceAll === 'boolean' ? `replaceAll: ${payload.replaceAll}` : undefined,
+    ].filter(Boolean).join('\n');
+    const errorLog = [
+      `savedAt: ${savedAt}`,
+      `projectId: ${payload.projectId}`,
+      `inputTruncated: ${!!payload.input && payload.input.length > (trimmedInput?.length ?? 0)}`,
+      '',
+      `errorName: ${serializedError.name ?? 'Error'}`,
+      `errorMessage: ${serializedError.message}`,
+      serializedError.stack ? `errorStack:\n${serializedError.stack}` : undefined,
+    ].filter(Boolean).join('\n');
+    writeFileSync(path.join(failCaseDir, 'source.js'), payload.sourceContent, 'utf8');
+    writeFileSync(path.join(failCaseDir, 'patch.diff'), trimmedInput ?? legacyPatchBody, 'utf8');
+    writeFileSync(path.join(failCaseDir, 'error.log'), errorLog, 'utf8');
+  } catch {
+    /* best-effort only */
+  }
+}
 
 export class InvalidContextError extends DiffError {
   readonly file: string;
@@ -727,6 +779,39 @@ export function identifyFilesNeeded(text: string): string[] {
     if (line.startsWith(DELETE_FILE_PREFIX)) result.add(line.slice(DELETE_FILE_PREFIX.length));
   }
   return [...result];
+}
+
+export function collectApplyPatchSourceContent(projectRoot: string, input: string): string {
+  const neededFiles = identifyFilesNeeded(input);
+  if (neededFiles.length === 0) {
+    return '';
+  }
+
+  const entries = neededFiles.flatMap(filePath => {
+    let resolved: string;
+    try {
+      resolved = resolvePatchPath(projectRoot, filePath);
+    } catch (error) {
+      if (!(error instanceof InvalidPatchFormatError)) {
+        throw error;
+      }
+      return [];
+    }
+    if (!existsSync(resolved)) {
+      return [];
+    }
+    return [{
+      relativePath: path.relative(projectRoot, resolved).replace(/\\/g, '/'),
+      content: readFileSync(resolved, 'utf8'),
+    }];
+  });
+
+  if (entries.length === 1 && neededFiles.length === 1) {
+    const [entry] = entries;
+    return entry.content;
+  }
+
+  return entries.map(({ relativePath, content }) => `// ${relativePath}\n${content}`).join('\n\n');
 }
 
 function getUpdatedFile(text: string, action: PatchAction, filePath: string): string {

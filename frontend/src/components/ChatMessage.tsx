@@ -26,11 +26,11 @@ const TOOL_INPUT_LABELS: Record<string, (input: Record<string, unknown>) => stri
   'create-version': () => '准备保存一个新版本',
   'rename-project': input => `准备把项目改名为 ${(input.name as string) || ''}`.trim(),
   'get-current-project': () => '正在查看当前项目',
-  'run-project': () => '正在检查这份 PPT 能否正常生成',
+  'run-project': () => '正在生成这份 ppt，并检查结果',
   'list-file': () => '正在查看项目文件列表',
   'read-file': input => `正在读取 ${(input.fileName as string) || ''}`.trim(),
   'read-range': input => `正在分段读取 ${(input.fileName as string) || ''}`.trim(),
-  'create-file': input => `准备写入 ${(input.fileName as string) || ''}`.trim(),
+  'write-file': input => `准备写入 ${(input.fileName as string) || ''}`.trim(),
   'rename-file': input => `准备把 ${(input.oldName as string) || ''} 改成 ${(input.newName as string) || ''}`.trim(),
   'delete-file': input => `准备删除 ${(input.fileName as string) || ''}`.trim(),
   grep: input => `正在查找 ${(input.pattern as string) || ''}`.trim(),
@@ -80,13 +80,13 @@ function summarizeToolOutput(toolName: string, output: ToolLikePart['output']) {
     case 'get-current-project':
       return typeof value.id === 'string' ? `当前项目是 ${value.id}` : '已处理完成'
     case 'run-project':
-      return value.ok ? `运行成功，已生成 ${(value.slideCount as number) || 0} 页` : String(value.error || '运行失败')
+      return value.ok ? `生成成功，已生成 ${(value.slideCount as number) || 0} 页` : String(value.error || '生成失败')
     case 'list-file':
       return Array.isArray(value.files) ? `已列出 ${value.files.length} 个文件` : '已列出文件'
     case 'read-file':
     case 'read-range':
       return typeof value.fileName === 'string' ? `已读取 ${value.fileName}` : '已读取文件'
-    case 'create-file':
+    case 'write-file':
       return typeof value.fileName === 'string'
         ? `已写入 ${value.fileName}${typeof value.lineCount === 'number' ? `（${value.lineCount}行）` : ''}`
         : '已写入文件'
@@ -115,7 +115,7 @@ function countLines(text: string) {
 }
 
 function getToolProgressLineCount(toolName: string, input: Record<string, unknown>) {
-  if (toolName === 'create-file' && typeof input.content === 'string') return countLines(input.content)
+  if (toolName === 'write-file' && typeof input.content === 'string') return countLines(input.content)
   if (toolName === 'apply-patch' && typeof input.input === 'string') return countLines(input.input)
   return null
 }

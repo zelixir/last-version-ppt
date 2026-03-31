@@ -1,0 +1,80 @@
+module.exports = async function buildPresentation({ pptx, measureText, log, assert, addPage, store }) {
+  pptx.layout = 'LAYOUT_WIDE';
+  pptx.author = 'last-version-ppt';
+  pptx.subject = '自动生成演示文稿';
+  pptx.title = '新的演示文稿';
+
+  const slideBounds = { x: 0, y: 0, w: 13.333, h: 7.5 };
+  const page = {
+    left: 0.72,
+    width: 11.56,
+    titleTop: 0.52,
+    coverTop: 0.76,
+    contentGap: 0.38,
+  };
+  const fontFace = 'Microsoft YaHei';
+  const textOptions = { fontFace, margin: 0, breakLine: false };
+  const BOX_TOLERANCE = 0.01;
+  const MIN_TEXT_BOX_WIDTH = 0.6;
+  const SAFE_WIDTH_RATIO = 0.96;
+  const round = value => Math.ceil(value * 100) / 100;
+  const addSlack = (widthInches, slack = 0.18) => round(widthInches + slack);
+  const overlaps = (first, second) => (
+    first.x < second.x + second.w - BOX_TOLERANCE
+    && first.x + first.w > second.x + BOX_TOLERANCE
+    && first.y < second.y + second.h - BOX_TOLERANCE
+    && first.y + first.h > second.y + BOX_TOLERANCE
+  );
+  const createTextLayout = (slideName, defaultBounds = slideBounds) => {
+    const placedBoxes = [];
+    return {
+      check(name, rect, metrics, options = {}) {
+        const bounds = options.bounds ?? defaultBounds;
+        const expectedLines = options.expectedLines ?? 1;
+        assert(rect.x >= bounds.x - BOX_TOLERANCE && rect.y >= bounds.y - BOX_TOLERANCE, slideName + '：' + name + ' 超出了起始边界');
+        assert(rect.x + rect.w <= bounds.x + bounds.w + BOX_TOLERANCE, slideName + '：' + name + ' 超出了右侧边界');
+        assert(rect.y + rect.h <= bounds.y + bounds.h + BOX_TOLERANCE, slideName + '：' + name + ' 超出了底部边界');
+        assert(metrics.lines === expectedLines, slideName + '：' + name + ' 发生了非预期换行，当前 ' + metrics.lines + ' 行，预期 ' + expectedLines + ' 行');
+        for (const previous of placedBoxes) {
+          assert(!overlaps(previous.rect, rect), slideName + '：' + previous.name + ' 和 ' + name + ' 发生重叠');
+        }
+        placedBoxes.push({ name, rect });
+      }
+    };
+  };
+  const addMeasuredText = async (slide, layout, text, options) => {
+    const {
+      name,
+      x,
+      y,
+      maxWidth,
+      bounds,
+      expectedLines = Math.max(1, String(text).split(/\r?\n/u).length),
+      widthSlack = 0.18,
+      ...textStyle
+    } = options;
+    const naturalMetrics = await measureText(text, { fontSize: textStyle.fontSize, fontFace });
+    const requiredWidth = naturalMetrics.widthInches / SAFE_WIDTH_RATIO;
+    const width = Math.min(maxWidth, Math.max(MIN_TEXT_BOX_WIDTH, addSlack(requiredWidth, widthSlack)));
+    const metrics = await measureText(text, { fontSize: textStyle.fontSize, fontFace, width });
+    slide.addText(text, { ...textOptions, ...textStyle, x, y, w: width, h: metrics.safeHeight });
+    const rect = { x, y, w: width, h: metrics.safeHeight };
+    layout.check(name, rect, metrics, { bounds, expectedLines });
+    return { ...metrics, ...rect, bottom: y + metrics.safeHeight };
+  };
+
+  store.page = page;
+  store.slideBounds = slideBounds;
+  store.fontFace = fontFace;
+  store.textOptions = textOptions;
+  store.round = round;
+  store.createTextLayout = createTextLayout;
+  store.addMeasuredText = addMeasuredText;
+
+  await addPage('page01.js');
+  await addPage('page02.js');
+  await addPage('page03.js');
+  await addPage('page04.js');
+
+  log('模板已创建，默认包含封面、目录、正文和致谢 4 页结构');
+};

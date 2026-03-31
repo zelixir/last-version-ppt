@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
+import { execFileSync } from 'child_process';
 import path from 'path';
 
 const FONT_EXTENSIONS = new Set(['.ttf', '.ttc', '.otf', '.woff', '.woff2']);
@@ -10,6 +11,274 @@ const FONT_MIME_TYPES: Record<string, string> = {
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
 };
+
+interface SystemFontInfo {
+  name: string;
+  filePath: string;
+  size: number;
+  label?: string;
+}
+
+type FontNameRecord = {
+  platformId: number;
+  encodingId: number;
+  languageId: number;
+  nameId: number;
+  length: number;
+  offset: number;
+};
+
+const PREFERRED_NAME_LANGS = [0x0804, 0x0c04, 0x1004, 0x1404, 0x0404, 0x0409];
+const FONT_METADATA_EXTENSIONS = new Set(['.ttf', '.ttc', '.otf']);
+const metadataLabelCache = new Map<string, string | null>();
+
+function decodeUtf16Be(slice: Buffer): string {
+  const evenLength = slice.length - (slice.length % 2);
+  if (evenLength <= 0) return '';
+  const littleEndian = Buffer.allocUnsafe(evenLength);
+  for (let i = 0; i < evenLength; i += 2) {
+    littleEndian[i] = slice[i + 1];
+    littleEndian[i + 1] = slice[i];
+  }
+  return littleEndian.toString('utf16le');
+}
+
+// Some broken name records decode into dozens of single ASCII characters split by spaces,
+// for example `, < 6 T . b ... N o r m a l`. Those strings are not useful display names,
+// so we reject only long, token-heavy cases to preserve legitimate short Latin names.
+function looksLikeGarbledFontLabel(value: string): boolean {
+  const tokens = value.split(/\s+/).filter(Boolean);
+  if (value.length < 24 || tokens.length < 12) return false;
+  const singleAsciiTokens = tokens.filter(token => token.length === 1 && /^[\x20-\x7E]$/.test(token)).length;
+  return singleAsciiTokens / tokens.length >= 0.6;
+}
+
+function sanitizeFontLabel(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const cleaned = raw.replace(/\p{C}+/gu, ' ').replace(/\uFFFD+/g, '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return null;
+  if (!/[\p{L}\p{N}]/u.test(cleaned)) return null;
+  if (looksLikeGarbledFontLabel(cleaned)) return null;
+  return cleaned.slice(0, 160);
+}
+
+function normalizePath(filePath: string): string {
+  return path.normalize(filePath).toLowerCase();
+}
+
+function buildFallbackFontLabel(fileName: string): string {
+  const base = path.basename(fileName, path.extname(fileName));
+  return base.replace(/[_-]+/g, ' ') || base;
+}
+
+function sanitizeWindowsRegistryFontLabel(raw: string): string | null {
+  return sanitizeFontLabel(raw.replace(/\s+\((?:true|open)type\)$/i, '').trim());
+}
+
+function resolveWindowsRegistryFontPaths(fileValue: string, fontDirs: string[]): string[] {
+  const trimmed = fileValue.trim().replace(/^"(.*)"$/, '$1');
+  if (!trimmed) return [];
+  if (path.win32.isAbsolute(trimmed)) return [normalizePath(path.win32.normalize(trimmed))];
+  return fontDirs.map(dir => normalizePath(path.win32.join(dir, trimmed)));
+}
+
+/**
+ * Parse `reg.exe query ...` output lines such as:
+ * `微软雅黑 (TrueType)    REG_SZ    msyh.ttc`
+ * and return a map keyed by normalized font file paths.
+ */
+function parseWindowsRegistryFontQuery(output: string, fontDirs: string[]): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const line of output.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('HKEY_')) continue;
+    const match = trimmed.match(/^(.*?)(?:\t+|\s{2,})(REG_[A-Z0-9_]+)(?:\t+|\s{2,})(.+)$/i);
+    if (!match) continue;
+    const [, labelRaw, valueType, fileValue] = match;
+    if (!/^(REG_SZ|REG_EXPAND_SZ)$/i.test(valueType)) continue;
+    const label = sanitizeWindowsRegistryFontLabel(labelRaw);
+    if (!label) continue;
+    for (const candidatePath of resolveWindowsRegistryFontPaths(fileValue, fontDirs)) {
+      labels[candidatePath] ||= label;
+    }
+  }
+  return labels;
+}
+
+function resolveSystemFontLabel(font: SystemFontInfo): string {
+  if (process.platform === 'win32') {
+    // Windows registry labels are generally more user-facing and stable than
+    // embedded name-table metadata, so prefer them before falling back.
+    return font.label || readFontLabelFromMetadata(font.filePath) || buildFallbackFontLabel(font.name);
+  }
+  return readFontLabelFromMetadata(font.filePath) || buildFallbackFontLabel(font.name);
+}
+
+function decodeNameRecord(buffer: Buffer, record: FontNameRecord, stringBase: number, tableStart: number, tableLength: number): string | null {
+  const start = stringBase + record.offset;
+  const end = start + record.length;
+  const tableEnd = tableStart + tableLength;
+  if (start < tableStart || end > tableEnd || start < 0 || end > buffer.length) return null;
+  const slice = buffer.subarray(start, end);
+
+  if (record.platformId === 0 || record.platformId === 3) {
+    return sanitizeFontLabel(decodeUtf16Be(slice));
+  }
+  if (record.platformId === 1) {
+    return sanitizeFontLabel(slice.toString('latin1'));
+  }
+
+  return sanitizeFontLabel(slice.toString('utf8'));
+}
+
+function readNameTable(buffer: Buffer, fontOffset: number): { records: (FontNameRecord & { text: string })[]; stringBase: number } | null {
+  if (buffer.length < fontOffset + 12) return null;
+  const numTables = buffer.readUInt16BE(fontOffset + 4);
+  const tableDirStart = fontOffset + 12;
+  let nameTableOffset = 0;
+  let nameTableLength = 0;
+
+  for (let i = 0; i < numTables; i += 1) {
+    const entryOffset = tableDirStart + i * 16;
+    if (entryOffset + 16 > buffer.length) break;
+    const tag = buffer.toString('ascii', entryOffset, entryOffset + 4);
+    if (tag === 'name') {
+      nameTableOffset = buffer.readUInt32BE(entryOffset + 8);
+      nameTableLength = buffer.readUInt32BE(entryOffset + 12);
+      break;
+    }
+  }
+
+  if (!nameTableOffset || !nameTableLength) return null;
+  const tableStart = fontOffset + nameTableOffset;
+  if (tableStart + nameTableLength > buffer.length || tableStart + 6 > buffer.length) return null;
+  const tableEnd = tableStart + nameTableLength;
+
+  const recordCount = buffer.readUInt16BE(tableStart + 2);
+  const stringOffset = buffer.readUInt16BE(tableStart + 4);
+  const stringBase = tableStart + stringOffset;
+  if (stringBase < tableStart || stringBase > tableEnd) return null;
+  const records: (FontNameRecord & { text: string })[] = [];
+
+  for (let i = 0; i < recordCount; i += 1) {
+    const recordOffset = tableStart + 6 + i * 12;
+    if (recordOffset + 12 > buffer.length) break;
+    const record: FontNameRecord = {
+      platformId: buffer.readUInt16BE(recordOffset),
+      encodingId: buffer.readUInt16BE(recordOffset + 2),
+      languageId: buffer.readUInt16BE(recordOffset + 4),
+      nameId: buffer.readUInt16BE(recordOffset + 6),
+      length: buffer.readUInt16BE(recordOffset + 8),
+      offset: buffer.readUInt16BE(recordOffset + 10),
+    };
+    const text = decodeNameRecord(buffer, record, stringBase, tableStart, nameTableLength);
+    if (text) records.push({ ...record, text });
+  }
+
+  return { records, stringBase };
+}
+
+function calculateNameRecordPriority(record: FontNameRecord & { text: string }, languages: number[]): {
+  languagePriority: number;
+  platformPriority: number;
+  lengthPriority: number;
+} {
+  const languageRank = languages.indexOf(record.languageId);
+  return {
+    languagePriority: languageRank === -1 ? languages.length : languageRank,
+    platformPriority: record.platformId === 3 ? 0 : record.platformId === 0 ? 1 : record.platformId === 1 ? 2 : 3,
+    lengthPriority: record.text.length >= 2 ? 0 : 1,
+  };
+}
+
+function pickName(records: Array<FontNameRecord & { text: string }>, nameIds: number[], languages: number[]): string | null {
+  const candidates = records.filter(record => nameIds.includes(record.nameId) && record.text);
+  if (candidates.length === 0) return null;
+  const ranked = [...candidates].sort((a, b) => {
+    const aPriority = calculateNameRecordPriority(a, languages);
+    const bPriority = calculateNameRecordPriority(b, languages);
+    // Windows name records are the most common source of reliable CJK labels in practice,
+    // then Unicode platform records, while Macintosh records are more likely to decode into garbage.
+    return aPriority.languagePriority - bPriority.languagePriority
+      || aPriority.platformPriority - bPriority.platformPriority
+      || aPriority.lengthPriority - bPriority.lengthPriority;
+  });
+  return ranked[0]?.text ?? null;
+}
+
+function extractFontLabelFromBuffer(buffer: Buffer, fontOffset: number): string | null {
+  const nameTable = readNameTable(buffer, fontOffset);
+  if (!nameTable) return null;
+
+  const fullName = pickName(nameTable.records, [4], PREFERRED_NAME_LANGS)
+    ?? pickName(nameTable.records, [4], []);
+  const familyName = pickName(nameTable.records, [1], PREFERRED_NAME_LANGS)
+    ?? pickName(nameTable.records, [1], []);
+  const subfamily = pickName(nameTable.records, [2], PREFERRED_NAME_LANGS)
+    ?? pickName(nameTable.records, [2], []);
+
+  const combinedFamily = familyName && subfamily && !/^(regular|normal)$/i.test(subfamily) ? `${familyName} ${subfamily}` : familyName;
+  return (fullName || combinedFamily || familyName)?.replace(/\s+/g, ' ').trim() || null;
+}
+
+function extractFontLabelFromTtc(buffer: Buffer): string | null {
+  if (buffer.length < 16) return null;
+  const numFonts = buffer.readUInt32BE(8);
+  for (let i = 0; i < numFonts; i += 1) {
+    const fontOffset = buffer.readUInt32BE(12 + i * 4);
+    const label = extractFontLabelFromBuffer(buffer, fontOffset);
+    if (label) return label;
+  }
+  return null;
+}
+
+export function readFontLabelFromMetadata(filePath: string): string | null {
+  if (metadataLabelCache.has(filePath)) return metadataLabelCache.get(filePath) ?? null;
+
+  const ext = path.extname(filePath).toLowerCase();
+  if (!FONT_METADATA_EXTENSIONS.has(ext)) {
+    metadataLabelCache.set(filePath, null);
+    return null;
+  }
+
+  try {
+    const buffer = readFileSync(filePath);
+    const isTtc = buffer.subarray(0, 4).toString('ascii') === 'ttcf';
+    const label = isTtc ? extractFontLabelFromTtc(buffer) : extractFontLabelFromBuffer(buffer, 0);
+    const sanitized = sanitizeFontLabel(label);
+    metadataLabelCache.set(filePath, sanitized || null);
+    return sanitized || null;
+  } catch {
+    metadataLabelCache.set(filePath, null);
+    return null;
+  }
+}
+
+function readFontLabelsFromWindowsRegistry(fontDirs: string[]): Record<string, string> {
+  if (process.platform !== 'win32') return {};
+  const registryKeys = [
+    'HKCU\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts',
+    'HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts',
+  ];
+  const labels: Record<string, string> = {};
+
+  for (const registryKey of registryKeys) {
+    try {
+      const output = execFileSync('reg.exe', ['query', registryKey], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const parsed = parseWindowsRegistryFontQuery(output, fontDirs);
+      for (const [filePath, label] of Object.entries(parsed)) {
+        labels[filePath] ||= label;
+      }
+    } catch {
+      /* best-effort only */
+    }
+  }
+
+  return labels;
+}
 
 function getSystemFontDirs(): string[] {
   const dirs: string[] = [];
@@ -33,9 +302,14 @@ function getSystemFontDirs(): string[] {
   return dirs.filter(dir => existsSync(dir));
 }
 
-function collectFontFiles(dir: string, maxDepth = 3, currentDepth = 0): Array<{ name: string; filePath: string; size: number }> {
+function collectFontFiles(
+  dir: string,
+  fontLabels: Record<string, string>,
+  maxDepth = 3,
+  currentDepth = 0,
+): SystemFontInfo[] {
   if (currentDepth > maxDepth) return [];
-  const results: Array<{ name: string; filePath: string; size: number }> = [];
+  const results: SystemFontInfo[] = [];
 
   try {
     const entries = readdirSync(dir, { withFileTypes: true });
@@ -43,11 +317,17 @@ function collectFontFiles(dir: string, maxDepth = 3, currentDepth = 0): Array<{ 
       if (entry.isSymbolicLink()) continue; // skip symlinks to avoid circular traversal
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        results.push(...collectFontFiles(fullPath, maxDepth, currentDepth + 1));
+        results.push(...collectFontFiles(fullPath, fontLabels, maxDepth, currentDepth + 1));
       } else if (entry.isFile() && FONT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
         try {
           const stat = statSync(fullPath);
-          results.push({ name: entry.name, filePath: fullPath, size: stat.size });
+          const normalizedPath = normalizePath(fullPath);
+          results.push({
+            name: entry.name,
+            filePath: fullPath,
+            size: stat.size,
+            label: fontLabels[normalizedPath],
+          });
         } catch { /* skip unreadable files */ }
       }
     }
@@ -56,16 +336,17 @@ function collectFontFiles(dir: string, maxDepth = 3, currentDepth = 0): Array<{ 
   return results;
 }
 
-let cachedFontList: Array<{ name: string; filePath: string; size: number }> | null = null;
+let cachedFontList: SystemFontInfo[] | null = null;
 
-export function listSystemFonts(): Array<{ name: string; filePath: string; size: number }> {
+export function listSystemFonts(): SystemFontInfo[] {
   if (cachedFontList) return cachedFontList;
 
   const dirs = getSystemFontDirs();
-  const allFonts: Array<{ name: string; filePath: string; size: number }> = [];
+  const windowsRegistryLabels = readFontLabelsFromWindowsRegistry(dirs);
+  const allFonts: SystemFontInfo[] = [];
 
   for (const dir of dirs) {
-    allFonts.push(...collectFontFiles(dir));
+    allFonts.push(...collectFontFiles(dir, windowsRegistryLabels));
   }
 
   // Deduplicate by name (prefer first occurrence)
@@ -74,7 +355,10 @@ export function listSystemFonts(): Array<{ name: string; filePath: string; size:
     if (seen.has(font.name)) return false;
     seen.add(font.name);
     return true;
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  }).map(font => ({
+    ...font,
+    label: resolveSystemFontLabel(font),
+  })).sort((a, b) => (a.label || a.name).localeCompare(b.label || b.name, 'zh-Hans-CN'));
 
   return cachedFontList;
 }
@@ -92,3 +376,13 @@ export function getSystemFontData(fontName: string): { data: Buffer; mimeType: s
     return null;
   }
 }
+
+export const __systemFontTestUtils = {
+  decodeUtf16Be,
+  extractFontLabelFromBuffer,
+  looksLikeGarbledFontLabel,
+  sanitizeWindowsRegistryFontLabel,
+  parseWindowsRegistryFontQuery,
+  readFontLabelFromMetadata,
+  sanitizeFontLabel,
+};

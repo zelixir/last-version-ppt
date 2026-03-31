@@ -8,7 +8,7 @@ import { appendTextPart, mergeToolPart } from './chat-message-parts.ts';
 import { PPTXGENJS_GUIDE } from './pptxgenjs-guide.ts';
 import { exampleApiKeys, summarizeModelConfigurationError } from './project-support.ts';
 import { runProject } from './project-runner.ts';
-import { APPLY_PATCH_AGENT_INSTRUCTIONS, APPLY_PATCH_TOOL_DESCRIPTION, applyLegacySearchReplace, applyProjectPatch } from './apply-patch.ts';
+import { APPLY_PATCH_AGENT_INSTRUCTIONS, APPLY_PATCH_TOOL_DESCRIPTION, applyLegacySearchReplace, applyProjectPatch, collectApplyPatchSourceContent, recordApplyPatchFailureCase } from './apply-patch.ts';
 import {
   buildRenamedProjectId,
   buildUniqueProjectId,
@@ -20,6 +20,7 @@ import {
   resolveProjectFile,
   sanitizeProjectName,
 } from './storage.ts';
+import { getSelectedFontNames, listFontsWithSelection } from './font-preferences.ts';
 import { readProjectPreviewImage } from './project-preview-cache.ts';
 import {
   buildImageToolModelOutput,
@@ -29,6 +30,9 @@ import {
   readProjectTextFileRange,
 } from './project-tool-helpers.ts';
 
+const WRITE_FILE_TOOL_NAME = 'write-file';
+const APPLY_PATCH_TOOL_ENABLED = false;
+
 function summarizeToolEvent(toolName: string, details: string, success = true): ProjectChatToolEvent {
   return { toolName, summary: details, success };
 }
@@ -36,6 +40,47 @@ function summarizeToolEvent(toolName: string, details: string, success = true): 
 function countTextLines(value: string): number {
   if (!value) return 0;
   return value.split(/\r?\n/).length;
+}
+
+function isTextOverlapWarning(message: string): boolean {
+  return /重叠/.test(message);
+}
+
+function getWarningPageKey(message: string): string {
+  const trimmed = message.trim();
+  if (!trimmed) return '';
+  const prefixMatch = trimmed.match(/^([^：:\n]+)[：:]/);
+  if (prefixMatch?.[1]) return prefixMatch[1].trim();
+  const pageMatch = trimmed.match(/^(第[0-9一二三四五六七八九十百千万两零]+页)/);
+  return pageMatch?.[1] ?? '';
+}
+
+export function limitRunProjectWarningsForTool(warnings: string[]): string[] {
+  const visibleWarnings: string[] = [];
+  const overlapCountsByPage = new Map<string, number>();
+  const omittedCountsByPage = new Map<string, number>();
+
+  for (const warning of warnings) {
+    if (!isTextOverlapWarning(warning)) {
+      visibleWarnings.push(warning);
+      continue;
+    }
+
+    const pageKey = getWarningPageKey(warning) || warning.trim();
+    const shownCount = overlapCountsByPage.get(pageKey) ?? 0;
+    if (shownCount < 5) {
+      visibleWarnings.push(warning);
+    } else {
+      omittedCountsByPage.set(pageKey, (omittedCountsByPage.get(pageKey) ?? 0) + 1);
+    }
+    overlapCountsByPage.set(pageKey, shownCount + 1);
+  }
+
+  for (const [pageKey, omittedCount] of omittedCountsByPage) {
+    visibleWarnings.push(`${pageKey}：其余 ${omittedCount} 条文字重叠提醒已省略，请查看控制台里的完整提醒。`);
+  }
+
+  return visibleWarnings;
 }
 
 function isProjectIdAvailable(projectId: string) {
@@ -49,7 +94,7 @@ export type ProjectAgentStreamEvent =
 export type ProjectChatUiMessage = UIMessage<{ projectId?: string }>;
 
 const generateMessageId = createIdGenerator({ prefix: 'msg', size: 16 });
-const MAX_TOOL_LOOP_STEPS = 20;
+const MAX_TOOL_LOOP_STEPS = 200;
 
 const TOOL_CAPABILITY_GROUPS = [
   {
@@ -59,7 +104,7 @@ const TOOL_CAPABILITY_GROUPS = [
   },
   {
     title: '文件处理',
-    tools: ['list-file', 'read-file', 'read-range', 'create-file', 'rename-file', 'delete-file', 'grep', 'apply-patch'],
+    tools: ['list-file', 'read-file', 'read-range', WRITE_FILE_TOOL_NAME, 'rename-file', 'delete-file', 'grep', ...(APPLY_PATCH_TOOL_ENABLED ? ['apply-patch'] : [])],
     summary: '查看文件、按需读取内容、批量修改、写入新内容、重命名或删除资源。',
   },
   {
@@ -71,6 +116,11 @@ const TOOL_CAPABILITY_GROUPS = [
     title: '看图辅助',
     tools: ['read-image-file'],
     summary: '查看你上传的图片，帮助判断配图是否合适。',
+  },
+  {
+    title: '字体配置',
+    tools: ['list-fonts'],
+    summary: '查看当前允许使用的字体，写脚本时请只在 fontFace 里使用这些字体名。',
   },
 ] as const;
 
@@ -140,14 +190,14 @@ function summarizeToolIntent(toolName: string, input: Record<string, unknown>): 
     case 'get-current-project':
       return '正在查看当前项目';
     case 'run-project':
-      return '正在检查这份 PPT 能否正常生成';
+      return '正在生成这份 ppt，并检查结果';
     case 'list-file':
       return '正在查看项目文件列表';
     case 'read-file':
       return `正在读取 ${(input.fileName as string) || ''}`.trim();
     case 'read-range':
       return `正在分段读取 ${(input.fileName as string) || ''}`.trim();
-    case 'create-file':
+    case WRITE_FILE_TOOL_NAME:
       return `准备写入 ${(input.fileName as string) || ''}`.trim();
     case 'rename-file':
       return `准备把 ${(input.oldName as string) || ''} 改成 ${(input.newName as string) || ''}`.trim();
@@ -179,17 +229,22 @@ export function buildToolCapabilitySummary(enabledToolNames: string[]): string {
 }
 
 export function buildProjectAgentSystemPrompt(projectId: string, supportsMultimodal: boolean, enabledToolNames: string[]): string {
+  const allowedFonts = getSelectedFontNames();
   return [
     '你是“最后一版PPT”的内置 PPT 生成助手。你的目标是根据用户需求创建或编辑当前项目中的 PPT 脚本和资源文件。',
     '你只能操作当前项目，优先保持输出简洁、可靠、可运行。',
     '必须尽量完整实现用户要的 PPT 内容，不能只给最小骨架或占位内容。',
     '在你认为已经完成时，必须先调用 run-project 检查脚本是否能运行；如果失败，要继续修复直到成功或明确说明阻塞原因。',
+    '生成完 PPT 以后，如果出现文字重叠等排版提醒，优先修复明显影响阅读的问题；工具结果里这类提醒会按页节选展示，完整提醒请结合控制台日志判断。',
     '如果你要在代码、文案或文本内容里表达换行，必须直接写真正的换行，不要把换行写成两个字符的“\\n”。',
     '如果用户问你“你能做什么”或“怎么用”，请按下面的能力清单，用自然中文做简短介绍，不要展开成长文：',
     buildToolCapabilitySummary(enabledToolNames),
     '读取文本文件时，优先使用 read-file；如果文件较大或只需要局部内容，要改用 read-range 工具按行查看。',
-    '修改已有文件时，优先使用 apply-patch（应用补丁）；只有在新建文件或确实需要整份重写时，才使用 create-file。',
-    APPLY_PATCH_AGENT_INSTRUCTIONS,
+    `需要新建文本文件或整份覆盖内容时，使用 ${WRITE_FILE_TOOL_NAME}。`,
+    ...(APPLY_PATCH_TOOL_ENABLED ? [APPLY_PATCH_AGENT_INSTRUCTIONS] : []),
+    allowedFonts.length
+      ? `当前允许使用的字体：${allowedFonts.join('、')}。请在 fontFace 或其他字体参数里只使用这些名称，优先选择便于中文阅读的字体。`
+      : '当前没有可用字体。请提醒用户在字体管理页面选择允许的字体，生成脚本时不要随意填入字体名。',
     '最终回复面向不懂技术的普通用户，尽量使用自然中文，避免技术术语和英文缩写。',
     supportsMultimodal
       ? '当前模型支持看图：必要时可以读取上传的图片，也可以查看当前 PPT 某一页的预览图来判断版式是否合适。'
@@ -346,19 +401,35 @@ function buildProjectTools(options: {
       },
     }),
     'run-project': tool({
-      description: '运行当前项目的 index.js，检查是否成功。',
+      description: '运行当前项目入口脚本 index.js（它会继续加载各页脚本），生成 ppt 并检查是否成功。',
       inputSchema: z.object({ includeLogs: z.boolean().optional() }),
       execute: async ({ includeLogs }) => {
         emitter.start('run-project', { includeLogs });
         const runResult = await runProject({ projectId: options.getProjectId(), includeLogs });
-        emitter.finish('run-project', runResult.ok ? `运行成功，${runResult.slideCount} 页` : '运行失败', runResult.ok);
+        emitter.finish('run-project', runResult.ok ? `生成成功，${runResult.slideCount} 页` : '生成失败', runResult.ok);
         return {
           ok: runResult.ok,
           slideCount: runResult.slideCount,
           logs: includeLogs ? runResult.logs : undefined,
-          warnings: runResult.warnings,
+          warnings: limitRunProjectWarningsForTool(runResult.warnings),
           error: runResult.error,
         };
+      },
+    }),
+    'list-fonts': tool({
+      description: '查看当前允许使用的字体名单，写脚本时只用这些字体。',
+      inputSchema: z.object({}),
+      execute: async () => {
+        emitter.start('list-fonts', {});
+        const allowedFonts = getSelectedFontNames();
+        const systemFonts = listFontsWithSelection().map(font => ({
+          name: font.name,
+          size: font.size,
+          selected: font.selected,
+          defaultPreferred: font.defaultPreferred,
+        }));
+        emitter.finish('list-fonts', `当前可用字体 ${allowedFonts.length} 种`);
+        return { allowedFonts, systemFonts };
       },
     }),
     'list-file': tool({
@@ -391,15 +462,15 @@ function buildProjectTools(options: {
         return result;
       },
     }),
-    'create-file': tool({
+    [WRITE_FILE_TOOL_NAME]: tool({
       description: '仅在新建文本文件，或确实需要整份覆盖文件内容时使用。',
       inputSchema: z.object({ fileName: z.string(), content: z.string() }),
       execute: async ({ fileName, content }) => {
-        emitter.start('create-file', { fileName });
+        emitter.start(WRITE_FILE_TOOL_NAME, { fileName });
         const filePath = resolveProjectFile(options.getProjectId(), fileName);
         mkdirSync(path.dirname(filePath), { recursive: true });
         writeFileSync(filePath, content, 'utf8');
-        emitter.finish('create-file', `写入 ${fileName}`);
+        emitter.finish(WRITE_FILE_TOOL_NAME, `写入 ${fileName}`);
         return { fileName, size: Buffer.byteLength(content, 'utf8'), lineCount: countTextLines(content) };
       },
     }),
@@ -408,7 +479,7 @@ function buildProjectTools(options: {
       inputSchema: z.object({ oldName: z.string(), newName: z.string() }),
       execute: async ({ oldName, newName }) => {
         emitter.start('rename-file', { oldName, newName });
-        if (oldName === 'index.js') throw new Error('不能重命名 index.js');
+        if (oldName === 'index.js') throw new Error('不能重命名入口脚本 index.js');
         const currentProjectId = options.getProjectId();
         const sourcePath = resolveProjectFile(currentProjectId, oldName);
         const targetPath = resolveProjectFile(currentProjectId, newName);
@@ -418,11 +489,11 @@ function buildProjectTools(options: {
       },
     }),
     'delete-file': tool({
-      description: '删除当前项目中的文件，但不能删除 index.js。',
+      description: '删除当前项目中的文件，但不能删除入口脚本 index.js。',
       inputSchema: z.object({ fileName: z.string() }),
       execute: async ({ fileName }) => {
         emitter.start('delete-file', { fileName });
-        if (fileName === 'index.js') throw new Error('不能删除 index.js');
+        if (fileName === 'index.js') throw new Error('不能删除入口脚本 index.js');
         rmSync(resolveProjectFile(options.getProjectId(), fileName), { recursive: true, force: true });
         emitter.finish('delete-file', `删除 ${fileName}`);
         return { deleted: fileName };
@@ -438,7 +509,8 @@ function buildProjectTools(options: {
         return matches;
       },
     }),
-    'apply-patch': tool({
+    ...(APPLY_PATCH_TOOL_ENABLED ? {
+      'apply-patch': tool({
       description: APPLY_PATCH_TOOL_DESCRIPTION,
       inputSchema: z.object({
         input: z.string().optional(),
@@ -454,33 +526,51 @@ function buildProjectTools(options: {
       execute: async ({ input, fileName, search, replace, replaceAll }) => {
         emitter.start('apply-patch', { fileName });
         const currentProjectId = options.getProjectId();
-        if (input) {
-          const summary = applyProjectPatch(getProjectDir(currentProjectId), input);
-          const details = summary.changedFiles.length > 0
-            ? `修改 ${summary.changedFiles.join(', ')}`
-            : '补丁未产生文件变更';
-          emitter.finish('apply-patch', details);
-          return {
-            changed: summary.changedFiles,
-            created: summary.createdFiles,
-            deleted: summary.deletedFiles,
-            moved: summary.movedFiles,
-            fuzz: summary.fuzz,
-            lineCount: countTextLines(input),
-          };
-        }
+        const projectDir = getProjectDir(currentProjectId);
+        let sourceContent = '';
+        try {
+          if (input) {
+            sourceContent = collectApplyPatchSourceContent(projectDir, input);
+            const summary = applyProjectPatch(projectDir, input);
+            const details = summary.changedFiles.length > 0
+              ? `修改 ${summary.changedFiles.join(', ')}`
+              : '补丁未产生文件变更';
+            emitter.finish('apply-patch', details);
+            return {
+              changed: summary.changedFiles,
+              created: summary.createdFiles,
+              deleted: summary.deletedFiles,
+              moved: summary.movedFiles,
+              fuzz: summary.fuzz,
+              lineCount: countTextLines(input),
+            };
+          }
 
-        if (!fileName || typeof search !== 'string' || typeof replace !== 'string') {
-          throw new Error('apply-patch 缺少必要的 legacy 参数');
+          if (!fileName || typeof search !== 'string' || typeof replace !== 'string') {
+            throw new Error('apply-patch 缺少必要的 legacy 参数');
+          }
+          const targetPath = resolveProjectFile(currentProjectId, fileName);
+          sourceContent = readFileSync(targetPath, 'utf8');
+          const updated = applyLegacySearchReplace(sourceContent, search, replace, replaceAll);
+          writeFileSync(targetPath, updated, 'utf8');
+          emitter.finish('apply-patch', `修改 ${fileName}`);
+          return { changed: [fileName], legacy: true, lineCount: countTextLines(updated) };
+        } catch (error) {
+          recordApplyPatchFailureCase({
+            projectId: currentProjectId,
+            input,
+            sourceContent,
+            fileName,
+            search,
+            replace,
+            replaceAll,
+            error,
+          });
+          throw error;
         }
-        const targetPath = resolveProjectFile(currentProjectId, fileName);
-        const original = readFileSync(targetPath, 'utf8');
-        const updated = applyLegacySearchReplace(original, search, replace, replaceAll);
-        writeFileSync(targetPath, updated, 'utf8');
-        emitter.finish('apply-patch', `修改 ${fileName}`);
-        return { changed: [fileName], legacy: true, lineCount: countTextLines(updated) };
       },
-    }),
+      }),
+    } : {}),
     ...(options.supportsMultimodal ? {
       'read-image-file': tool({
         description: '读取当前项目中的图片，供支持看图的模型直接查看。',

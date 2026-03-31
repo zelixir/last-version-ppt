@@ -34,13 +34,13 @@ export default function Help() {
 
         <Section icon={<FileCode2 className="h-4 w-4" />} title="3. 项目页怎么使用">
           <p>左侧有两个标签：<strong className="text-gray-200">PPT 预览</strong> 和 <strong className="text-gray-200">资源管理</strong>。</p>
-          <p>PPT 预览支持刷新与导出；资源管理支持上传、查看、编辑文本文件。默认会隐藏 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">index.js</code>，勾选后也可以直接编辑。</p>
+          <p>PPT 预览支持刷新与导出；资源管理支持上传、查看、编辑文本文件。默认会隐藏入口脚本 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">index.js</code>，分页脚本如 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">page01.js</code> 会直接显示，勾选后也可以一起编辑入口脚本。</p>
           <p>右侧的智能助手会帮你生成或修改 PPT 脚本，让预览内容跟着你的需求继续变化。</p>
         </Section>
 
         <Section icon={<FolderOpen className="h-4 w-4" />} title="4. 资源和 PPT 脚本">
           <p>所有项目资源都会保存在本地存储目录下的项目文件夹中。你上传的图片、音频、视频或文本，都会留在这个项目里。</p>
-          <p>如果你需要更细致地调整内容，也可以显示并编辑 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">index.js</code>。这个文件就是当前演示稿的制作脚本。</p>
+          <p>如果你需要更细致地调整内容，可以把每一页拆成单独的 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">page01.js</code>、<code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">page02.js</code> 等文件，再由 <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-green-300">index.js</code> 按顺序加载。</p>
         </Section>
       </div>
     </div>
