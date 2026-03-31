@@ -54,6 +54,10 @@ function resolveInstalledWasmDir() {
   return hasAllRuntimeFiles(wasmDir) ? wasmDir : null;
 }
 
+function buildMissingRuntimeMessage() {
+  return '没有找到 LibreOffice 运行时文件，请先执行 git submodule update --init --recursive';
+}
+
 function getCompiledWasmLogicalPath(fileName: string) {
   return `libreoffice/wasm/${fileName}`;
 }
@@ -104,7 +108,7 @@ async function resolveWasmDir() {
     return await extractedWasmDirPromise;
   }
 
-  throw new Error('没有找到 LibreOffice 运行时文件，请先在项目根目录执行 bun install');
+  throw new Error(buildMissingRuntimeMessage());
 }
 
 export async function resolveLibreOfficeRuntime() {

@@ -62,7 +62,7 @@ import { getProjectRecordSyncDiff } from './project-record-sync.ts';
 import { listSystemFonts, getSystemFontData } from './system-fonts.ts';
 import { clearFontCache, getDefaultFontCandidates, getSelectedFontNames, listFontsWithSelection, setSelectedFontNames } from './font-preferences.ts';
 import { clearPreviewProgress, getPreviewProgress, setPreviewProgress } from './preview-progress.ts';
-import { hasCompiledEmbeddedFiles, readCompiledEmbeddedFile } from './compiled-embedded-files.ts';
+import { isCompiledBuild, readCompiledEmbeddedFile } from './compiled-embedded-files.ts';
 import { invalidateSharedConverter } from './shared-libreoffice-converter.ts';
 
 const MIME_TYPES: Record<string, string> = {
@@ -111,7 +111,7 @@ function getBackendDir(): string {
 }
 
 const backendDir = getBackendDir();
-const isExeMode = hasCompiledEmbeddedFiles();
+const isExeMode = isCompiledBuild();
 const backendRoot = isExeMode ? backendDir : path.join(backendDir, '..');
 
 const modelProviderPath = path.join(backendRoot, 'model-provider.json');
