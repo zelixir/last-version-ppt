@@ -204,6 +204,7 @@ export default function Project() {
   const projectKeyRef = useRef(projectKey)
   const projectRef = useRef<ProjectSummary | null>(null)
   const selectedFileNameRef = useRef<string | null>(selectedFileName)
+  const showIndexSourceRef = useRef(showIndexSource)
   const editorDirtyRef = useRef(editorDirty)
   const editorValueRef = useRef(editorValue)
   const previewRefreshPromiseRef = useRef<Promise<void> | null>(null)
@@ -255,6 +256,10 @@ export default function Project() {
   useEffect(() => {
     selectedFileNameRef.current = selectedFileName
   }, [selectedFileName])
+
+  useEffect(() => {
+    showIndexSourceRef.current = showIndexSource
+  }, [showIndexSource])
 
   useEffect(() => {
     editorDirtyRef.current = editorDirty
@@ -322,15 +327,16 @@ export default function Project() {
   })
   const chatLoading = chatStatus === 'submitted' || chatStatus === 'streaming'
 
-  const fetchProject = async () => {
+  const fetchProject = async (preferredFileName?: string) => {
+    const nextPreferredFileName = preferredFileName ?? selectedFileNameRef.current
     const response = await fetch(`/api/projects/${encodeURIComponent(projectKey)}`)
     if (!response.ok) throw new Error('加载项目失败')
     const data = await response.json() as ProjectSummary
     setProject(data)
-    setSelectedFileName(current => {
-      const nextVisibleFiles = getVisibleProjectFiles(data.files, showIndexSource)
-      return current && nextVisibleFiles.some(file => file.name === current)
-        ? current
+    setSelectedFileName(() => {
+      const nextVisibleFiles = getVisibleProjectFiles(data.files, showIndexSourceRef.current)
+      return nextPreferredFileName && nextVisibleFiles.some(file => file.name === nextPreferredFileName)
+        ? nextPreferredFileName
         : nextVisibleFiles[0]?.name ?? null
     })
     await fetch(`/api/projects/${encodeURIComponent(projectKey)}/current`, { method: 'POST' })
@@ -479,11 +485,11 @@ export default function Project() {
       const changedFileName = typeof payload.fileName === 'string' && payload.fileName.trim()
         ? payload.fileName
         : null
+      const currentFileName = selectedFileNameRef.current
       if (changedFileName === 'preview' || changedFileName?.startsWith('preview/')) return
-      fetchProject().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
+      fetchProject(currentFileName ?? undefined).catch(err => setPageError(err instanceof Error ? err.message : String(err)))
       refreshPreview().catch(err => setPageError(err instanceof Error ? err.message : String(err)))
 
-      const currentFileName = selectedFileNameRef.current
       if (!currentFileName || editorDirtyRef.current) return
       if (changedFileName && changedFileName !== currentFileName) return
       const currentFile = projectRef.current?.files.find(file => file.name === currentFileName)
@@ -903,14 +909,13 @@ export default function Project() {
                   </div>
                   <div className="min-h-0 overflow-hidden rounded-2xl border border-gray-800 bg-gray-900/60">
                     {selectedFile ? (
-                      <div className="flex h-full min-h-0 flex-col">
-                        <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
-                          <div>
-                            <div className="text-sm font-medium text-white">{selectedFile.name}</div>
-                            <div className="text-xs text-gray-500">按删除键可删除当前文件（PPT 脚本除外）</div>
-                          </div>
-                          <div className="flex gap-2">
-                            {selectedFile.kind === 'text' && <Button size="sm" variant="outline" onClick={() => saveCurrentTextFile().catch(err => setPageError(err instanceof Error ? err.message : String(err)))} disabled={!editorDirty}><Save className="h-4 w-4" />保存</Button>}
+                        <div className="flex h-full min-h-0 flex-col">
+                          <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+                            <div>
+                              <div className="text-sm font-medium text-white">{selectedFile.name}</div>
+                            </div>
+                            <div className="flex gap-2">
+                              {selectedFile.kind === 'text' && <Button size="sm" variant="outline" onClick={() => saveCurrentTextFile().catch(err => setPageError(err instanceof Error ? err.message : String(err)))} disabled={!editorDirty}><Save className="h-4 w-4" />保存</Button>}
                             {selectedFile.name !== 'index.js' && <Button size="sm" variant="destructive" onClick={deleteSelectedFile}><Trash2 className="h-4 w-4" />删除</Button>}
                           </div>
                         </div>
@@ -1002,13 +1007,15 @@ export default function Project() {
                   className="min-h-28 items-stretch bg-gray-900"
                 >
                   <div className="flex items-center gap-2 self-end">
-                    {chatLoading && (
-                      <Button type="button" variant="outline" size="sm" onClick={stopCurrentChat} className="gap-1">
-                        <Square className="h-4 w-4" />停止
-                      </Button>
-                    )}
-                    <Button onClick={() => sendChat()} disabled={chatLoading || !selectedModelId || !chatInput.trim()} className="self-end">
-                      <Send className="h-4 w-4" />发送
+                    <Button
+                      type="button"
+                      onClick={chatLoading ? () => stopCurrentChat() : () => { void sendChat() }}
+                      disabled={!chatLoading && (!selectedModelId || !chatInput.trim())}
+                      variant={chatLoading ? 'outline' : 'default'}
+                      className="self-end gap-1"
+                    >
+                      {chatLoading ? <Square className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                      {chatLoading ? '停止' : '发送'}
                     </Button>
                   </div>
                 </PromptInput>
