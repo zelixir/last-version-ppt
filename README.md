@@ -6,6 +6,9 @@
 
 如果你不喜欢双关笑话, 我也可以为你生成一些谐音笑话
 
+<img width="2840" height="1607" alt="image" src="https://github.com/user-attachments/assets/e03b6e97-491a-4915-9254-fcf05174ac27" />
+
+
 ## 使用说明
 
 首先你需要有一个兼容openai协议的大模型服务, 如openai/阿里云等
