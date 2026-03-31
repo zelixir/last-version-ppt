@@ -14,7 +14,6 @@
     "@ai-sdk/provider": "^3.0.8",
     "@ai-sdk/provider-utils": "^4.0.19",
     "@elysiajs/cors": "^1.2.2",
-    "@matbee/libreoffice-converter": "https://registry.npmjs.org/@matbee/libreoffice-converter/-/libreoffice-converter-2.6.0.tgz",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@sinclair/typebox": "https://registry.npmjs.org/@sinclair/typebox/-/typebox-0.34.48.tgz",
     "ai": "^6.0.111",

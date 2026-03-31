@@ -1,4 +1,4 @@
-import type { FontData } from '@matbee/libreoffice-converter';
+import type { FontData } from './libreoffice-converter.ts';
 import { getSetting, setSetting } from './db.ts';
 import { getSystemFontData, listSystemFonts } from './system-fonts.ts';
 

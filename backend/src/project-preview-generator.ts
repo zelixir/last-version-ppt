@@ -1,4 +1,4 @@
-import { rgbaToPng } from '@matbee/libreoffice-converter';
+import { rgbaToPng } from './libreoffice-converter.ts';
 import type { ProjectPreviewImageInfo } from './project-preview-cache.ts';
 import { buildProjectPreviewImageResponse, replaceProjectPreviewImages } from './project-preview-cache.ts';
 import { getSharedConverter } from './shared-libreoffice-converter.ts';

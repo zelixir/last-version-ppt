@@ -1,5 +1,4 @@
 import { spawn } from 'child_process';
-import { file as bunFile } from 'bun';
 import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, type FSWatcher, unlinkSync, watch, writeFileSync } from 'fs';
@@ -63,9 +62,8 @@ import { getProjectRecordSyncDiff } from './project-record-sync.ts';
 import { listSystemFonts, getSystemFontData } from './system-fonts.ts';
 import { clearFontCache, getDefaultFontCandidates, getSelectedFontNames, listFontsWithSelection, setSelectedFontNames } from './font-preferences.ts';
 import { clearPreviewProgress, getPreviewProgress, setPreviewProgress } from './preview-progress.ts';
+import { hasCompiledEmbeddedFiles, readCompiledEmbeddedFile } from './compiled-embedded-files.ts';
 import { invalidateSharedConverter } from './shared-libreoffice-converter.ts';
-
-declare const COMPILED_FRONTEND_DIST_ROOT: string | undefined;
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -113,10 +111,7 @@ function getBackendDir(): string {
 }
 
 const backendDir = getBackendDir();
-const compiledFrontendDistRoot = typeof COMPILED_FRONTEND_DIST_ROOT === 'string' && COMPILED_FRONTEND_DIST_ROOT
-  ? COMPILED_FRONTEND_DIST_ROOT
-  : null;
-const isExeMode = compiledFrontendDistRoot !== null;
+const isExeMode = hasCompiledEmbeddedFiles();
 const backendRoot = isExeMode ? backendDir : path.join(backendDir, '..');
 
 const modelProviderPath = path.join(backendRoot, 'model-provider.json');
@@ -175,11 +170,11 @@ function toFrontendAssetRelativePath(requestPath: string): string {
   return trimmedPath || 'index.html';
 }
 
-function joinCompiledFrontendAssetPath(rootDir: string, requestPath: string): string {
-  return path.posix.join(rootDir, toFrontendAssetRelativePath(requestPath));
+function toCompiledFrontendAssetPath(requestPath: string): string {
+  return `frontend/${toFrontendAssetRelativePath(requestPath)}`;
 }
 
-const frontendDistDir = compiledFrontendDistRoot ? null : findFrontendDistDir();
+const frontendDistDir = isExeMode ? null : findFrontendDistDir();
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
@@ -935,17 +930,16 @@ const app = new Elysia()
       }
     }
 
-    if (compiledFrontendDistRoot) {
-      const requestedPath = joinCompiledFrontendAssetPath(compiledFrontendDistRoot, reqPath);
-      const requestedFile = bunFile(requestedPath);
-      if (await requestedFile.exists()) {
+    if (isExeMode) {
+      const requestedPath = toCompiledFrontendAssetPath(reqPath);
+      const requestedFile = await readCompiledEmbeddedFile(requestedPath);
+      if (requestedFile) {
         return new Response(requestedFile, {
           headers: withCrossOriginIsolationHeaders({ 'Content-Type': getMimeType(requestedPath), 'Cache-Control': 'no-cache' }),
         });
       }
-      const indexPath = joinCompiledFrontendAssetPath(compiledFrontendDistRoot, '/index.html');
-      const indexFile = bunFile(indexPath);
-      if (await indexFile.exists()) {
+      const indexFile = await readCompiledEmbeddedFile('frontend/index.html');
+      if (indexFile) {
         return new Response(indexFile, {
           headers: withCrossOriginIsolationHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }),
         });

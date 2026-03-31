@@ -1,4 +1,4 @@
-import { createConverter, type LibreOfficeConverter, type LibreOfficeWasmOptions } from '@matbee/libreoffice-converter';
+import { createConverter, type LibreOfficeConverter, type LibreOfficeWasmOptions, type ProgressInfo } from './libreoffice-converter.ts';
 import { loadSelectedFontData, getSelectedFontNames } from './font-preferences.ts';
 import { resolveLibreOfficeRuntime } from './libreoffice-runtime.ts';
 
@@ -15,6 +15,10 @@ async function buildSharedConverter(fontKey: string): Promise<LibreOfficeConvert
     wasmPath: runtime.wasmDir,
     wasmLoader: runtime.wasmLoader as WasmLoaderModule,
     fonts,
+    onProgress: (progress: ProgressInfo) => {
+      const percent = Number.isFinite(progress.percent) ? `${Math.round(progress.percent)}%` : '--';
+      console.log(`[预览引擎] ${percent} [${progress.phase}] ${progress.message}`);
+    },
   });
 
   return converter;
