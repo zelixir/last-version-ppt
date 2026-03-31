@@ -1,10 +1,10 @@
 import { spawn } from 'child_process';
+import { file as bunFile } from 'bun';
 import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, type FSWatcher, unlinkSync, watch, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { frontendAssets } from './frontend-assets.ts';
 import exampleProviderData from '../model-provider.example.json';
 import exampleModelData from '../models.example.json';
 import {
@@ -65,6 +65,8 @@ import { clearFontCache, getDefaultFontCandidates, getSelectedFontNames, listFon
 import { clearPreviewProgress, getPreviewProgress, setPreviewProgress } from './preview-progress.ts';
 import { invalidateSharedConverter } from './shared-libreoffice-converter.ts';
 
+declare const COMPILED_FRONTEND_DIST_ROOT: string | undefined;
+
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
@@ -111,7 +113,10 @@ function getBackendDir(): string {
 }
 
 const backendDir = getBackendDir();
-const isExeMode = frontendAssets !== null;
+const compiledFrontendDistRoot = typeof COMPILED_FRONTEND_DIST_ROOT === 'string' && COMPILED_FRONTEND_DIST_ROOT
+  ? COMPILED_FRONTEND_DIST_ROOT
+  : null;
+const isExeMode = compiledFrontendDistRoot !== null;
 const backendRoot = isExeMode ? backendDir : path.join(backendDir, '..');
 
 const modelProviderPath = path.join(backendRoot, 'model-provider.json');
@@ -164,8 +169,17 @@ function findFrontendDistDir(): string | null {
   return null;
 }
 
-const embeddedAssets = frontendAssets;
-const frontendDistDir = embeddedAssets ? null : findFrontendDistDir();
+function toFrontendAssetRelativePath(requestPath: string): string {
+  const normalizedPath = path.posix.normalize(requestPath.startsWith('/') ? requestPath : `/${requestPath}`);
+  const trimmedPath = normalizedPath.replace(/^\/+/, '');
+  return trimmedPath || 'index.html';
+}
+
+function joinCompiledFrontendAssetPath(rootDir: string, requestPath: string): string {
+  return path.posix.join(rootDir, toFrontendAssetRelativePath(requestPath));
+}
+
+const frontendDistDir = compiledFrontendDistRoot ? null : findFrontendDistDir();
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
@@ -900,7 +914,7 @@ const app = new Elysia()
       }),
     });
   })
-  .get('/*', ({ request }) => {
+  .get('/*', async ({ request }) => {
     const url = new URL(request.url);
     const reqPath = decodeURIComponent(url.pathname);
     const segments = reqPath.split('/').filter(Boolean);
@@ -921,19 +935,26 @@ const app = new Elysia()
       }
     }
 
-    if (embeddedAssets) {
-      const asset = embeddedAssets.get(reqPath) || embeddedAssets.get('/index.html');
-      if (asset) {
-        return new Response(asset.content, {
-          headers: withCrossOriginIsolationHeaders({ 'Content-Type': asset.mimeType, 'Cache-Control': 'no-cache' }),
+    if (compiledFrontendDistRoot) {
+      const requestedPath = joinCompiledFrontendAssetPath(compiledFrontendDistRoot, reqPath);
+      const requestedFile = bunFile(requestedPath);
+      if (await requestedFile.exists()) {
+        return new Response(requestedFile, {
+          headers: withCrossOriginIsolationHeaders({ 'Content-Type': getMimeType(requestedPath), 'Cache-Control': 'no-cache' }),
+        });
+      }
+      const indexPath = joinCompiledFrontendAssetPath(compiledFrontendDistRoot, '/index.html');
+      const indexFile = bunFile(indexPath);
+      if (await indexFile.exists()) {
+        return new Response(indexFile, {
+          headers: withCrossOriginIsolationHeaders({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }),
         });
       }
       return new Response('Not Found', { status: 404 });
     }
 
     if (frontendDistDir) {
-      let filePath = reqPath.startsWith('/') ? reqPath.slice(1) : reqPath;
-      if (!filePath) filePath = 'index.html';
+      const filePath = toFrontendAssetRelativePath(reqPath);
       const fullPath = path.join(frontendDistDir, filePath);
       if (existsSync(fullPath) && statSync(fullPath).isFile()) {
         return new Response(readFileSync(fullPath), {
