@@ -28,6 +28,10 @@
 
 如果想有更好的用户体验, 可以自行定制
 
+## 项目原理
+
+用户需求经由AI生成js代码, 调用[pptxgenjs](https://github.com/gitbrent/PptxGenJS)来生成ppt文件
+
 ## 网页预览PPT是怎么实现的
 
 一开始没想到在网页上预览ppt是传说级任务
@@ -42,7 +46,7 @@
 
 实际上也没这么简单, 这么庞大的库总会依赖一些奇奇怪怪的环境, 反正到了wasm就是跑不起来
 
-发动人海战术, 几个旗舰模型全部开起来让它们找方案, 然后找到了@matbee/libreoffice-converter这个库
+发动人海战术, 几个旗舰模型全部开起来让它们找方案, 然后找到了[@matbee/libreoffice-converter](https://github.com/matbeedotcom/libreoffice-document-converter)这个库(原始 236.7MB，压缩后 76.2MB)
 
 一开始想着在前端运行, 结果这个库经常会卡死, 后来尝试放到后端, 又发现不兼容bun
 
@@ -59,9 +63,9 @@
 
 一共开了72次agent, 按平均一次消耗15分钟人力, 算下来是18小时
 
-## 4. 技术栈
+## 技术栈
 
-bun + elysia + sqlite + react + vite + tailwindcss + ai-sdk + @matbee/libreoffice-converter
+bun + elysia + sqlite + react + vite + tailwindcss + ai-sdk + pptxgenjs + @matbee/libreoffice-converter
 
 - Web UI 在浏览器里访问，因此不需要electron
 - 数据全部在本地, 不会连接大模型以外的服务器
