@@ -38,6 +38,7 @@ import { createProjectChatResponse, generateProjectName, type ProjectChatUiMessa
 import { runProject } from './project-runner.ts';
 import { exampleApiKeys } from './project-support.ts';
 import { buildAttachmentDisposition } from './http-headers.ts';
+import { buildConfigStatus } from './config-status.ts';
 import {
   buildRenamedProjectId,
   buildUniqueProjectId,
@@ -415,18 +416,7 @@ function openBrowserUrl(url: string): void {
 }
 
 function configStatus() {
-  const providers = getProviders();
-  const enabledModels = getAiModels(true);
-  const usableProviders = providers.filter(provider => provider.api_key && !exampleApiKeys.has(provider.api_key));
-  const usableModels = enabledModels.filter(model => usableProviders.some(provider => provider.name === model.provider));
-  const hasStubProviders = providers.some(provider => exampleApiKeys.has(provider.api_key));
-  return {
-    hasStubProviders,
-    hasEnabledModels: enabledModels.length > 0,
-    hasUsableModel: usableModels.length > 0,
-    needsAttention: hasStubProviders || usableModels.length === 0,
-    firstUsableModelId: usableModels[0]?.id ?? null,
-  };
+  return buildConfigStatus(getProviders(), getAiModels(true));
 }
 
 function filterUsableModels(models: ReturnType<typeof getAiModels>) {
