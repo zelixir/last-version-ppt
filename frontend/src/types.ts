@@ -42,12 +42,18 @@ export interface ChatTextPart {
   text: string
 }
 
+export interface ChatReasoningPart {
+  type: 'reasoning'
+  text: string
+  state?: 'streaming' | 'done'
+}
+
 export interface ChatToolPart extends ToolEvent {
   type: 'tool'
   state?: 'running' | 'done'
 }
 
-export type ChatMessagePart = ChatTextPart | ChatToolPart
+export type ChatMessagePart = ChatTextPart | ChatReasoningPart | ChatToolPart
 
 export interface AgentRunEvent {
   type: 'text-delta' | 'tool'

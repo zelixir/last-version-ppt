@@ -162,6 +162,7 @@ export async function generateProjectName(requirement: string, modelId: number):
   if (!model || model.enabled !== 'Y') {
     throw new Error('没有可用模型，无法为项目命名');
   }
+  console.log(`Generating project name for requirement: ${requirement} using model ${model.model_name} (ID: ${modelId})`);
   const provider = getProviderByName(model.provider);
   if (!provider || !provider.api_key || exampleApiKeys.has(provider.api_key)) {
     throw new Error(summarizeModelConfigurationError());

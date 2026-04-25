@@ -36,6 +36,7 @@ type DashscopeMessage =
   | {
     role: 'assistant';
     content: string | null;
+    reasoning_content?: string | null;
     tool_calls?: Array<{
       id: string;
       type: 'function';
@@ -92,6 +93,7 @@ const dashscopeChatResponseSchema = z.object({
       delta: z.object({
         role: z.string().nullable().optional(),
         content: z.string().nullable().optional(),
+        reasoning_content: z.string().nullable().optional(),
         tool_calls: z.array(
           z.object({
             index: z.number(),
@@ -188,6 +190,7 @@ export class DashscopeChatLanguageModel implements LanguageModelV3 {
               message: z.object({
                 role: z.string().nullable().optional(),
                 content: z.string().nullable(),
+                reasoning_content: z.string().nullable().optional(),
                 tool_calls: z.array(
                   z.object({
                     id: z.string(),
@@ -213,6 +216,10 @@ export class DashscopeChatLanguageModel implements LanguageModelV3 {
 
     const choice = response.choices[0];
     const content: Array<LanguageModelV3Content> = [];
+
+    if (choice.message.reasoning_content) {
+      content.push({ type: 'reasoning', text: choice.message.reasoning_content });
+    }
 
     if (choice.message.content) {
       content.push({ type: 'text', text: choice.message.content });
@@ -289,6 +296,7 @@ export class DashscopeChatLanguageModel implements LanguageModelV3 {
     let finishReason: LanguageModelV3FinishReason = { unified: 'other', raw: undefined };
     let usage: { prompt_tokens?: number; completion_tokens?: number } | undefined = undefined;
     let isActiveText = false;
+    let reasoningId: string | undefined;
     let responseId: string | undefined;
     const toolCalls: Array<{
       id: string;
@@ -299,6 +307,15 @@ export class DashscopeChatLanguageModel implements LanguageModelV3 {
       };
       hasFinished: boolean;
     }> = [];
+
+    const closeReasoning = (controller: TransformStreamDefaultController<LanguageModelV3StreamPart>) => {
+      if (!reasoningId) {
+        return;
+      }
+
+      controller.enqueue({ type: 'reasoning-end', id: reasoningId });
+      reasoningId = undefined;
+    };
 
     return {
       stream: stream.pipeThrough(
@@ -328,7 +345,22 @@ export class DashscopeChatLanguageModel implements LanguageModelV3 {
               finishReason = mapFinishReason(choice.finish_reason);
             }
 
+            if (choice?.delta.reasoning_content) {
+              if (!reasoningId) {
+                reasoningId = `${value.id}:reasoning`;
+                controller.enqueue({ type: 'reasoning-start', id: reasoningId });
+              }
+
+              controller.enqueue({
+                type: 'reasoning-delta',
+                delta: choice.delta.reasoning_content,
+                id: reasoningId,
+              });
+            }
+
             if (choice?.delta.content) {
+              closeReasoning(controller);
+
               if (!isActiveText) {
                 controller.enqueue({ type: 'text-start', id: value.id });
                 isActiveText = true;
@@ -341,6 +373,8 @@ export class DashscopeChatLanguageModel implements LanguageModelV3 {
             }
 
             if (choice?.delta.tool_calls) {
+              closeReasoning(controller);
+
               for (const toolCallDelta of choice.delta.tool_calls) {
                 const index = toolCallDelta.index;
 
@@ -384,6 +418,8 @@ export class DashscopeChatLanguageModel implements LanguageModelV3 {
             }
           },
           flush: controller => {
+            closeReasoning(controller);
+
             if (isActiveText) {
               controller.enqueue({ type: 'text-end', id: responseId ?? '0' });
             }
@@ -438,7 +474,9 @@ export class DashscopeChatLanguageModel implements LanguageModelV3 {
     options: LanguageModelV3CallOptions,
     stream: boolean
   ): { body: DashscopeChatRequest; headers: Record<string, string | undefined> } {
-    const messages = toDashscopeMessages(options.prompt);
+    const messages = shouldBackfillReasoningContent(this.baseUrl)
+      ? backfillAssistantReasoningContent(toDashscopeMessages(options.prompt))
+      : toDashscopeMessages(options.prompt);
     const tools = options.tools?.length ? toDashscopeTools(options.tools) : undefined;
     const toolChoice = options.toolChoice ? toDashscopeToolChoice(options.toolChoice) : undefined;
 
@@ -468,7 +506,7 @@ export class DashscopeChatLanguageModel implements LanguageModelV3 {
   }
 }
 
-function toDashscopeMessages(prompt: LanguageModelV3Prompt): DashscopeMessage[] {
+export function toDashscopeMessages(prompt: LanguageModelV3Prompt): DashscopeMessage[] {
   const messages: DashscopeMessage[] = [];
   for (const message of prompt) {
     if (message.role === 'system') {
@@ -500,6 +538,7 @@ function toDashscopeMessages(prompt: LanguageModelV3Prompt): DashscopeMessage[] 
       messages.push({ role: 'user', content });
     } else if (message.role === 'assistant') {
       let content = '';
+      let reasoningContent = '';
       const tool_calls: Array<{
         id: string;
         type: 'function';
@@ -508,6 +547,8 @@ function toDashscopeMessages(prompt: LanguageModelV3Prompt): DashscopeMessage[] 
       for (const part of message.content) {
         if (part.type === 'text') {
           content += part.text;
+        } else if (part.type === 'reasoning') {
+          reasoningContent += part.text;
         } else if (part.type === 'tool-call') {
           tool_calls.push({
             id: part.toolCallId,
@@ -520,6 +561,9 @@ function toDashscopeMessages(prompt: LanguageModelV3Prompt): DashscopeMessage[] 
         }
       }
       const msg: DashscopeMessage = { role: 'assistant', content: content || null };
+      if (reasoningContent) {
+        msg.reasoning_content = reasoningContent;
+      }
       if (tool_calls.length > 0) {
         msg.tool_calls = tool_calls;
       }
@@ -547,6 +591,23 @@ function toDashscopeMessages(prompt: LanguageModelV3Prompt): DashscopeMessage[] 
     }
   }
   return messages;
+}
+
+export function backfillAssistantReasoningContent(messages: DashscopeMessage[]): DashscopeMessage[] {
+  return messages.map(message => {
+    if (message.role !== 'assistant' || message.reasoning_content !== undefined) {
+      return message;
+    }
+
+    return {
+      ...message,
+      reasoning_content: '',
+    };
+  });
+}
+
+function shouldBackfillReasoningContent(baseUrl: string): boolean {
+  return /https?:\/\/dashscope(?:-[a-z]+)?\.aliyuncs\.com/i.test(baseUrl);
 }
 
 function toDashscopeTools(tools: Array<LanguageModelV3FunctionTool | LanguageModelV3ProviderTool>): DashscopeTool[] {
@@ -627,12 +688,7 @@ function loadProviderConfig(providerName: string): { api_key: string; base_url: 
   };
 }
 
-export function createModelClient(modelId: string, provider: string): DashscopeChatLanguageModel {
-  const { api_key, base_url } = loadProviderConfig(provider);
-  return new DashscopeChatLanguageModel(modelId, api_key, base_url);
-}
-
-export default function dashscope(modelId: string, provider: string): DashscopeChatLanguageModel {
+export function createModelClient(modelId: string, provider: string) {
   const { api_key, base_url } = loadProviderConfig(provider);
   return new DashscopeChatLanguageModel(modelId, api_key, base_url);
 }

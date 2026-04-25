@@ -11,6 +11,7 @@
     "preview:batch": "bun run src/preview-batch.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.53",
     "@ai-sdk/provider": "^3.0.8",
     "@ai-sdk/provider-utils": "^4.0.19",
     "@elysiajs/cors": "^1.2.2",

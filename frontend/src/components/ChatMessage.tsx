@@ -1,5 +1,5 @@
 import type React from 'react'
-import { LoaderCircle, Wrench } from 'lucide-react'
+import { BrainCircuit, LoaderCircle, Wrench } from 'lucide-react'
 import type { UIMessage } from 'ai'
 import type { ChatMessagePart, ProjectChatMessage, ProjectChatMessageMetadata } from '../types'
 import { Message, MessageContent, MessageResponse } from './ai-elements/message'
@@ -14,6 +14,7 @@ type ToolLikePart = {
 
 type LegacyToolPart = Extract<ChatMessagePart, { type: 'tool' }>
 type LegacyTextPart = Extract<ChatMessagePart, { type: 'text' }>
+type LegacyReasoningPart = Extract<ChatMessagePart, { type: 'reasoning' }>
 
 type ConversationMessage =
   | (UIMessage<ProjectChatMessageMetadata> & { pending?: boolean })
@@ -62,6 +63,10 @@ function isToolLikePart(part: ToolLikePart | LegacyToolPart): part is ToolLikePa
 
 function isTextPart(part: ChatMessagePart | ToolLikePart): part is LegacyTextPart {
   return part.type === 'text'
+}
+
+function isReasoningPart(part: ChatMessagePart | ToolLikePart): part is LegacyReasoningPart {
+  return part.type === 'reasoning'
 }
 
 function summarizeToolOutput(toolName: string, output: ToolLikePart['output']) {
@@ -123,7 +128,7 @@ function getToolProgressLineCount(toolName: string, input: Record<string, unknow
 function normalizeMessageParts(message: ConversationMessage): Array<ChatMessagePart | ToolLikePart> {
   if ('parts' in message && Array.isArray(message.parts) && message.parts.length > 0) {
     const firstPart = message.parts[0]
-    if (firstPart && typeof firstPart === 'object' && 'type' in firstPart && (String((firstPart as { type: string }).type).startsWith('tool-') || (firstPart as { type: string }).type === 'dynamic-tool' || (firstPart as { type: string }).type === 'step-start' || (firstPart as { type: string }).type === 'text')) {
+    if (firstPart && typeof firstPart === 'object' && 'type' in firstPart && (String((firstPart as { type: string }).type).startsWith('tool-') || (firstPart as { type: string }).type === 'dynamic-tool' || (firstPart as { type: string }).type === 'step-start' || (firstPart as { type: string }).type === 'text' || (firstPart as { type: string }).type === 'reasoning')) {
       return (message.parts as Array<ChatMessagePart | ToolLikePart>).filter(part => (part as { type: string }).type !== 'step-start')
     }
   }
@@ -138,6 +143,23 @@ function normalizeMessageParts(message: ConversationMessage): Array<ChatMessageP
     return appendTextPart(parts, message.content)
   }
   return parts
+}
+
+function ReasoningCard({ part }: { part: LegacyReasoningPart }) {
+  const running = part.state === 'streaming'
+
+  return (
+    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-amber-50">
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2">
+          {running ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <BrainCircuit className="h-3.5 w-3.5" />}
+          <span className="font-medium">思考过程</span>
+        </div>
+        <span className="text-[11px] opacity-80">{running ? '思考中' : '已完成'}</span>
+      </div>
+      <div className="mt-2 whitespace-pre-wrap text-xs leading-6 opacity-90">{part.text || '正在思考…'}</div>
+    </div>
+  )
 }
 
 function ToolCard({ part, labels }: { part: ToolLikePart | LegacyToolPart; labels: Record<string, string> }) {
@@ -224,6 +246,11 @@ export default function ChatMessage({
     if (isTextPart(part)) {
       if (textGroup.length === 0) groupStartIndex = index
       textGroup.push(part.text)
+      return
+    }
+    if (isReasoningPart(part)) {
+      flushTextGroup(index)
+      rendered.push(<ReasoningCard key={`reasoning-${index}`} part={part} />)
       return
     }
     if (part.type === 'tool' || part.type.startsWith('tool-') || part.type === 'dynamic-tool') {
